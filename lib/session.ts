@@ -22,7 +22,7 @@ export async function requireUser(): Promise<SessionUser> {
   const jar = await cookies();
   const id = jar.get(SESSION_COOKIE)?.value;
   if (!id) throw new HttpError(401, "נדרשת התחברות");
-  const user = readSession(id);
+  const user = await readSession(id);
   if (!user) throw new HttpError(401, "נדרשת התחברות");
   return user;
 }
@@ -32,11 +32,11 @@ export function requireAdmin(user: SessionUser) {
 }
 
 export async function establishSession(username: string, password: string): Promise<SessionUser> {
-  const account = findUserForLogin(username.trim());
+  const account = await findUserForLogin(username.trim());
   if (!account || !verifyPassword(password, account.passwordHash)) {
     throw new HttpError(401, "שם המשתמש או הסיסמה שגויים");
   }
-  const session = createSession(account.id);
+  const session = await createSession(account.id);
   const jar = await cookies();
   jar.set(SESSION_COOKIE, session.id, cookieOptions(session.maxAge));
   return {
@@ -52,7 +52,7 @@ export async function establishSession(username: string, password: string): Prom
 export async function clearSession() {
   const jar = await cookies();
   const id = jar.get(SESSION_COOKIE)?.value;
-  if (id) deleteSession(id);
+  if (id) await deleteSession(id);
   jar.set(SESSION_COOKIE, "", cookieOptions(0));
 }
 

@@ -13,8 +13,8 @@ export function PATCH(request: Request, context: { params: Promise<{ deviceId: s
     const { deviceId } = await context.params;
     const body = await readJson(request);
     if (typeof body.tenantId !== "string" || !body.tenantId) throw new HttpError(400, "יש לבחור לקוח");
-    updateDevice({ deviceId, name: cleanName(body.name, "שם השקע"), tenantId: body.tenantId });
-    return Response.json({ devices: listDevices(user) });
+    await updateDevice({ deviceId, name: cleanName(body.name, "שם השקע"), tenantId: body.tenantId });
+    return Response.json({ devices: await listDevices(user) });
   });
 }
 
@@ -23,7 +23,7 @@ export function DELETE(_request: Request, context: { params: Promise<{ deviceId:
     const user = await requireUser();
     requireAdmin(user);
     const { deviceId } = await context.params;
-    deleteDevice(deviceId);
+    await deleteDevice(deviceId);
     getBridge().forgetDevice(deviceId);
     return Response.json({ ok: true });
   });

@@ -11,15 +11,15 @@ export function POST(request: Request, context: { params: Promise<{ deviceId: st
     const user = await requireUser();
     requireAdmin(user);
     const { deviceId } = await context.params;
-    if (!getDevice(deviceId)) throw new HttpError(404, "השקע לא נמצא");
+    if (!(await getDevice(deviceId))) throw new HttpError(404, "השקע לא נמצא");
     const body = await readJson(request);
     const relayOn = typeof body.relayOn === "boolean" ? body.relayOn : undefined;
     const online = typeof body.online === "boolean" ? body.online : undefined;
     if (relayOn === undefined && online === undefined) {
       throw new HttpError(400, "חסר מצב לדימוי");
     }
-    getBridge().simulate(deviceId, { relayOn, online });
-    const device = getDevice(deviceId);
+    await getBridge().simulate(deviceId, { relayOn, online });
+    const device = await getDevice(deviceId);
     return Response.json({ device });
   });
 }

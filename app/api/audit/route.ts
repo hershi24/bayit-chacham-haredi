@@ -6,6 +6,6 @@ export const runtime = "nodejs";
 export function GET() {
   return withErrors(async () => {
     const user = await requireUser();
-    return Response.json({ entries: listAudit(user) });
+    return Response.json({ entries: await listAudit(user) });
   });
 }

@@ -60,7 +60,6 @@ export type UserView = {
 
 export type BridgeStatus = {
   mode: "mock" | "live";
-  storage: "sqlite" | "supabase";
   relayStyle: "indexed" | "batch";
   baseUrl: string;
   ivrTokenIsDefault: boolean;

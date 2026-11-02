@@ -410,7 +410,6 @@ function LinkPanel({
         </CardHeader>
         <CardContent className="grid gap-2 text-sm">
           <p>מצב: {status?.mode === "live" ? "חי מול openapi.svnwi.com" : "הדגמה מקומית, בלי מפתחות"}</p>
-          <p>אחסון: {status?.storage === "supabase" ? "סופרבייס" : "קובץ מקומי"}</p>
           <p>סגנון פקודה: {status?.relayStyle === "batch" ? "מערך relays" : "ממסר 1, תאימות למפרט"}</p>
           <p>אסימון: {status?.token.state === "valid" ? `בתוקף עד ${formatIsrael(status.token.expiresAt)}` : "לא בתוקף"}</p>
           <p>שידור: {status?.socket.state === "mock" ? "פנימי" : status?.socket.state === "open" ? "מחובר" : "מנותק"}</p>

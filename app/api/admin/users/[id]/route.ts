@@ -8,7 +8,7 @@ export function DELETE(_request: Request, context: { params: Promise<{ id: strin
     const user = await requireUser();
     requireAdmin(user);
     const { id } = await context.params;
-    await deleteUser(id, user.id);
+    deleteUser(id, user.id);
     return Response.json({ ok: true });
   });
 }

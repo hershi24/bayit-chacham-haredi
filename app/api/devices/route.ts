@@ -9,9 +9,8 @@ export function GET(request: Request) {
     const user = await requireUser();
     const bridge = getBridge();
     if (new URL(request.url).searchParams.get("refresh") === "1") {
-      const current = await listDevices(user);
-      await Promise.all(current.map((device) => bridge.refresh(device.deviceId).catch(() => null)));
+      await Promise.all(listDevices(user).map((device) => bridge.refresh(device.deviceId).catch(() => null)));
     }
-    return Response.json({ devices: await listDevices(user), status: bridge.status() });
+    return Response.json({ devices: listDevices(user), status: bridge.status() });
   });
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HttpError } from "../lib/http-error.ts";
-import { storageMode } from "../lib/storage.ts";
+import { HttpError } from "../lib/http-error";
+import { storageMode } from "../lib/storage";
 
 test("uses sqlite until both supabase settings exist", () => {
   const previousUrl = process.env.SUPABASE_URL;

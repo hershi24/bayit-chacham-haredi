@@ -76,6 +76,45 @@ create table if not exists schedules (
 
 create index if not exists schedules_due_idx on schedules (run_at);
 
+create table if not exists clock_settings (
+  tenant_id text primary key references tenants (id) on delete cascade,
+  location_id text not null,
+  start_action text not null check (start_action in ('ON', 'OFF')),
+  start_offset_min integer not null,
+  end_action text not null check (end_action in ('ON', 'OFF')),
+  end_offset_min integer not null,
+  updated_at text not null
+);
+
+create table if not exists programs (
+  id text primary key,
+  tenant_id text not null references tenants (id) on delete cascade,
+  program_key text not null,
+  name text not null,
+  enabled boolean not null default false,
+  device_ids text not null default '[]',
+  start_date text,
+  end_date text,
+  created_at text not null,
+  unique (tenant_id, program_key)
+);
+
+create table if not exists program_runs (
+  id text primary key,
+  program_id text not null,
+  device_id text not null,
+  action text not null check (action in ('ON', 'OFF')),
+  run_at text not null,
+  label text not null,
+  created_at text not null,
+  done_at text,
+  attempts integer not null default 0,
+  detail text
+);
+
+create index if not exists program_runs_due_idx on program_runs (run_at);
+create index if not exists programs_tenant_idx on programs (tenant_id);
+
 alter table tenants enable row level security;
 alter table users enable row level security;
 alter table devices enable row level security;
@@ -83,5 +122,8 @@ alter table device_state enable row level security;
 alter table sessions enable row level security;
 alter table audit_log enable row level security;
 alter table schedules enable row level security;
+alter table clock_settings enable row level security;
+alter table programs enable row level security;
+alter table program_runs enable row level security;
 
-revoke all on table tenants, users, devices, device_state, sessions, audit_log, schedules from anon, authenticated;
+revoke all on table tenants, users, devices, device_state, sessions, audit_log, schedules, clock_settings, programs, program_runs from anon, authenticated;

@@ -5,6 +5,9 @@ import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { HttpError } from "@/lib/http-error";
 import { hashPassword } from "@/lib/password";
+import type { ClockSettings } from "@/lib/hebrew/calendar";
+import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
+import type { ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { presentDevice, type StatePatch } from "@/lib/store-sqlite";
 import type { AuditSource, AuditView, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
@@ -619,6 +622,207 @@ export async function finishSchedule(id: string) {
   await ready();
   const result = await client().from("schedules").update({ done_at: new Date().toISOString() }).eq("id", id);
   if (result.error) fail(result.error, "עדכון טיימר נכשל");
+}
+
+export async function listTenantDevices(tenantId: string): Promise<DeviceView[]> {
+  await ready();
+  return sortDevices((await deviceRows(tenantId)).map(mapDevice), false).map(presentDevice);
+}
+
+export async function getClock(tenantId: string): Promise<ClockSettings> {
+  await ready();
+  const result = await client().from("clock_settings").select("*").eq("tenant_id", tenantId).maybeSingle();
+  if (result.error) fail(result.error, "לא ניתן לקרוא את שעון השבת");
+  const row = result.data;
+  if (!row) return { ...DEFAULT_CLOCK };
+  return {
+    locationId: String(row.location_id),
+    startAction: row.start_action === "OFF" ? "OFF" : "ON",
+    startOffsetMin: Number(row.start_offset_min ?? 0),
+    endAction: row.end_action === "ON" ? "ON" : "OFF",
+    endOffsetMin: Number(row.end_offset_min ?? 0),
+  };
+}
+
+export async function saveClock(tenantId: string, settings: ClockSettings) {
+  await ready();
+  const result = await client().from("clock_settings").upsert(
+    {
+      tenant_id: tenantId,
+      location_id: settings.locationId,
+      start_action: settings.startAction,
+      start_offset_min: settings.startOffsetMin,
+      end_action: settings.endAction,
+      end_offset_min: settings.endOffsetMin,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "tenant_id" },
+  );
+  if (result.error) fail(result.error, "שמירת שעון השבת נכשלה. הריצו את supabase/schema.sql");
+}
+
+function mapProgram(row: {
+  id: string;
+  tenant_id: string;
+  program_key: string;
+  name: string;
+  enabled: boolean;
+  device_ids: string;
+  start_date: string | null;
+  end_date: string | null;
+}): StoredProgram {
+  let deviceIds: string[] = [];
+  try {
+    const parsed = JSON.parse(row.device_ids || "[]") as unknown;
+    if (Array.isArray(parsed)) deviceIds = parsed.filter((item): item is string => typeof item === "string");
+  } catch {
+    deviceIds = [];
+  }
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    programKey: String(row.program_key),
+    name: String(row.name),
+    enabled: Boolean(row.enabled),
+    deviceIds,
+    startDate: row.start_date,
+    endDate: row.end_date,
+  };
+}
+
+export async function listPrograms(tenantId: string): Promise<StoredProgram[]> {
+  await ready();
+  const result = await client().from("programs").select("*").eq("tenant_id", tenantId).order("created_at");
+  if (result.error) fail(result.error, "לא ניתן לקרוא תוכניות. הריצו את supabase/schema.sql");
+  return (result.data ?? []).map((row) => mapProgram(row as never));
+}
+
+export async function upsertProgram(program: StoredProgram) {
+  await ready();
+  const result = await client().from("programs").upsert(
+    {
+      id: program.id,
+      tenant_id: program.tenantId,
+      program_key: program.programKey,
+      name: program.name,
+      enabled: program.enabled,
+      device_ids: JSON.stringify(program.deviceIds),
+      start_date: program.startDate,
+      end_date: program.endDate,
+      created_at: new Date().toISOString(),
+    },
+    { onConflict: "tenant_id,program_key" },
+  );
+  if (result.error) fail(result.error, "שמירת התוכנית נכשלה. הריצו את supabase/schema.sql");
+}
+
+export async function deleteProgram(tenantId: string, id: string) {
+  await ready();
+  const runs = await client().from("program_runs").delete().eq("program_id", id);
+  if (runs.error) fail(runs.error, "מחיקת התוכנית נכשלה");
+  const result = await client().from("programs").delete().eq("tenant_id", tenantId).eq("id", id).select("id");
+  if (result.error) fail(result.error, "מחיקת התוכנית נכשלה");
+  if (!result.data?.length) throw new HttpError(404, "התוכנית לא נמצאה");
+}
+
+export async function replaceProgramRuns(programId: string, runs: ProgramRunInput[]) {
+  await ready();
+  const removed = await client().from("program_runs").delete().eq("program_id", programId).is("done_at", null);
+  if (removed.error) fail(removed.error, "עדכון זמני התוכנית נכשל");
+  if (!runs.length) return;
+  const now = new Date().toISOString();
+  const inserted = await client()
+    .from("program_runs")
+    .insert(
+      runs.map((run) => ({
+        id: `run_${randomUUID()}`,
+        program_id: programId,
+        device_id: run.deviceId,
+        action: run.action,
+        run_at: run.runAt,
+        label: run.label.slice(0, 180),
+        created_at: now,
+        done_at: null,
+        attempts: 0,
+        detail: null,
+      })),
+    );
+  if (inserted.error) fail(inserted.error, "עדכון זמני התוכנית נכשל");
+}
+
+export async function listProgramRuns(tenantId: string): Promise<ProgramRun[]> {
+  await ready();
+  const programs = await client().from("programs").select("id").eq("tenant_id", tenantId);
+  if (programs.error) fail(programs.error, "לא ניתן לקרוא תוכניות");
+  const ids = (programs.data ?? []).map((row) => String(row.id));
+  if (!ids.length) return [];
+  const result = await client()
+    .from("program_runs")
+    .select("id, program_id, device_id, action, run_at, label, attempts")
+    .in("program_id", ids)
+    .is("done_at", null)
+    .order("run_at");
+  if (result.error) fail(result.error, "לא ניתן לקרוא זמני תוכנית");
+  return (result.data ?? []).map(mapRun);
+}
+
+export async function listDueProgramRuns(now = new Date().toISOString()): Promise<ProgramRun[]> {
+  await ready();
+  const result = await client()
+    .from("program_runs")
+    .select("id, program_id, device_id, action, run_at, label, attempts")
+    .is("done_at", null)
+    .lt("attempts", 8)
+    .lte("run_at", now)
+    .order("run_at")
+    .limit(20);
+  if (result.error) {
+    if (result.error.code === "42P01" || result.error.code === "PGRST205") return [];
+    fail(result.error, "קריאת תוכניות נכשלה");
+  }
+  return (result.data ?? []).map(mapRun);
+}
+
+export async function finishProgramRun(id: string) {
+  await ready();
+  const result = await client().from("program_runs").update({ done_at: new Date().toISOString() }).eq("id", id);
+  if (result.error) fail(result.error, "עדכון תוכנית נכשל");
+}
+
+export async function failProgramRun(id: string, detail: string) {
+  await ready();
+  const current = await client().from("program_runs").select("attempts").eq("id", id).maybeSingle();
+  if (current.error) fail(current.error, "עדכון תוכנית נכשל");
+  const attempts = Number(current.data?.attempts ?? 0) + 1;
+  const result = await client()
+    .from("program_runs")
+    .update({
+      attempts,
+      detail: detail.slice(0, 300),
+      done_at: attempts >= 8 ? new Date().toISOString() : null,
+    })
+    .eq("id", id);
+  if (result.error) fail(result.error, "עדכון תוכנית נכשל");
+}
+
+function mapRun(row: {
+  id: string;
+  program_id: string;
+  device_id: string;
+  action: string;
+  run_at: string;
+  label: string;
+  attempts: number | null;
+}): ProgramRun {
+  return {
+    id: String(row.id),
+    programId: String(row.program_id),
+    deviceId: String(row.device_id),
+    action: row.action === "OFF" ? "OFF" : "ON",
+    runAt: String(row.run_at),
+    label: String(row.label),
+    attempts: Number(row.attempts ?? 0),
+  };
 }
 
 export async function failSchedule(id: string, detail: string) {

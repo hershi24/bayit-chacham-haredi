@@ -43,14 +43,15 @@ test("reads the sockets and then the action that matches the relay", () => {
   if (off.type !== "read") return;
   assert.match(off.message, /להפעלה הקש אחד/);
   assert.equal(off.message.includes("לכיבוי"), false);
-  assert.equal(off.allowed, "134");
+  assert.equal(off.allowed, "1345");
+  assert.match(off.message, /לתוכניות הקש חמש/);
 
   const on = decideMenu([ac, light], { device: "2" });
   assert.equal(on.type, "read");
   if (on.type !== "read") return;
   assert.match(on.message, /לכיבוי הקש שתיים/);
   assert.equal(on.message.includes("להפעלה"), false);
-  assert.equal(on.allowed, "234");
+  assert.equal(on.allowed, "2345");
 });
 
 test("timer turns on for the requested minutes and the clock accepts four digits", () => {

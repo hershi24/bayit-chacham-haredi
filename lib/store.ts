@@ -1,3 +1,5 @@
+import type { ClockSettings } from "@/lib/hebrew/calendar";
+import type { ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { ScheduleKind } from "@/lib/schedules/types";
 import type { Role } from "@/lib/types";
 import { storageMode } from "@/lib/storage";
@@ -139,4 +141,59 @@ export async function finishSchedule(id: string) {
 export async function failSchedule(id: string, detail: string) {
   if (remoteOn()) return remote.failSchedule(id, detail);
   return sqlite.failSchedule(id, detail);
+}
+
+export async function listTenantDevices(tenantId: string) {
+  if (remoteOn()) return remote.listTenantDevices(tenantId);
+  return sqlite.listTenantDevices(tenantId);
+}
+
+export async function getClock(tenantId: string) {
+  if (remoteOn()) return remote.getClock(tenantId);
+  return sqlite.getClock(tenantId);
+}
+
+export async function saveClock(tenantId: string, settings: ClockSettings) {
+  if (remoteOn()) return remote.saveClock(tenantId, settings);
+  return sqlite.saveClock(tenantId, settings);
+}
+
+export async function listPrograms(tenantId: string) {
+  if (remoteOn()) return remote.listPrograms(tenantId);
+  return sqlite.listPrograms(tenantId);
+}
+
+export async function upsertProgram(program: StoredProgram) {
+  if (remoteOn()) return remote.upsertProgram(program);
+  return sqlite.upsertProgram(program);
+}
+
+export async function deleteProgram(tenantId: string, id: string) {
+  if (remoteOn()) return remote.deleteProgram(tenantId, id);
+  return sqlite.deleteProgram(tenantId, id);
+}
+
+export async function replaceProgramRuns(programId: string, runs: ProgramRunInput[]) {
+  if (remoteOn()) return remote.replaceProgramRuns(programId, runs);
+  return sqlite.replaceProgramRuns(programId, runs);
+}
+
+export async function listProgramRuns(tenantId: string) {
+  if (remoteOn()) return remote.listProgramRuns(tenantId);
+  return sqlite.listProgramRuns(tenantId);
+}
+
+export async function listDueProgramRuns(now = new Date().toISOString()) {
+  if (remoteOn()) return remote.listDueProgramRuns(now);
+  return sqlite.listDueProgramRuns(now);
+}
+
+export async function finishProgramRun(id: string) {
+  if (remoteOn()) return remote.finishProgramRun(id);
+  return sqlite.finishProgramRun(id);
+}
+
+export async function failProgramRun(id: string, detail: string) {
+  if (remoteOn()) return remote.failProgramRun(id, detail);
+  return sqlite.failProgramRun(id, detail);
 }

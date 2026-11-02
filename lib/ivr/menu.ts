@@ -60,6 +60,14 @@ function caller(phone: string | undefined) {
   return phone ? `טלפון ${normalizePhone(phone)}` : "ימות המשיח";
 }
 
+function sendCommand(deviceId: string, action: "ON" | "OFF", actor: string) {
+  void getBridge()
+    .command({ deviceId, action, source: "ivr", actor })
+    .catch((error: unknown) => {
+      console.error("[pikud] ivr command", error);
+    });
+}
+
 export async function handleMenu(request: Request) {
   const input = await incoming(request);
   if (input.values.hangup === "yes") return reply(input.format, "noop=hangup\n");
@@ -78,7 +86,9 @@ export async function handleMenu(request: Request) {
 
   const selected = Number(present(input.values.pikud_device));
   const chosen = Number.isInteger(selected) ? devices[selected - 1] : undefined;
-  if (chosen) {
+  // Refresh only while the caller is still choosing. Once a key asks to switch
+  // the socket, answer from the state already stored and send the command after the reply.
+  if (chosen && !present(input.values.pikud_action)) {
     try {
       const fresh = await getBridge().refresh(chosen.deviceId);
       if (fresh) {
@@ -101,51 +111,22 @@ export async function handleMenu(request: Request) {
   if (decision.type === "read") return reply(input.format, yemotRead(decision));
   if (decision.type === "say") return reply(input.format, yemotSpeak(decision.message));
 
-  const bridge = getBridge();
   const actor = caller(input.phone);
 
   if (decision.type === "turn") {
-    try {
-      const result = await bridge.command({
-        deviceId: decision.device.deviceId,
-        action: decision.action,
-        source: "ivr",
-        actor,
-      });
-      if (result.status === "SUCCESS") {
-        return reply(input.format, yemotSpeak(speechFor({ kind: decision.action === "ON" ? "on-success" : "off-success" })));
-      }
-      if (result.status === "SENT") return reply(input.format, yemotSpeak(speechFor({ kind: "pending" })));
-      if (result.status === "TIMEOUT") {
-        return reply(input.format, yemotSpeak(speechFor({ kind: "timeout", relayOn: result.device.relayOn })));
-      }
-      return reply(input.format, yemotSpeak(speechFor({ kind: "failed" })));
-    } catch (error) {
-      if (isWlteError(error) && (error.code === "DEVICE_OFFLINE" || error.status === 422)) {
-        return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
-      }
-      return reply(input.format, yemotSpeak(speechFor({ kind: "failed" })));
+    if (decision.device.connectivity === "OFFLINE") {
+      return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
     }
+    sendCommand(decision.device.deviceId, decision.action, actor);
+    return reply(input.format, yemotSpeak(speechFor({ kind: decision.action === "ON" ? "on-success" : "off-success" })));
   }
 
   if (decision.type === "timer") {
     if (decision.device.relayOn !== true) {
-      try {
-        const result = await bridge.command({
-          deviceId: decision.device.deviceId,
-          action: "ON",
-          source: "ivr",
-          actor,
-        });
-        if (result.status !== "SUCCESS" && result.status !== "SENT") {
-          return reply(input.format, yemotSpeak(speechFor({ kind: "failed" })));
-        }
-      } catch (error) {
-        if (isWlteError(error) && (error.code === "DEVICE_OFFLINE" || error.status === 422)) {
-          return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
-        }
-        return reply(input.format, yemotSpeak(speechFor({ kind: "failed" })));
+      if (decision.device.connectivity === "OFFLINE") {
+        return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
       }
+      sendCommand(decision.device.deviceId, "ON", actor);
     }
     await saveSchedule({
       deviceId: decision.device.deviceId,

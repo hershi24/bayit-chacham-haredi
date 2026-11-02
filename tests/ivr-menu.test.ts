@@ -4,6 +4,7 @@ import { devicesForPhone } from "../lib/access";
 import { decideMenu, type MenuDevice } from "../lib/ivr/flow";
 import { handleMenu } from "../lib/ivr/menu";
 import { cleanYemotText, yemotRead } from "../lib/ivr/yemot";
+import { getDevice, updateDeviceState } from "../lib/store";
 import { nextJerusalemClock } from "../lib/time";
 
 const ac: MenuDevice = { deviceId: "ac", name: "מזגן", relayOn: false, connectivity: "ONLINE" };
@@ -119,6 +120,52 @@ test("a hangup resend does not open the menu again", async () => {
     }),
   );
   assert.equal(await response.text(), "noop=hangup\n");
+});
+
+function phonePress(fields: Record<string, string>) {
+  return handleMenu(
+    new Request("http://127.0.0.1/api/ivr/menu", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
+      body: new URLSearchParams(fields),
+    }),
+  );
+}
+
+async function waitForRelay(deviceId: string, relayOn: boolean) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const device = await getDevice(deviceId);
+    if (device?.relayOn === relayOn) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal((await getDevice(deviceId))?.relayOn, relayOn);
+}
+
+test("the on and off keys are answered before the socket finishes switching", async () => {
+  const now = new Date().toISOString();
+  await updateDeviceState("rct063285302", { connectivity: "ONLINE", relayOn: false, stateUpdatedAt: now, lastError: null });
+  await updateDeviceState("rct074190118", { connectivity: "ONLINE", relayOn: true, stateUpdatedAt: now, lastError: null });
+  await updateDeviceState("rct063285417", { connectivity: "OFFLINE", relayOn: false, stateUpdatedAt: now, lastError: null });
+
+  const menu = await phonePress({ ApiPhone: "035551001", pikud_device: "1" });
+  assert.match(await menu.text(), /להפעלה הקש אחד/);
+
+  const started = Date.now();
+  const on = await phonePress({ ApiPhone: "035551001", pikud_device: "1", pikud_action: "1" });
+  const onText = await on.text();
+  assert.ok(Date.now() - started < 1500);
+  assert.match(onText, /השקע הופעל בהצלחה/);
+  assert.match(onText, /go_to_folder=hangup/);
+  assert.equal(onText.includes("אין הרשאה"), false);
+  await waitForRelay("rct063285302", true);
+
+  const off = await phonePress({ ApiPhone: "035551002", pikud_device: "1", pikud_action: "2" });
+  const offText = await off.text();
+  assert.match(offText, /השקע כובה בהצלחה/);
+  await waitForRelay("rct074190118", false);
+
+  const offline = await phonePress({ ApiPhone: "035551001", pikud_device: "2", pikud_action: "1" });
+  assert.match(await offline.text(), /השקע אינו מחובר כעת/);
 });
 
 test("a clock time that already passed is scheduled for tomorrow in Israel", () => {

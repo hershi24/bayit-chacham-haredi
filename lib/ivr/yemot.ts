@@ -1,5 +1,5 @@
 export function yemotSpeak(message: string): string {
-  return `id_list_message=t-${cleanYemotText(message)}\n`;
+  return `id_list_message=t-${cleanYemotText(message)}&go_to_folder=hangup\n`;
 }
 
 export function yemotRead(input: {

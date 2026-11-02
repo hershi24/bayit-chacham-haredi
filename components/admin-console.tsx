@@ -395,7 +395,7 @@ function LinkPanel({
   }
 
   const extension = ivr
-    ? ["type=api", `api_link=${origin}${ivr.paths.menu}`, "api_url_post=yes", `api_add_0=token=${ivr.token}`].join("\n")
+    ? ["type=api", `api_link=${origin}${ivr.paths.menu}`, "api_url_post=yes", `api_add_0=token=${ivr.token}`, "api_end_goto=hangup"].join("\n")
     : "";
   const rows = ivr
     ? [
@@ -436,7 +436,7 @@ function LinkPanel({
               מוגדר טוקן ברירת מחדל של פיתוח. החליפו את IVR_TOKEN לפני חיבור לקו טלפון אמיתי.
             </p>
           ) : null}
-          <p>מדביקים את ארבע השורות בשלוחה הראשית. הכתובת עצמה בלי סימן שאלה. הטוקן הוא <span className="font-mono" dir="ltr">IVR_TOKEN</span> מהשרת, בשורה <span className="font-mono" dir="ltr">api_add_0</span>. מפתח הניהול של ימות המשיח לא נכנס לכאן. ימות המשיח שולחת לבד את <span className="font-mono" dir="ltr">ApiPhone</span>, והמתקשר שומע רק את השקעים של הלקוח עם המספר הזה.</p>
+          <p>מדביקים את חמש השורות בשלוחה הראשית, זו שהשיחה נכנסת אליה. הטוקן בשורה <span className="font-mono" dir="ltr">api_add_0</span> הוא הערך של <span className="font-mono" dir="ltr">IVR_TOKEN</span> ברנדר. השורה <span className="font-mono" dir="ltr">api_end_goto=hangup</span> מנתקת בסיום, כדי שהשיחה לא תנסה להיכנס לתיקייה מעליה.</p>
           {extension ? (
             <div className="grid gap-1">
               <div className="flex items-center justify-between gap-2">

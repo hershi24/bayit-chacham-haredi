@@ -1,0 +1,181 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+import { devicesForPhone, normalizePhone } from "@/lib/access";
+import { loadConfig } from "@/lib/config";
+import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
+import { speechFor } from "@/lib/ivr/speech";
+import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
+import { listIvrTargets, saveSchedule } from "@/lib/store";
+import { nextJerusalemClock } from "@/lib/time";
+import { getBridge } from "@/lib/wlte/bridge";
+import { isWlteError } from "@/lib/wlte/errors";
+
+function authorized(token: string) {
+  const expected = loadConfig().ivrToken;
+  if (!token || !expected) return false;
+  const left = createHash("sha256").update(token).digest();
+  const right = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(left, right);
+}
+
+function bag(entries: Iterable<[string, string]>) {
+  const result: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (value.trim()) result[key.toLowerCase()] = value.trim();
+  }
+  return result;
+}
+
+function present(value: string | undefined) {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === "none" || trimmed === "null") return undefined;
+  return trimmed;
+}
+
+async function incoming(request: Request) {
+  const url = new URL(request.url);
+  const query = bag(url.searchParams.entries());
+  let body: Record<string, string> = {};
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    const type = request.headers.get("content-type") ?? "";
+    if (type.includes("application/json")) {
+      const json = (await request.json().catch(() => null)) as unknown;
+      if (json && typeof json === "object") {
+        body = bag(Object.entries(json as Record<string, unknown>).map(([key, value]) => [key, value == null ? "" : String(value)]));
+      }
+    } else if (type.includes("form")) {
+      const form = await request.formData();
+      body = bag(Array.from(form.entries()).map(([key, value]) => [key, typeof value === "string" ? value : ""]));
+    } else {
+      body = bag(new URLSearchParams(await request.text()).entries());
+    }
+  }
+  const values = { ...query, ...body };
+  const phone = values.phone || values.apiphone || values.caller || values.callerid;
+  const token = values.token || request.headers.get("x-ivr-token")?.trim() || "";
+  return { values, phone, token, format: values.format === "json" ? "json" : "yemot" } as const;
+}
+
+function reply(format: "json" | "yemot", body: string) {
+  if (format === "json") {
+    return Response.json({ body });
+  }
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+  });
+}
+
+function caller(phone: string | undefined) {
+  return phone ? `טלפון ${normalizePhone(phone)}` : "ימות המשיח";
+}
+
+export async function handleMenu(request: Request) {
+  const input = await incoming(request);
+  if (!authorized(input.token)) return reply(input.format, yemotSpeak(speechFor({ kind: "unauthorized" })));
+
+  if (!input.phone) return reply(input.format, yemotSpeak("לא זוהה מספר הטלפון"));
+  const devices: MenuDevice[] = devicesForPhone(await listIvrTargets(), input.phone)
+    .map((device) => ({
+      deviceId: device.deviceId,
+      name: device.name,
+      relayOn: device.relayOn,
+      connectivity: device.connectivity,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name, "he"))
+    .slice(0, 9);
+  if (!devices.length) return reply(input.format, yemotSpeak("המספר הזה לא משויך לשקע"));
+
+  const selected = Number(present(input.values.pikud_device));
+  const chosen = Number.isInteger(selected) ? devices[selected - 1] : undefined;
+  if (chosen) {
+    try {
+      const fresh = await getBridge().refresh(chosen.deviceId);
+      if (fresh) {
+        chosen.relayOn = fresh.relayOn;
+        chosen.connectivity = fresh.connectivity;
+        chosen.name = fresh.name || chosen.name;
+      }
+    } catch (error) {
+      if (isWlteError(error) && error.code === "DEVICE_OFFLINE") chosen.connectivity = "OFFLINE";
+    }
+  }
+
+  const decision = decideMenu(devices, {
+    device: present(input.values.pikud_device),
+    action: present(input.values.pikud_action),
+    minutes: present(input.values.pikud_minutes),
+    clock: present(input.values.pikud_clock),
+  });
+
+  if (decision.type === "read") return reply(input.format, yemotRead(decision));
+  if (decision.type === "say") return reply(input.format, yemotSpeak(decision.message));
+
+  const bridge = getBridge();
+  const actor = caller(input.phone);
+
+  if (decision.type === "turn") {
+    try {
+      const result = await bridge.command({
+        deviceId: decision.device.deviceId,
+        action: decision.action,
+        source: "ivr",
+        actor,
+      });
+      if (result.status === "SUCCESS") {
+        return reply(input.format, yemotSpeak(speechFor({ kind: decision.action === "ON" ? "on-success" : "off-success" })));
+      }
+      if (result.status === "SENT") return reply(input.format, yemotSpeak(speechFor({ kind: "pending" })));
+      if (result.status === "TIMEOUT") {
+        return reply(input.format, yemotSpeak(speechFor({ kind: "timeout", relayOn: result.device.relayOn })));
+      }
+      return reply(input.format, yemotSpeak(speechFor({ kind: "failed" })));
+    } catch (error) {
+      if (isWlteError(error) && (error.code === "DEVICE_OFFLINE" || error.status === 422)) {
+        return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
+      }
+      return reply(input.format, yemotSpeak(speechFor({ kind: "failed" })));
+    }
+  }
+
+  if (decision.type === "timer") {
+    if (decision.device.relayOn !== true) {
+      try {
+        const result = await bridge.command({
+          deviceId: decision.device.deviceId,
+          action: "ON",
+          source: "ivr",
+          actor,
+        });
+        if (result.status !== "SUCCESS" && result.status !== "SENT") {
+          return reply(input.format, yemotSpeak(speechFor({ kind: "failed" })));
+        }
+      } catch (error) {
+        if (isWlteError(error) && (error.code === "DEVICE_OFFLINE" || error.status === 422)) {
+          return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
+        }
+        return reply(input.format, yemotSpeak(speechFor({ kind: "failed" })));
+      }
+    }
+    await saveSchedule({
+      deviceId: decision.device.deviceId,
+      kind: "timer_off",
+      runAt: new Date(Date.now() + decision.minutes * 60_000).toISOString(),
+    });
+    const lead = decision.device.relayOn === true ? `${decision.device.name} פועל` : `${decision.device.name} הופעל`;
+    return reply(input.format, yemotSpeak(`${lead}, הוא יכבה בעוד ${decision.minutes} דקות`));
+  }
+
+  const when = nextJerusalemClock(decision.hour, decision.minute);
+  await saveSchedule({
+    deviceId: decision.device.deviceId,
+    kind: "later_on",
+    runAt: when.at.toISOString(),
+  });
+  const hour = String(decision.hour).padStart(2, "0");
+  const minute = String(decision.minute).padStart(2, "0");
+  return reply(
+    input.format,
+    yemotSpeak(`${decision.device.name} יופעל ${when.today ? "היום" : "מחר"} בשעה ${hour}:${minute}`),
+  );
+}

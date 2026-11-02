@@ -5,6 +5,7 @@ import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { HttpError } from "@/lib/http-error";
 import { hashPassword } from "@/lib/password";
+import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { presentDevice, type StatePatch } from "@/lib/store-sqlite";
 import type { AuditSource, AuditView, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
 import { isNewerIso } from "@/lib/wlte/parse";
@@ -575,4 +576,63 @@ export async function listAudit(user: { role: Role; tenantId: string | null }, l
     result: String(row.result),
     detail: row.detail == null ? null : String(row.detail),
   }));
+}
+
+export async function saveSchedule(input: { deviceId: string; kind: ScheduleKind; runAt: string }) {
+  await ready();
+  const removed = await client().from("schedules").delete().eq("device_id", input.deviceId).eq("kind", input.kind).is("done_at", null);
+  if (removed.error) fail(removed.error, "שמירת הטיימר נכשלה. הריצו את טבלת schedules בסופרבייס");
+  const inserted = await client().from("schedules").insert({
+    id: `sch_${randomUUID()}`,
+    device_id: input.deviceId,
+    kind: input.kind,
+    run_at: input.runAt,
+    created_at: new Date().toISOString(),
+    done_at: null,
+    attempts: 0,
+    detail: null,
+  });
+  if (inserted.error) fail(inserted.error, "שמירת הטיימר נכשלה. הריצו את טבלת schedules בסופרבייס");
+}
+
+export async function listDueSchedules(now = new Date().toISOString()): Promise<PendingSchedule[]> {
+  await ready();
+  const result = await client()
+    .from("schedules")
+    .select("id, device_id, kind, run_at, attempts")
+    .is("done_at", null)
+    .lt("attempts", 8)
+    .lte("run_at", now)
+    .order("run_at")
+    .limit(20);
+  if (result.error) fail(result.error, "קריאת טיימרים נכשלה");
+  return (result.data ?? []).map((row) => ({
+    id: String(row.id),
+    deviceId: String(row.device_id),
+    kind: row.kind === "later_on" ? "later_on" : "timer_off",
+    runAt: String(row.run_at),
+    attempts: Number(row.attempts ?? 0),
+  }));
+}
+
+export async function finishSchedule(id: string) {
+  await ready();
+  const result = await client().from("schedules").update({ done_at: new Date().toISOString() }).eq("id", id);
+  if (result.error) fail(result.error, "עדכון טיימר נכשל");
+}
+
+export async function failSchedule(id: string, detail: string) {
+  await ready();
+  const current = await client().from("schedules").select("attempts").eq("id", id).maybeSingle();
+  if (current.error) fail(current.error, "עדכון טיימר נכשל");
+  const attempts = Number(current.data?.attempts ?? 0) + 1;
+  const result = await client()
+    .from("schedules")
+    .update({
+      attempts,
+      detail: detail.slice(0, 300),
+      done_at: attempts >= 8 ? new Date().toISOString() : null,
+    })
+    .eq("id", id);
+  if (result.error) fail(result.error, "עדכון טיימר נכשל");
 }

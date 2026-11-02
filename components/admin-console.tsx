@@ -15,7 +15,7 @@ import type { BridgeStatus, DeviceView, TenantView, UserView } from "@/lib/types
 type IvrInfo = {
   token: string;
   defaultToken: boolean;
-  paths: { on: string; off: string; status: string };
+  paths: { menu: string; on: string; off: string; status: string };
 };
 
 export function AdminConsole() {
@@ -394,8 +394,10 @@ function LinkPanel({
     toast.success("הכתובת הועתקה");
   }
 
+  const menuUrl = ivr ? `${origin}${ivr.paths.menu}?token=${encodeURIComponent(ivr.token)}` : "";
   const rows = ivr
     ? [
+        ["שלוחה ראשית", menuUrl],
         ["הקשה 1 · הפעלה", url(ivr.paths.on)],
         ["הקשה 2 · כיבוי", url(ivr.paths.off)],
         ["הקשה 3 · מצב", url(ivr.paths.status)],
@@ -433,8 +435,7 @@ function LinkPanel({
               מוגדר טוקן ברירת מחדל של פיתוח. החליפו את IVR_TOKEN לפני חיבור לקו טלפון אמיתי.
             </p>
           ) : null}
-          <p>בכל שלוחה: <span className="font-mono" dir="ltr">type=api</span> ו-<span className="font-mono" dir="ltr">api_url_post=yes</span>. השרת מחזיר <span className="font-mono" dir="ltr">id_list_message</span> להקראה.</p>
-          <p>אפשר להשמיט את deviceId ולשלוח את מספר המתקשר כ-ApiPhone. המספר מזוהה מול הטלפון של הלקוח, אם יש לו שקע אחד.</p>
+          <p>בשלוחה הראשית: <span className="font-mono" dir="ltr">type=api</span> ו-<span className="font-mono" dir="ltr">api_url_post=yes</span>. מדביקים רק את הכתובת הראשית. המתקשר שומע רק את השקעים של הלקוח שהטלפון שלו תואם למספר שממנו התקשרו. אחר כך, לפי המצב: אחד להפעלה או שתיים לכיבוי, שלוש לטיימר מעכשיו, ארבע להפעלה בשעה מאוחרת.</p>
           {rows.map(([label, value]) => (
             <div key={label} className="grid gap-1">
               <div className="flex items-center justify-between gap-2">

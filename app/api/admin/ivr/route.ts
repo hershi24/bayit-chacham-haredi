@@ -11,6 +11,7 @@ export function GET() {
       token: config.ivrToken,
       defaultToken: config.ivrTokenIsDefault,
       paths: {
+        menu: "/api/ivr/menu",
         on: "/api/ivr/relay/on",
         off: "/api/ivr/relay/off",
         status: "/api/ivr/relay/status",

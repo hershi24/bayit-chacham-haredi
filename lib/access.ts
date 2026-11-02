@@ -4,6 +4,12 @@ export function normalizePhone(input: string): string {
   return digits;
 }
 
+export function devicesForPhone<T extends { phone: string | null }>(devices: T[], phone: string | undefined): T[] {
+  const caller = phone?.trim();
+  if (!caller) return [];
+  return devices.filter((device) => phonesMatch(device.phone, caller));
+}
+
 export function phonesMatch(stored: string | null | undefined, incoming: string): boolean {
   if (!stored) return false;
   const left = normalizePhone(stored);

@@ -4,6 +4,7 @@ import path from "node:path";
 import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { HttpError } from "@/lib/http-error";
 import { hashPassword } from "@/lib/password";
+import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import type {
   AuditSource,
   AuditView,
@@ -99,6 +100,16 @@ function migrate(database: DatabaseSync) {
       action TEXT NOT NULL,
       idempotency_key TEXT,
       result TEXT NOT NULL,
+      detail TEXT
+    );
+    CREATE TABLE IF NOT EXISTS schedules (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('timer_off', 'later_on')),
+      run_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      done_at TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
       detail TEXT
     );
   `);
@@ -506,4 +517,54 @@ export function listAudit(user: { role: Role; tenantId: string | null }, limit =
     result: text(row, "result"),
     detail: textOrNull(row, "detail"),
   }));
+}
+
+function mapSchedule(row: Row): PendingSchedule {
+  const kind = text(row, "kind");
+  return {
+    id: text(row, "id"),
+    deviceId: text(row, "device_id"),
+    kind: kind === "later_on" ? "later_on" : "timer_off",
+    runAt: text(row, "run_at"),
+    attempts: Number(row.attempts ?? 0),
+  };
+}
+
+export function saveSchedule(input: { deviceId: string; kind: ScheduleKind; runAt: string }) {
+  const now = new Date().toISOString();
+  const database = db();
+  database.prepare("DELETE FROM schedules WHERE device_id = ? AND kind = ? AND done_at IS NULL").run(input.deviceId, input.kind);
+  database.prepare(
+    "INSERT INTO schedules (id, device_id, kind, run_at, created_at, done_at, attempts, detail) VALUES (?, ?, ?, ?, ?, NULL, 0, NULL)",
+  ).run(`sch_${randomUUID()}`, input.deviceId, input.kind, input.runAt, now);
+}
+
+export function listDueSchedules(now = new Date().toISOString()): PendingSchedule[] {
+  const rows = db()
+    .prepare(
+      `SELECT id, device_id, kind, run_at, attempts
+       FROM schedules
+       WHERE done_at IS NULL AND attempts < 8 AND run_at <= ?
+       ORDER BY run_at
+       LIMIT 20`,
+    )
+    .all(now) as Row[];
+  return rows.map(mapSchedule);
+}
+
+export function finishSchedule(id: string) {
+  db().prepare("UPDATE schedules SET done_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+}
+
+export function failSchedule(id: string, detail: string) {
+  const now = new Date().toISOString();
+  db()
+    .prepare(
+      `UPDATE schedules
+       SET attempts = attempts + 1,
+           detail = ?,
+           done_at = CASE WHEN attempts + 1 >= 8 THEN ? ELSE done_at END
+       WHERE id = ?`,
+    )
+    .run(detail.slice(0, 300), now, id);
 }

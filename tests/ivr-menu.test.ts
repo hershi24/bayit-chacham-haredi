@@ -34,7 +34,7 @@ test("reads the sockets and then the action that matches the relay", () => {
   const spoken = yemotRead(list);
   assert.equal(spoken.startsWith("read=t-"), true);
   assert.equal(spoken.includes("=&"), false);
-  assert.match(spoken, /,NO,/);
+  assert.match(spoken, /,No,/);
   assert.equal(cleanYemotText("שקע-אולם. דולק"), "שקע אולם, דולק");
 
   const off = decideMenu([ac, light], { device: "1" });
@@ -72,6 +72,35 @@ test("timer turns on for the requested minutes and the clock accepts four digits
   const turnOff = decideMenu([light], { device: "1", action: "2" });
   assert.equal(turnOff.type, "turn");
   if (turnOff.type === "turn") assert.equal(turnOff.action, "OFF");
+});
+
+test("the phone menu does not ask for a token", async () => {
+  const response = await handleMenu(
+    new Request("http://127.0.0.1/api/ivr/menu", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ ApiPhone: "0500000000" }),
+    }),
+  );
+  const text = await response.text();
+  assert.equal(text.includes("אין הרשאה"), false);
+  assert.match(text, /המספר הזה לא משויך לשקע/);
+});
+
+test("a call from yemot does not need our token", async () => {
+  const response = await handleMenu(
+    new Request("http://127.0.0.1/api/ivr/menu", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": "yemot-core-api/1.0",
+      },
+      body: new URLSearchParams({ ApiPhone: "0500000000" }),
+    }),
+  );
+  const text = await response.text();
+  assert.equal(text.includes("אין הרשאה"), false);
+  assert.match(text, /המספר הזה לא משויך לשקע/);
 });
 
 test("a hangup resend does not open the menu again", async () => {

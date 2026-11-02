@@ -190,7 +190,7 @@ describe("IVR and tenants", () => {
     assert.equal(speechFor({ kind: "on-success" }), "השקע הופעל בהצלחה");
     assert.equal(speechFor({ kind: "status", relayOn: false }), "השקע כבוי כעת");
     assert.equal(speechFor({ kind: "status", relayOn: true }), "השקע פועל כעת");
-    assert.equal(yemotBody("השקע הופעל בהצלחה"), "id_list_message=t-השקע הופעל בהצלחה\n");
+    assert.equal(yemotBody("השקע הופעל בהצלחה"), "id_list_message=t-השקע הופעל בהצלחה&go_to_folder=hangup\n");
   });
 
   it("matches Israeli numbers and isolates tenants", () => {

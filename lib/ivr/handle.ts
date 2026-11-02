@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { normalizePhone, resolveDevice } from "@/lib/access";
 import { loadConfig } from "@/lib/config";
 import { speechFor, yemotBody, type IvrOutcome } from "@/lib/ivr/speech";
+import { isYemotCall } from "@/lib/ivr/yemot";
 import { listIvrTargets } from "@/lib/store";
 import { getBridge } from "@/lib/wlte/bridge";
 import { isWlteError } from "@/lib/wlte/errors";
@@ -64,7 +65,7 @@ function respond(format: "json" | "yemot", outcome: IvrOutcome, extra?: Record<s
 export async function handleIvr(request: Request, action: "on" | "off" | "status") {
   const input = await fields(request);
   const config = loadConfig();
-  if (!input.token || !secretsMatch(input.token, config.ivrToken)) {
+  if (!isYemotCall(request) && (!input.token || !secretsMatch(input.token, config.ivrToken))) {
     return respond(input.format, { kind: "unauthorized" }, undefined, 401);
   }
   if (input.hangup) {

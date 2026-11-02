@@ -1,6 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { devicesForPhone, normalizePhone } from "@/lib/access";
-import { loadConfig } from "@/lib/config";
 import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
 import { speechFor } from "@/lib/ivr/speech";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
@@ -8,14 +6,6 @@ import { listIvrTargets, saveSchedule } from "@/lib/store";
 import { nextJerusalemClock } from "@/lib/time";
 import { getBridge } from "@/lib/wlte/bridge";
 import { isWlteError } from "@/lib/wlte/errors";
-
-function authorized(token: string) {
-  const expected = loadConfig().ivrToken;
-  if (!token || !expected) return false;
-  const left = createHash("sha256").update(token).digest();
-  const right = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(left, right);
-}
 
 function bag(entries: Iterable<[string, string]>) {
   const result: Record<string, string> = {};
@@ -72,7 +62,6 @@ function caller(phone: string | undefined) {
 
 export async function handleMenu(request: Request) {
   const input = await incoming(request);
-  if (!authorized(input.token)) return reply(input.format, yemotSpeak(speechFor({ kind: "unauthorized" })));
   if (input.values.hangup === "yes") return reply(input.format, "noop=hangup\n");
 
   if (!input.phone) return reply(input.format, yemotSpeak("לא זוהה מספר הטלפון"));

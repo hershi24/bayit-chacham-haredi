@@ -1,5 +1,10 @@
+export function isYemotCall(request: Request) {
+  const agent = request.headers.get("user-agent") ?? "";
+  return agent.toLowerCase().startsWith("yemot-core-api");
+}
+
 export function yemotSpeak(message: string): string {
-  return `id_list_message=t-${cleanYemotText(message)}\n`;
+  return `id_list_message=t-${cleanYemotText(message)}&go_to_folder=hangup\n`;
 }
 
 export function yemotRead(input: {
@@ -12,11 +17,11 @@ export function yemotRead(input: {
 }): string {
   const capture = [
     input.field,
-    "",
+    "no",
     String(input.max),
     String(input.min),
     "8",
-    input.mode === "Number" || input.mode === "Time" ? input.mode : "NO",
+    input.mode === "Number" || input.mode === "Time" ? input.mode : "No",
     "yes",
     "",
     "",

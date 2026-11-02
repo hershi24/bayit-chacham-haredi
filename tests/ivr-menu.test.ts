@@ -1,11 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { devicesForPhone } from "../lib/access";
 import { decideMenu, type MenuDevice } from "../lib/ivr/flow";
 import { yemotRead } from "../lib/ivr/yemot";
 import { nextJerusalemClock } from "../lib/time";
 
 const ac: MenuDevice = { deviceId: "ac", name: "מזגן", relayOn: false, connectivity: "ONLINE" };
 const light: MenuDevice = { deviceId: "light", name: "תאורה", relayOn: true, connectivity: "ONLINE" };
+
+test("a caller only hears sockets stored on that phone number", () => {
+  const sockets = [
+    { phone: "0521111111", name: "מזגן" },
+    { phone: "0521111111", name: "תאורה" },
+    { phone: "0532222222", name: "דוד" },
+  ];
+  assert.deepEqual(
+    devicesForPhone(sockets, "972521111111").map((item) => item.name),
+    ["מזגן", "תאורה"],
+  );
+  assert.deepEqual(devicesForPhone(sockets, "0532222222").map((item) => item.name), ["דוד"]);
+  assert.equal(devicesForPhone(sockets, "0500000000").length, 0);
+  assert.equal(devicesForPhone(sockets, undefined).length, 0);
+});
 
 test("reads the sockets and then the action that matches the relay", () => {
   const list = decideMenu([ac, light], {});

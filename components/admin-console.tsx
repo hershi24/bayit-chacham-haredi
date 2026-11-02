@@ -435,7 +435,7 @@ function LinkPanel({
               מוגדר טוקן ברירת מחדל של פיתוח. החליפו את IVR_TOKEN לפני חיבור לקו טלפון אמיתי.
             </p>
           ) : null}
-          <p>בשלוחה הראשית: <span className="font-mono" dir="ltr">type=api</span> ו-<span className="font-mono" dir="ltr">api_url_post=yes</span>. מדביקים רק את הכתובת הראשית. השיחה מקריאה את השקעים, ואחר כך לפי המצב: אחד להפעלה או שתיים לכיבוי, שלוש לטיימר מעכשיו, ארבע להפעלה בשעה מאוחרת.</p>
+          <p>בשלוחה הראשית: <span className="font-mono" dir="ltr">type=api</span> ו-<span className="font-mono" dir="ltr">api_url_post=yes</span>. מדביקים רק את הכתובת הראשית. המתקשר שומע רק את השקעים של הלקוח שהטלפון שלו תואם למספר שממנו התקשרו. אחר כך, לפי המצב: אחד להפעלה או שתיים לכיבוי, שלוש לטיימר מעכשיו, ארבע להפעלה בשעה מאוחרת.</p>
           {rows.map(([label, value]) => (
             <div key={label} className="grid gap-1">
               <div className="flex items-center justify-between gap-2">

@@ -395,7 +395,7 @@ function LinkPanel({
   }
 
   const extension = ivr
-    ? ["type=api", `api_link=${origin}${ivr.paths.menu}`, "api_url_post=yes", `api_add_0=token=${ivr.token}`, "api_end_goto=hangup"].join("\n")
+    ? ["type=api", `api_link=${origin}${ivr.paths.menu}`, "api_url_post=yes"].join("\n")
     : "";
   const rows = ivr
     ? [
@@ -436,7 +436,7 @@ function LinkPanel({
               מוגדר טוקן ברירת מחדל של פיתוח. החליפו את IVR_TOKEN לפני חיבור לקו טלפון אמיתי.
             </p>
           ) : null}
-          <p>מדביקים את חמש השורות בשלוחה הראשית, זו שהשיחה נכנסת אליה. הטוקן בשורה <span className="font-mono" dir="ltr">api_add_0</span> הוא הערך של <span className="font-mono" dir="ltr">IVR_TOKEN</span> ברנדר. השורה <span className="font-mono" dir="ltr">api_end_goto=hangup</span> מנתקת בסיום, כדי שהשיחה לא תנסה להיכנס לתיקייה מעליה.</p>
+          <p>בשלוחה שהשיחה נכנסת אליה מדביקים רק את שלוש השורות. ימות המשיח מזהה את עצמה, ושולחת לבד את מספר המתקשר. אין להוסיף טוקן ואין להוסיף מעבר לתיקייה אחרת.</p>
           {extension ? (
             <div className="grid gap-1">
               <div className="flex items-center justify-between gap-2">

@@ -3,7 +3,7 @@ import { devicesForPhone, normalizePhone } from "@/lib/access";
 import { loadConfig } from "@/lib/config";
 import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
 import { speechFor } from "@/lib/ivr/speech";
-import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
+import { isYemotCall, yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
 import { listIvrTargets, saveSchedule } from "@/lib/store";
 import { nextJerusalemClock } from "@/lib/time";
 import { getBridge } from "@/lib/wlte/bridge";
@@ -72,7 +72,7 @@ function caller(phone: string | undefined) {
 
 export async function handleMenu(request: Request) {
   const input = await incoming(request);
-  if (!authorized(input.token)) return reply(input.format, yemotSpeak(speechFor({ kind: "unauthorized" })));
+  if (!isYemotCall(request) && !authorized(input.token)) return reply(input.format, yemotSpeak(speechFor({ kind: "unauthorized" })));
   if (input.values.hangup === "yes") return reply(input.format, "noop=hangup\n");
 
   if (!input.phone) return reply(input.format, yemotSpeak("לא זוהה מספר הטלפון"));

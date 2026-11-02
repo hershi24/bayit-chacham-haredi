@@ -4,7 +4,10 @@ import path from "node:path";
 import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { HttpError } from "@/lib/http-error";
 import { hashPassword } from "@/lib/password";
+import type { ClockSettings } from "@/lib/hebrew/calendar";
+import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
+import type { ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type {
   AuditSource,
   AuditView,
@@ -107,6 +110,39 @@ function migrate(database: DatabaseSync) {
       device_id TEXT NOT NULL,
       kind TEXT NOT NULL CHECK(kind IN ('timer_off', 'later_on')),
       run_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      done_at TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      detail TEXT
+    );
+    CREATE TABLE IF NOT EXISTS clock_settings (
+      tenant_id TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+      location_id TEXT NOT NULL,
+      start_action TEXT NOT NULL,
+      start_offset_min INTEGER NOT NULL,
+      end_action TEXT NOT NULL,
+      end_offset_min INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS programs (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      program_key TEXT NOT NULL,
+      name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      device_ids TEXT NOT NULL DEFAULT '[]',
+      start_date TEXT,
+      end_date TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE (tenant_id, program_key)
+    );
+    CREATE TABLE IF NOT EXISTS program_runs (
+      id TEXT PRIMARY KEY,
+      program_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      run_at TEXT NOT NULL,
+      label TEXT NOT NULL,
       created_at TEXT NOT NULL,
       done_at TEXT,
       attempts INTEGER NOT NULL DEFAULT 0,
@@ -567,4 +603,171 @@ export function failSchedule(id: string, detail: string) {
        WHERE id = ?`,
     )
     .run(detail.slice(0, 300), now, id);
+}
+
+export function listTenantDevices(tenantId: string): DeviceView[] {
+  return (db().prepare(`${deviceSelect()} WHERE d.tenant_id = ? ORDER BY d.name`).all(tenantId) as Row[]).map((row) =>
+    presentDevice(mapDevice(row)),
+  );
+}
+
+export function getClock(tenantId: string): ClockSettings {
+  const row = db().prepare("SELECT * FROM clock_settings WHERE tenant_id = ?").get(tenantId) as Row | undefined;
+  if (!row) return { ...DEFAULT_CLOCK };
+  return {
+    locationId: text(row, "location_id"),
+    startAction: text(row, "start_action") === "OFF" ? "OFF" : "ON",
+    startOffsetMin: Number(row.start_offset_min ?? 0),
+    endAction: text(row, "end_action") === "ON" ? "ON" : "OFF",
+    endOffsetMin: Number(row.end_offset_min ?? 0),
+  };
+}
+
+export function saveClock(tenantId: string, settings: ClockSettings) {
+  db()
+    .prepare(
+      `INSERT INTO clock_settings (
+        tenant_id, location_id, start_action, start_offset_min, end_action, end_offset_min, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(tenant_id) DO UPDATE SET
+        location_id = excluded.location_id,
+        start_action = excluded.start_action,
+        start_offset_min = excluded.start_offset_min,
+        end_action = excluded.end_action,
+        end_offset_min = excluded.end_offset_min,
+        updated_at = excluded.updated_at`,
+    )
+    .run(
+      tenantId,
+      settings.locationId,
+      settings.startAction,
+      settings.startOffsetMin,
+      settings.endAction,
+      settings.endOffsetMin,
+      new Date().toISOString(),
+    );
+}
+
+function mapProgram(row: Row): StoredProgram {
+  let deviceIds: string[] = [];
+  try {
+    const parsed = JSON.parse(text(row, "device_ids") || "[]") as unknown;
+    if (Array.isArray(parsed)) deviceIds = parsed.filter((item): item is string => typeof item === "string");
+  } catch {
+    deviceIds = [];
+  }
+  return {
+    id: text(row, "id"),
+    tenantId: text(row, "tenant_id"),
+    programKey: text(row, "program_key"),
+    name: text(row, "name"),
+    enabled: Number(row.enabled) === 1,
+    deviceIds,
+    startDate: textOrNull(row, "start_date"),
+    endDate: textOrNull(row, "end_date"),
+  };
+}
+
+export function listPrograms(tenantId: string): StoredProgram[] {
+  return (db().prepare("SELECT * FROM programs WHERE tenant_id = ? ORDER BY created_at").all(tenantId) as Row[]).map(mapProgram);
+}
+
+export function upsertProgram(program: StoredProgram) {
+  db()
+    .prepare(
+      `INSERT INTO programs (
+        id, tenant_id, program_key, name, enabled, device_ids, start_date, end_date, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(tenant_id, program_key) DO UPDATE SET
+        name = excluded.name,
+        enabled = excluded.enabled,
+        device_ids = excluded.device_ids,
+        start_date = excluded.start_date,
+        end_date = excluded.end_date`,
+    )
+    .run(
+      program.id,
+      program.tenantId,
+      program.programKey,
+      program.name,
+      program.enabled ? 1 : 0,
+      JSON.stringify(program.deviceIds),
+      program.startDate,
+      program.endDate,
+      new Date().toISOString(),
+    );
+}
+
+export function deleteProgram(tenantId: string, id: string) {
+  db().prepare("DELETE FROM program_runs WHERE program_id = ?").run(id);
+  const result = db().prepare("DELETE FROM programs WHERE tenant_id = ? AND id = ?").run(tenantId, id);
+  if (Number(result.changes) === 0) throw new HttpError(404, "התוכנית לא נמצאה");
+}
+
+export function replaceProgramRuns(programId: string, runs: ProgramRunInput[]) {
+  const database = db();
+  const now = new Date().toISOString();
+  database.prepare("DELETE FROM program_runs WHERE program_id = ? AND done_at IS NULL").run(programId);
+  const insert = database.prepare(
+    `INSERT INTO program_runs (
+      id, program_id, device_id, action, run_at, label, created_at, done_at, attempts, detail
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL)`,
+  );
+  for (const run of runs) {
+    insert.run(`run_${randomUUID()}`, programId, run.deviceId, run.action, run.runAt, run.label.slice(0, 180), now);
+  }
+}
+
+export function listProgramRuns(tenantId: string): ProgramRun[] {
+  const rows = db()
+    .prepare(
+      `SELECT r.* FROM program_runs r
+       JOIN programs p ON p.id = r.program_id
+       WHERE p.tenant_id = ? AND r.done_at IS NULL
+       ORDER BY r.run_at`,
+    )
+    .all(tenantId) as Row[];
+  return rows.map(mapRun);
+}
+
+export function listDueProgramRuns(now = new Date().toISOString()): ProgramRun[] {
+  const rows = db()
+    .prepare(
+      `SELECT id, program_id, device_id, action, run_at, label, attempts
+       FROM program_runs
+       WHERE done_at IS NULL AND attempts < 8 AND run_at <= ?
+       ORDER BY run_at
+       LIMIT 20`,
+    )
+    .all(now) as Row[];
+  return rows.map(mapRun);
+}
+
+export function finishProgramRun(id: string) {
+  db().prepare("UPDATE program_runs SET done_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+}
+
+export function failProgramRun(id: string, detail: string) {
+  const now = new Date().toISOString();
+  db()
+    .prepare(
+      `UPDATE program_runs
+       SET attempts = attempts + 1,
+           detail = ?,
+           done_at = CASE WHEN attempts + 1 >= 8 THEN ? ELSE done_at END
+       WHERE id = ?`,
+    )
+    .run(detail.slice(0, 300), now, id);
+}
+
+function mapRun(row: Row): ProgramRun {
+  return {
+    id: text(row, "id"),
+    programId: text(row, "program_id"),
+    deviceId: text(row, "device_id"),
+    action: text(row, "action") === "OFF" ? "OFF" : "ON",
+    runAt: text(row, "run_at"),
+    label: text(row, "label"),
+    attempts: Number(row.attempts ?? 0),
+  };
 }

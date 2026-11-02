@@ -1,4 +1,5 @@
-import { failSchedule, finishSchedule, listDueSchedules } from "@/lib/store";
+import { syncProgramsIfStale } from "@/lib/programs/sync";
+import { failProgramRun, failSchedule, finishProgramRun, finishSchedule, listDueProgramRuns, listDueSchedules } from "@/lib/store";
 import { getBridge } from "@/lib/wlte/bridge";
 
 const globalScheduler = globalThis as { __pikudScheduler?: boolean };
@@ -18,6 +19,11 @@ export function startScheduler() {
 }
 
 export async function runDueSchedules() {
+  try {
+    await syncProgramsIfStale();
+  } catch (error) {
+    console.error("[pikud] programs", error);
+  }
   const due = await listDueSchedules();
   const bridge = getBridge();
   for (const job of due) {
@@ -32,6 +38,20 @@ export async function runDueSchedules() {
       else await failSchedule(job.id, result.status);
     } catch (error) {
       await failSchedule(job.id, error instanceof Error ? error.message : "הפעולה נכשלה");
+    }
+  }
+  for (const job of await listDueProgramRuns()) {
+    try {
+      const result = await bridge.command({
+        deviceId: job.deviceId,
+        action: job.action,
+        source: "ivr",
+        actor: "תוכנית",
+      });
+      if (result.status === "SUCCESS" || result.status === "SENT") await finishProgramRun(job.id);
+      else await failProgramRun(job.id, result.status);
+    } catch (error) {
+      await failProgramRun(job.id, error instanceof Error ? error.message : "הפעולה נכשלה");
     }
   }
 }

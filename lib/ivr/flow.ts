@@ -119,32 +119,32 @@ function deviceMenu(device: MenuDevice): MenuRead {
   if (device.relayOn === true) {
     return {
       type: "read",
-      message: `${offline}${name} פועל כעת, לכיבוי הקש שתיים, לטיימר הקש שלוש, לשעון הקש ארבע`,
+      message: `${offline}${name} פועל כעת, לכיבוי הקש שתיים, לטיימר הקש שלוש, לשעון הקש ארבע, לתוכניות הקש חמש`,
       field: "pikud_action",
       min: 1,
       max: 1,
-      allowed: "234",
+      allowed: "2345",
       mode: "No",
     };
   }
   if (device.relayOn === false) {
     return {
       type: "read",
-      message: `${offline}${name} כבוי כעת, להפעלה הקש אחד, לטיימר הקש שלוש, לשעון הקש ארבע`,
+      message: `${offline}${name} כבוי כעת, להפעלה הקש אחד, לטיימר הקש שלוש, לשעון הקש ארבע, לתוכניות הקש חמש`,
       field: "pikud_action",
       min: 1,
       max: 1,
-      allowed: "134",
+      allowed: "1345",
       mode: "No",
     };
   }
   return {
     type: "read",
-    message: `${offline}מצב ${name} אינו ידוע, להפעלה הקש אחד, לכיבוי הקש שתיים, לטיימר הקש שלוש, לשעון הקש ארבע`,
-    field: "pikud_action",
-    min: 1,
-    max: 1,
-    allowed: "1234",
+      message: `${offline}מצב ${name} אינו ידוע, להפעלה הקש אחד, לכיבוי הקש שתיים, לטיימר הקש שלוש, לשעון הקש ארבע, לתוכניות הקש חמש`,
+      field: "pikud_action",
+      min: 1,
+      max: 1,
+      allowed: "12345",
     mode: "No",
   };
 }

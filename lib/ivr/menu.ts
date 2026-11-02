@@ -1,5 +1,6 @@
 import { devicesForPhone, normalizePhone } from "@/lib/access";
 import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
+import { answerPrograms } from "@/lib/ivr/programs";
 import { speechFor } from "@/lib/ivr/speech";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
 import { listIvrTargets, saveSchedule } from "@/lib/store";
@@ -99,6 +100,12 @@ export async function handleMenu(request: Request) {
     } catch (error) {
       if (isWlteError(error) && error.code === "DEVICE_OFFLINE") chosen.connectivity = "OFFLINE";
     }
+  }
+
+  if (chosen && present(input.values.pikud_action) === "5") {
+    const answered = await answerPrograms(chosen.deviceId, present(input.values.pikud_program));
+    if (answered.type === "read") return reply(input.format, yemotRead(answered));
+    return reply(input.format, yemotSpeak(answered.message));
   }
 
   const decision = decideMenu(devices, {

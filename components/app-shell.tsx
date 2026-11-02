@@ -10,6 +10,7 @@ import type { SessionUser } from "@/lib/types";
 
 const links = [
   { href: "/", label: "לוח שקעים" },
+  { href: "/programs", label: "תוכניות" },
   { href: "/audit", label: "יומן פעולות" },
 ];
 

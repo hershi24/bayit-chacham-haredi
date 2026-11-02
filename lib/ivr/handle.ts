@@ -68,7 +68,7 @@ export async function handleIvr(request: Request, action: "on" | "off" | "status
     return respond(input.format, { kind: "unauthorized" }, undefined, 401);
   }
 
-  const resolved = resolveDevice(listIvrTargets(), { deviceId: input.deviceId, phone: input.phone });
+  const resolved = resolveDevice(await listIvrTargets(), { deviceId: input.deviceId, phone: input.phone });
   if (!resolved.ok) {
     const kind = resolved.reason === "ambiguous" ? "ambiguous" : resolved.reason === "missing" ? "missing" : "not-found";
     return respond(input.format, { kind }, undefined, kind === "not-found" ? 404 : 400);

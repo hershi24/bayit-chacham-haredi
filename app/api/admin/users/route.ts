@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export function GET() {
   return withErrors(async () => {
     requireAdmin(await requireUser());
-    return Response.json({ users: listUsers() });
+    return Response.json({ users: await listUsers() });
   });
 }
 
@@ -19,13 +19,13 @@ export function POST(request: Request) {
     if (body.role !== "admin" && body.role !== "operator") {
       throw new HttpError(400, "תפקיד לא מוכר");
     }
-    createUser({
+    await createUser({
       username: cleanUsername(body.username),
       name: cleanName(body.name, "שם לתצוגה"),
       password: cleanPassword(body.password),
       role: body.role,
       tenantId: typeof body.tenantId === "string" && body.tenantId ? body.tenantId : null,
     });
-    return Response.json({ users: listUsers() }, { status: 201 });
+    return Response.json({ users: await listUsers() }, { status: 201 });
   });
 }

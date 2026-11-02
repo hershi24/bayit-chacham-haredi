@@ -10,7 +10,7 @@ export function GET() {
   return withErrors(async () => {
     const user = await requireUser();
     requireAdmin(user);
-    return Response.json({ devices: listDevices(user) });
+    return Response.json({ devices: await listDevices(user) });
   });
 }
 
@@ -22,8 +22,8 @@ export function POST(request: Request) {
     if (typeof body.tenantId !== "string" || !body.tenantId) throw new HttpError(400, "יש לבחור לקוח");
     const deviceId = cleanDeviceId(body.deviceId);
     const name = cleanName(body.name, "שם השקע");
-    createDevice({ deviceId, name, tenantId: body.tenantId });
-    getBridge().registerDevice(deviceId, name);
-    return Response.json({ devices: listDevices(user) }, { status: 201 });
+    await createDevice({ deviceId, name, tenantId: body.tenantId });
+    await getBridge().registerDevice(deviceId, name);
+    return Response.json({ devices: await listDevices(user) }, { status: 201 });
   });
 }

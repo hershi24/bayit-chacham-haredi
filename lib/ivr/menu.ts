@@ -73,6 +73,7 @@ function caller(phone: string | undefined) {
 export async function handleMenu(request: Request) {
   const input = await incoming(request);
   if (!authorized(input.token)) return reply(input.format, yemotSpeak(speechFor({ kind: "unauthorized" })));
+  if (input.values.hangup === "yes") return reply(input.format, "noop=hangup\n");
 
   if (!input.phone) return reply(input.format, yemotSpeak("לא זוהה מספר הטלפון"));
   const devices: MenuDevice[] = devicesForPhone(await listIvrTargets(), input.phone)

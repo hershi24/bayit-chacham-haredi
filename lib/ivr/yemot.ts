@@ -16,7 +16,7 @@ export function yemotRead(input: {
     String(input.max),
     String(input.min),
     "8",
-    input.mode ?? "No",
+    input.mode === "Number" || input.mode === "Time" ? input.mode : "NO",
     "yes",
     "",
     "",
@@ -31,5 +31,5 @@ export function yemotRead(input: {
 }
 
 export function cleanYemotText(message: string): string {
-  return message.replace(/[\r\n=&]/g, " ").replace(/\.+/g, ",").replace(/\s+/g, " ").trim();
+  return message.replace(/[\r\n=&-]/g, " ").replace(/\.+/g, ",").replace(/\s+/g, " ").trim();
 }

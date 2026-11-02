@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { devicesForPhone } from "../lib/access";
 import { decideMenu, type MenuDevice } from "../lib/ivr/flow";
-import { yemotRead } from "../lib/ivr/yemot";
+import { handleMenu } from "../lib/ivr/menu";
+import { cleanYemotText, yemotRead } from "../lib/ivr/yemot";
 import { nextJerusalemClock } from "../lib/time";
 
 const ac: MenuDevice = { deviceId: "ac", name: "מזגן", relayOn: false, connectivity: "ONLINE" };
@@ -30,8 +31,11 @@ test("reads the sockets and then the action that matches the relay", () => {
   assert.match(list.message, /למזגן הקש אחד/);
   assert.match(list.message, /לתאורה הקש שתיים/);
   assert.equal(list.allowed, "12");
-  assert.equal(yemotRead(list).startsWith("read=t-"), true);
-  assert.equal(yemotRead(list).includes("=&"), false);
+  const spoken = yemotRead(list);
+  assert.equal(spoken.startsWith("read=t-"), true);
+  assert.equal(spoken.includes("=&"), false);
+  assert.match(spoken, /,NO,/);
+  assert.equal(cleanYemotText("שקע-אולם. דולק"), "שקע אולם, דולק");
 
   const off = decideMenu([ac, light], { device: "1" });
   assert.equal(off.type, "read");
@@ -68,6 +72,24 @@ test("timer turns on for the requested minutes and the clock accepts four digits
   const turnOff = decideMenu([light], { device: "1", action: "2" });
   assert.equal(turnOff.type, "turn");
   if (turnOff.type === "turn") assert.equal(turnOff.action, "OFF");
+});
+
+test("a hangup resend does not open the menu again", async () => {
+  const body = new URLSearchParams({
+    token: "dev-ivr-7f3a",
+    hangup: "yes",
+    ApiPhone: "035551001",
+    pikud_device: "1",
+    pikud_action: "1",
+  });
+  const response = await handleMenu(
+    new Request("http://127.0.0.1/api/ivr/menu", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+    }),
+  );
+  assert.equal(await response.text(), "noop=hangup\n");
 });
 
 test("a clock time that already passed is scheduled for tomorrow in Israel", () => {

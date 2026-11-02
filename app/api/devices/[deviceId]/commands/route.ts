@@ -11,7 +11,7 @@ export function POST(request: Request, context: { params: Promise<{ deviceId: st
   return withErrors(async () => {
     const user = await requireUser();
     const { deviceId } = await context.params;
-    const device = getDevice(deviceId);
+    const device = await getDevice(deviceId);
     if (!device) throw new HttpError(404, "השקע לא נמצא");
     if (!canAccessDevice(user, device.tenantId)) throw new HttpError(403, "אין הרשאה לשקע הזה");
     const body = await readJson(request);

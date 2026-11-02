@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export function GET() {
   return withErrors(async () => {
     requireAdmin(await requireUser());
-    return Response.json({ tenants: listTenants() });
+    return Response.json({ tenants: await listTenants() });
   });
 }
 
@@ -17,7 +17,7 @@ export function POST(request: Request) {
     requireAdmin(await requireUser());
     const body = await readJson(request);
     const phone = cleanPhone(body.phone);
-    const tenant = createTenant({
+    const tenant = await createTenant({
       name: cleanName(body.name, "שם הלקוח"),
       phone: phone ? normalizePhone(phone) : null,
     });

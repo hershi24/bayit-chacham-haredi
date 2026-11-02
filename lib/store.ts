@@ -1,3 +1,4 @@
+import type { ScheduleKind } from "@/lib/schedules/types";
 import type { Role } from "@/lib/types";
 import { storageMode } from "@/lib/storage";
 import * as remote from "@/lib/store-supabase";
@@ -118,4 +119,24 @@ export async function addAudit(entry: Parameters<typeof sqlite.addAudit>[0]) {
 export async function listAudit(user: { role: Role; tenantId: string | null }, limit = 100) {
   if (remoteOn()) return remote.listAudit(user, limit);
   return sqlite.listAudit(user, limit);
+}
+
+export async function saveSchedule(input: { deviceId: string; kind: ScheduleKind; runAt: string }) {
+  if (remoteOn()) return remote.saveSchedule(input);
+  return sqlite.saveSchedule(input);
+}
+
+export async function listDueSchedules(now = new Date().toISOString()) {
+  if (remoteOn()) return remote.listDueSchedules(now);
+  return sqlite.listDueSchedules(now);
+}
+
+export async function finishSchedule(id: string) {
+  if (remoteOn()) return remote.finishSchedule(id);
+  return sqlite.finishSchedule(id);
+}
+
+export async function failSchedule(id: string, detail: string) {
+  if (remoteOn()) return remote.failSchedule(id, detail);
+  return sqlite.failSchedule(id, detail);
 }

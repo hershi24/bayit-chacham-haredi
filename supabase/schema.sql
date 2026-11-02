@@ -63,11 +63,25 @@ create index if not exists users_tenant_idx on users (tenant_id);
 create index if not exists sessions_user_idx on sessions (user_id);
 create index if not exists audit_log_at_idx on audit_log (at desc);
 
+create table if not exists schedules (
+  id text primary key,
+  device_id text not null,
+  kind text not null check (kind in ('timer_off', 'later_on')),
+  run_at text not null,
+  created_at text not null,
+  done_at text,
+  attempts integer not null default 0,
+  detail text
+);
+
+create index if not exists schedules_due_idx on schedules (run_at);
+
 alter table tenants enable row level security;
 alter table users enable row level security;
 alter table devices enable row level security;
 alter table device_state enable row level security;
 alter table sessions enable row level security;
 alter table audit_log enable row level security;
+alter table schedules enable row level security;
 
-revoke all on table tenants, users, devices, device_state, sessions, audit_log from anon, authenticated;
+revoke all on table tenants, users, devices, device_state, sessions, audit_log, schedules from anon, authenticated;

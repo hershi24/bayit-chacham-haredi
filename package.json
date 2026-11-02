@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 --port 38471",
     "build": "next build",
-    "start": "next start --hostname 0.0.0.0 --port 38471",
+    "start": "node scripts/start.mjs",
     "lint": "eslint",
     "test": "node --import tsx --test tests/*.test.ts"
   },

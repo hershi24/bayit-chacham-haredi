@@ -47,7 +47,7 @@ async function fields(request: Request) {
   const phone = merged.phone || merged.apiphone || merged.caller || merged.callerid;
   const token = merged.token || headerToken;
   const format = merged.format === "json" ? "json" : "yemot";
-  return { deviceId, phone, token, format: format as "json" | "yemot" };
+  return { deviceId, phone, token, hangup: merged.hangup === "yes", format: format as "json" | "yemot" };
 }
 
 function respond(format: "json" | "yemot", outcome: IvrOutcome, extra?: Record<string, unknown>, jsonStatus = 200) {
@@ -66,6 +66,12 @@ export async function handleIvr(request: Request, action: "on" | "off" | "status
   const config = loadConfig();
   if (!input.token || !secretsMatch(input.token, config.ivrToken)) {
     return respond(input.format, { kind: "unauthorized" }, undefined, 401);
+  }
+  if (input.hangup) {
+    return new Response("noop=hangup\n", {
+      status: 200,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+    });
   }
 
   const resolved = resolveDevice(await listIvrTargets(), { deviceId: input.deviceId, phone: input.phone });

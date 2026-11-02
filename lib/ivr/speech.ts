@@ -43,6 +43,6 @@ export function speechFor(outcome: IvrOutcome): string {
 }
 
 export function yemotBody(speech: string): string {
-  const cleaned = speech.replace(/[\r\n&=]/g, " ").trim();
+  const cleaned = speech.replace(/[\r\n=&.-]/g, " ").replace(/\s+/g, " ").trim();
   return `id_list_message=t-${cleaned}\n`;
 }

@@ -394,10 +394,11 @@ function LinkPanel({
     toast.success("הכתובת הועתקה");
   }
 
-  const menuUrl = ivr ? `${origin}${ivr.paths.menu}?token=${encodeURIComponent(ivr.token)}` : "";
+  const extension = ivr
+    ? ["type=api", `api_link=${origin}${ivr.paths.menu}`, "api_url_post=yes", `api_add_0=token=${ivr.token}`].join("\n")
+    : "";
   const rows = ivr
     ? [
-        ["שלוחה ראשית", menuUrl],
         ["הקשה 1 · הפעלה", url(ivr.paths.on)],
         ["הקשה 2 · כיבוי", url(ivr.paths.off)],
         ["הקשה 3 · מצב", url(ivr.paths.status)],
@@ -435,7 +436,20 @@ function LinkPanel({
               מוגדר טוקן ברירת מחדל של פיתוח. החליפו את IVR_TOKEN לפני חיבור לקו טלפון אמיתי.
             </p>
           ) : null}
-          <p>בשלוחה הראשית: <span className="font-mono" dir="ltr">type=api</span> ו-<span className="font-mono" dir="ltr">api_url_post=yes</span>. מדביקים רק את הכתובת הראשית. המתקשר שומע רק את השקעים של הלקוח שהטלפון שלו תואם למספר שממנו התקשרו. אחר כך, לפי המצב: אחד להפעלה או שתיים לכיבוי, שלוש לטיימר מעכשיו, ארבע להפעלה בשעה מאוחרת.</p>
+          <p>מדביקים את ארבע השורות בשלוחה הראשית. הכתובת עצמה בלי סימן שאלה. הטוקן הוא <span className="font-mono" dir="ltr">IVR_TOKEN</span> מהשרת, בשורה <span className="font-mono" dir="ltr">api_add_0</span>. מפתח הניהול של ימות המשיח לא נכנס לכאן. ימות המשיח שולחת לבד את <span className="font-mono" dir="ltr">ApiPhone</span>, והמתקשר שומע רק את השקעים של הלקוח עם המספר הזה.</p>
+          {extension ? (
+            <div className="grid gap-1">
+              <div className="flex items-center justify-between gap-2">
+                <span>שלוחה ראשית</span>
+                <Button type="button" size="sm" variant="outline" onClick={() => void copy(extension)}>
+                  העתקה
+                </Button>
+              </div>
+              <pre className="overflow-x-auto rounded-lg bg-muted px-2 py-1 font-mono text-xs" dir="ltr">
+                {extension}
+              </pre>
+            </div>
+          ) : null}
           {rows.map(([label, value]) => (
             <div key={label} className="grid gap-1">
               <div className="flex items-center justify-between gap-2">

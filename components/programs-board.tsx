@@ -80,10 +80,15 @@ type Draft = {
 type Selection = { id: string | null; name: string; days: string[] };
 
 const WEEKDAYS = ["א", "ב", "ג", "ד", "ה", "ו", "שבת"];
+
+function dayWash(weekday: number) {
+  if (weekday === 5) return "bg-[#fbf6ee] dark:bg-[#2a261f]";
+  if (weekday === 6) return "bg-[#f2f5fb] dark:bg-[#1a2330]";
+  return "bg-[#fbfbfc] dark:bg-[#1c1c1e]";
+}
 const WEEKDAY_CHIPS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "שבת"];
 const DAY_NAMES = ["יום ראשון", "יום שני", "יום שלישי", "יום רביעי", "יום חמישי", "יום שישי", "שבת"];
 const BAR_COLORS = ["#d97706", "#0284c7", "#059669", "#7c3aed", "#e11d48", "#0f766e"];
-const TINTS = ["bg-amber-500/15", "bg-sky-500/15", "bg-emerald-500/15", "bg-violet-500/15"];
 const fieldClass =
   "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
@@ -559,10 +564,6 @@ export function ProgramsBoard() {
             </div>
           ))}
           {board.month.days.map((day) => {
-            const pickedIndex = board.programs.findIndex((item) => item.days.includes(day.date));
-            const weekIndex = board.programs.findIndex((item) => item.weekdays.includes(day.weekday));
-            const programIndex = pickedIndex >= 0 ? pickedIndex : weekIndex;
-            const program = programIndex >= 0 ? board.programs[programIndex] : undefined;
             const chosen = selecting?.days.includes(day.date) ?? false;
             const clocks = clocksByDay.get(day.date) ?? [];
             return (
@@ -570,9 +571,9 @@ export function ProgramsBoard() {
                 key={day.date}
                 data-date={day.date}
                 className={cn(
-                  "flex min-h-0 flex-col gap-px overflow-hidden bg-card p-0.5 text-[10px] leading-[1.15] sm:min-h-32 sm:gap-0.5 sm:p-1.5 sm:text-[11px] sm:leading-tight",
-                  !day.inMonth && "bg-muted/50 text-muted-foreground",
-                  program && TINTS[programIndex % TINTS.length],
+                  "flex min-h-0 flex-col gap-px overflow-hidden p-0.5 text-[10px] leading-[1.15] sm:min-h-32 sm:gap-0.5 sm:p-1.5 sm:text-[11px] sm:leading-tight",
+                  dayWash(day.weekday),
+                  !day.inMonth && "text-muted-foreground",
                   chosen && "ring-2 ring-primary ring-inset",
                   selecting && "cursor-pointer",
                 )}

@@ -56,20 +56,22 @@ export function looseId(tenantId: string) {
 }
 
 function runsForWeekdays(program: StoredProgram, allowed: Set<string>, now: Date) {
-  if (!program.weekdays.length || (!program.onTime && !program.offTime)) return [];
+  if (!program.weekdays.length || !program.slots.length) return [];
   const clocks: DayClock[] = [];
   let day = israelDate(now);
   for (let index = 0; index < 84; index += 1) {
     if (program.weekdays.includes(weekdayOf(day))) {
-      clocks.push({
-        id: program.id,
-        tenantId: program.tenantId,
-        programId: program.id,
-        day,
-        onTime: program.onTime,
-        offTime: program.offTime,
-        deviceIds: program.deviceIds,
-      });
+      for (const slot of program.slots) {
+        clocks.push({
+          id: program.id,
+          tenantId: program.tenantId,
+          programId: program.id,
+          day,
+          onTime: slot.onTime,
+          offTime: slot.offTime,
+          deviceIds: program.deviceIds,
+        });
+      }
     }
     day = shiftDate(day, 1);
   }

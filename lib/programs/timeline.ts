@@ -18,6 +18,7 @@ export type TimelineProgram = {
   weekdays: number[];
   onTime: string | null;
   offTime: string | null;
+  slots?: Array<{ onTime: string | null; offTime: string | null }>;
   deviceIds: string[];
 };
 
@@ -130,21 +131,64 @@ export function dayBars(date: string, clocks: TimelineClock[], programs: Timelin
   const previousWeekday = weekdayOf(previous);
   for (const program of programs) {
     if (!program.weekdays.length) continue;
-    const shared = {
-      key: program.id,
-      source: "program" as const,
-      sourceId: program.id,
-      deviceIds: program.deviceIds,
-      name: program.name,
-      muted: !program.enabled,
-      on: minutes(program.onTime),
-      off: minutes(program.offTime),
-    };
-    if (program.weekdays.includes(weekday)) pushSpan(bars, { ...shared, portion: "same" });
-    if (program.weekdays.includes(previousWeekday)) pushSpan(bars, { ...shared, portion: "next" });
+    const offsets = [
+      ...(program.weekdays.includes(previousWeekday) ? [-1440] : []),
+      ...(program.weekdays.includes(weekday) ? [0] : []),
+    ];
+    programSpans(slotsOf(program), offsets).forEach(([start, end], index) => {
+      const title = `${program.name} ${formatMin(start)}–${formatMin(end)}`;
+      for (const deviceId of program.deviceIds) {
+        bars.push({
+          key: `${program.id}:${index}:${deviceId}`,
+          deviceId,
+          name: program.name,
+          start,
+          end,
+          muted: !program.enabled,
+          title,
+          source: "program",
+          sourceId: program.id,
+        });
+      }
+    });
   }
 
   return bars;
+}
+
+function slotsOf(program: TimelineProgram) {
+  if (program.slots?.length) return program.slots;
+  return program.onTime || program.offTime ? [{ onTime: program.onTime, offTime: program.offTime }] : [];
+}
+
+function programSpans(slots: Array<{ onTime: string | null; offTime: string | null }>, offsets: number[]) {
+  const events: Array<{ at: number; on: boolean }> = [];
+  for (const offset of offsets) {
+    for (const slot of slots) {
+      const on = minutes(slot.onTime);
+      const off = minutes(slot.offTime);
+      if (on != null) events.push({ at: offset + on, on: true });
+      if (off != null) events.push({ at: offset + off + (on != null && off <= on ? 1440 : 0), on: false });
+    }
+  }
+  events.sort((left, right) => left.at - right.at || Number(left.on) - Number(right.on));
+  const offOnly = events.every((event) => !event.on);
+  const spans: Array<[number, number]> = [];
+  let since: number | null = null;
+  events.forEach((event, index) => {
+    if (event.on) {
+      since ??= event.at;
+    } else if (since != null) {
+      spans.push([since, event.at]);
+      since = null;
+    } else if (offOnly || index === 0) {
+      spans.push([index > 0 ? events[index - 1].at : -Infinity, event.at]);
+    }
+  });
+  if (since != null) spans.push([since, 1440]);
+  return spans
+    .map(([start, end]): [number, number] => [Math.max(0, start), Math.min(1440, end)])
+    .filter(([start, end]) => end > start);
 }
 
 export function laneBars(bars: DayBar[]): Array<DayBar & { lane: number }> {

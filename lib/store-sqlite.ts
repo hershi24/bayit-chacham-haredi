@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword } from "@/lib/password";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
+import { parseSlots } from "@/lib/programs/slots";
 import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type {
   AuditSource,
@@ -92,6 +93,7 @@ function ensureDayClocks(database: DatabaseSync) {
   addColumn(database, "weekdays", "weekdays TEXT NOT NULL DEFAULT '[]'");
   addColumn(database, "on_time", "on_time TEXT");
   addColumn(database, "off_time", "off_time TEXT");
+  addColumn(database, "slots", "slots TEXT NOT NULL DEFAULT '[]'");
   database.exec(`
     CREATE TABLE IF NOT EXISTS clocks (
       id TEXT PRIMARY KEY,
@@ -980,6 +982,7 @@ function mapProgram(row: Row): StoredProgram {
     weekdays: jsonWeekdays(row),
     onTime: textOrNull(row, "on_time"),
     offTime: textOrNull(row, "off_time"),
+    slots: parseSlots(row.slots, textOrNull(row, "on_time"), textOrNull(row, "off_time")),
   };
 }
 
@@ -991,8 +994,8 @@ export function upsertProgram(program: StoredProgram) {
   db()
     .prepare(
       `INSERT INTO programs (
-        id, tenant_id, program_key, name, enabled, device_ids, start_date, end_date, days, weekdays, on_time, off_time, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, tenant_id, program_key, name, enabled, device_ids, start_date, end_date, days, weekdays, on_time, off_time, slots, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(tenant_id, program_key) DO UPDATE SET
         name = excluded.name,
         enabled = excluded.enabled,
@@ -1002,7 +1005,8 @@ export function upsertProgram(program: StoredProgram) {
         days = excluded.days,
         weekdays = excluded.weekdays,
         on_time = excluded.on_time,
-        off_time = excluded.off_time`,
+        off_time = excluded.off_time,
+        slots = excluded.slots`,
     )
     .run(
       program.id,
@@ -1017,6 +1021,7 @@ export function upsertProgram(program: StoredProgram) {
       JSON.stringify(program.weekdays ?? []),
       program.onTime,
       program.offTime,
+      JSON.stringify(program.slots ?? []),
       new Date().toISOString(),
     );
 }

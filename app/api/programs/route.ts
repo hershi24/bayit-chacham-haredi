@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { clampClock } from "@/lib/hebrew/calendar";
 import { HttpError } from "@/lib/http-error";
 import { programId, syncTenantPrograms } from "@/lib/programs/sync";
-import type { StoredProgram } from "@/lib/programs/types";
+import { maxSlots, sortSlots } from "@/lib/programs/slots";
+import type { ProgramSlot, StoredProgram } from "@/lib/programs/types";
 import { cleanWeekdays } from "@/lib/programs/weekdays";
 import { programsPayload } from "@/lib/programs/view";
 import { requireUser, withErrors } from "@/lib/session";
@@ -193,9 +194,7 @@ async function saveRepeatAction(user: SessionUser, tenantId: string, body: Recor
   if (!name) throw new HttpError(400, "תנו שם לתוכנית");
   const weekdays = cleanWeekdays(Array.isArray(body.weekdays) ? body.weekdays.map((item) => Number(item)) : []);
   if (!weekdays.length) throw new HttpError(400, "בחרו לפחות יום אחד בשבוע");
-  const onTime = clockTime(body.onTime);
-  const offTime = clockTime(body.offTime);
-  if (!onTime && !offTime) throw new HttpError(400, "בחרו שעת הדלקה או כיבוי");
+  const slots = slotList(body);
   const allowed = await tenantDeviceIds(user, tenantId);
   const deviceIds = deviceList(body.deviceIds, allowed);
   if (!deviceIds.length) throw new HttpError(400, "בחרו לפחות שקע אחד");
@@ -215,9 +214,23 @@ async function saveRepeatAction(user: SessionUser, tenantId: string, body: Recor
     endDate: current?.endDate ?? null,
     days: current?.days ?? [],
     weekdays,
-    onTime,
-    offTime,
+    onTime: slots[0].onTime,
+    offTime: slots[0].offTime,
+    slots,
   });
+}
+
+function slotList(body: Record<string, unknown>): ProgramSlot[] {
+  const raw = Array.isArray(body.slots) ? body.slots : [{ onTime: body.onTime, offTime: body.offTime }];
+  const slots = raw
+    .map((item) => {
+      const record = (item ?? {}) as Record<string, unknown>;
+      return { onTime: clockTime(record.onTime), offTime: clockTime(record.offTime) };
+    })
+    .filter((slot) => slot.onTime || slot.offTime);
+  if (!slots.length) throw new HttpError(400, "הוסיפו לפחות שעון אחד עם שעת הדלקה או כיבוי");
+  if (slots.length > maxSlots) throw new HttpError(400, `אפשר עד ${maxSlots} שעונים בתוכנית`);
+  return sortSlots(slots);
 }
 
 async function saveProgramAction(tenantId: string, body: Record<string, unknown>) {
@@ -243,6 +256,7 @@ async function saveProgramAction(tenantId: string, body: Record<string, unknown>
       weekdays: current?.weekdays ?? [],
       onTime: current?.onTime ?? null,
       offTime: current?.offTime ?? null,
+      slots: current?.slots ?? [],
     },
     days,
   );

@@ -192,9 +192,12 @@ async function saveClockAction(user: SessionUser, tenantId: string, body: Record
 async function saveRepeatAction(user: SessionUser, tenantId: string, body: Record<string, unknown>) {
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 40) : "";
   if (!name) throw new HttpError(400, "תנו שם לתוכנית");
-  const weekdays = cleanWeekdays(Array.isArray(body.weekdays) ? body.weekdays.map((item) => Number(item)) : []);
-  if (!weekdays.length) throw new HttpError(400, "בחרו לפחות יום אחד בשבוע");
   const slots = slotList(body);
+  const weekdays = cleanWeekdays([
+    ...(Array.isArray(body.weekdays) ? body.weekdays.map((item) => Number(item)) : []),
+    ...slots.flatMap((slot) => slot.weekdays ?? []),
+  ]);
+  if (!weekdays.length) throw new HttpError(400, "בחרו לפחות יום אחד בשבוע");
   const allowed = await tenantDeviceIds(user, tenantId);
   const deviceIds = deviceList(body.deviceIds, allowed);
   if (!deviceIds.length) throw new HttpError(400, "בחרו לפחות שקע אחד");
@@ -203,8 +206,9 @@ async function saveRepeatAction(user: SessionUser, tenantId: string, body: Recor
   const current = requested ? programs.find((program) => program.id === requested && program.programKey.startsWith("days:")) : undefined;
   if (requested && !current) throw new HttpError(404, "התוכנית לא נמצאה");
   const key = current?.programKey ?? `days:${randomUUID()}`;
+  const savedId = current?.id ?? programId(tenantId, key);
   await upsertProgram({
-    id: current?.id ?? programId(tenantId, key),
+    id: savedId,
     tenantId,
     programKey: key,
     name,
@@ -218,6 +222,14 @@ async function saveRepeatAction(user: SessionUser, tenantId: string, body: Recor
     offTime: slots[0].offTime,
     slots,
   });
+  const absorb = Array.isArray(body.absorbIds) ? body.absorbIds.filter((item): item is string => typeof item === "string") : [];
+  for (const id of absorb) {
+    if (id === savedId) continue;
+    const other = programs.find((program) => program.id === id && program.programKey.startsWith("days:"));
+    if (!other || other.days.length || !other.weekdays.length) continue;
+    if (!other.weekdays.every((day) => weekdays.includes(day))) continue;
+    await deleteProgram(tenantId, other.id);
+  }
 }
 
 function slotList(body: Record<string, unknown>): ProgramSlot[] {
@@ -225,7 +237,11 @@ function slotList(body: Record<string, unknown>): ProgramSlot[] {
   const slots = raw
     .map((item) => {
       const record = (item ?? {}) as Record<string, unknown>;
-      return { onTime: clockTime(record.onTime), offTime: clockTime(record.offTime) };
+      return {
+        onTime: clockTime(record.onTime),
+        offTime: clockTime(record.offTime),
+        weekdays: cleanWeekdays(Array.isArray(record.weekdays) ? record.weekdays.map((item) => Number(item)) : []),
+      };
     })
     .filter((slot) => slot.onTime || slot.offTime);
   if (!slots.length) throw new HttpError(400, "הוסיפו לפחות שעון אחד עם שעת הדלקה או כיבוי");

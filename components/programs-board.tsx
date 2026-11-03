@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/client-api";
 import type { MonthDay } from "@/lib/hebrew/calendar";
+import { maxSlots } from "@/lib/programs/slots";
 import { dayBars, laneBars } from "@/lib/programs/timeline";
 import { weekdayOf, weekdayPhrase } from "@/lib/programs/weekdays";
 import { israelDate, shiftDate } from "@/lib/time";
@@ -45,9 +46,9 @@ type Program = {
   deviceIds: string[];
 };
 
-type Slot = { onTime: string | null; offTime: string | null };
+type Slot = { onTime: string | null; offTime: string | null; weekdays?: number[] };
 
-type DraftSlot = { key: number; onTime: string; offTime: string };
+type DraftSlot = { key: number; onTime: string; offTime: string; weekday: number | null };
 
 type Board = {
   tenantId: string;
@@ -72,6 +73,8 @@ type Draft = {
   weekdays: number[];
   name: string;
   recurring: boolean;
+  split: boolean;
+  absorbIds: string[];
 };
 
 type Selection = { id: string | null; name: string; days: string[] };
@@ -178,39 +181,80 @@ export function ProgramsBoard() {
       weekdays: [day.weekday],
       name: "",
       recurring: false,
+      split: false,
+      absorbIds: [],
     });
   }
 
   function openClock(clock: Clock) {
     const program = clock.recurring ? board?.programs.find((item) => item.id === clock.programId) : undefined;
+    const shaped = program ? shapeProgram(program) : null;
     setFormError(null);
     setDraft({
       id: program?.id ?? clock.id,
       day: clock.day,
       hebrew: clock.hebrew,
-      slots: program ? draftSlots(program) : [blankSlot(clock)],
+      slots: shaped ? shaped.slots : [blankSlot(clock)],
       deviceIds: [...clock.deviceIds],
       programId: clock.programId ?? "",
-      repeat: program ? (program.weekdays.length === 7 ? "daily" : "weekdays") : "once",
+      repeat: program ? (program.weekdays.length === 7 && !shaped?.split ? "daily" : "weekdays") : "once",
       weekdays: program ? [...program.weekdays] : [weekdayOf(clock.day)],
       name: program?.name ?? "",
       recurring: Boolean(program),
+      split: shaped?.split ?? false,
+      absorbIds: [],
     });
   }
 
   function openRepeat(program: Program) {
+    const shaped = shapeProgram(program);
     setFormError(null);
     setDraft({
       id: program.id,
       day: "",
       hebrew: "",
-      slots: draftSlots(program),
+      slots: shaped.slots,
       deviceIds: [...program.deviceIds],
       programId: program.id,
-      repeat: program.weekdays.length === 7 ? "daily" : "weekdays",
+      repeat: program.weekdays.length === 7 && !shaped.split ? "daily" : "weekdays",
       weekdays: [...program.weekdays],
       name: program.name,
       recurring: true,
+      split: shaped.split,
+      absorbIds: [],
+    });
+  }
+
+  function soleDonor(day: number, exceptId: string | null) {
+    return board?.programs.find(
+      (program) => program.id !== exceptId && program.days.length === 0 && program.weekdays.length === 1 && program.weekdays[0] === day,
+    );
+  }
+
+  function addOwnDay(day: number) {
+    updateDraft((current) => {
+      const donor = soleDonor(day, current.id);
+      const base = current.split ? current : splitDraft(current);
+      if (base.weekdays.includes(day)) return base;
+      const imported = donor?.slots.length ? donor.slots.map((slot) => blankSlot(slot, day)) : [blankSlot(undefined, day)];
+      return {
+        ...base,
+        weekdays: [...base.weekdays, day].sort((left, right) => left - right),
+        slots: [...base.slots, ...imported],
+        absorbIds: donor ? [...new Set([...base.absorbIds, donor.id])] : base.absorbIds,
+      };
+    });
+  }
+
+  function removeOwnDay(day: number) {
+    updateDraft((current) => {
+      const donor = soleDonor(day, current.id);
+      return {
+        ...current,
+        weekdays: current.weekdays.filter((item) => item !== day),
+        slots: current.slots.filter((slot) => slot.weekday !== day),
+        absorbIds: donor ? current.absorbIds.filter((id) => id !== donor.id) : current.absorbIds,
+      };
     });
   }
 
@@ -308,7 +352,12 @@ export function ProgramsBoard() {
       if (saved) setDraft(null);
       return;
     }
-    const weekdays = draft.repeat === "daily" ? [0, 1, 2, 3, 4, 5, 6] : draft.weekdays;
+    const split = draft.split;
+    const weekdays = split
+      ? [...new Set(draft.slots.map((slot) => slot.weekday).filter((day): day is number => day != null))].sort((left, right) => left - right)
+      : draft.repeat === "daily"
+        ? [0, 1, 2, 3, 4, 5, 6]
+        : draft.weekdays;
     if (!draft.name.trim()) {
       setFormError("תנו שם לתוכנית");
       return;
@@ -318,8 +367,8 @@ export function ProgramsBoard() {
       return;
     }
     const slots = draft.slots
-      .filter((slot) => slot.onTime || slot.offTime)
-      .map((slot) => ({ onTime: slot.onTime, offTime: slot.offTime }));
+      .filter((slot) => (slot.onTime || slot.offTime) && (!split || slot.weekday != null))
+      .map((slot) => ({ onTime: slot.onTime, offTime: slot.offTime, weekdays: split && slot.weekday != null ? [slot.weekday] : [] }));
     if (!slots.length) {
       setFormError("הוסיפו לפחות שעון אחד עם שעת הדלקה או כיבוי");
       return;
@@ -336,6 +385,7 @@ export function ProgramsBoard() {
         name: draft.name.trim(),
         weekdays,
         slots,
+        absorbIds: split ? draft.absorbIds : [],
         deviceIds: draft.deviceIds,
       },
       "clock",
@@ -497,6 +547,11 @@ export function ProgramsBoard() {
       {view === "hours" ? (
         <HourBoard board={board} day={cursor || israelDate()} onOpenClock={openClock} onOpenProgram={openRepeat} />
       ) : view === "month" ? (
+        <>
+        <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1"><WayDot way="on" />הדלקה</span>
+          <span className="inline-flex items-center gap-1"><WayDot way="off" />כיבוי</span>
+        </p>
         <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl border border-border bg-border">
           {WEEKDAYS.map((weekday) => (
             <div key={weekday} className="truncate bg-muted px-0.5 py-1 text-center text-[10px] font-medium sm:px-1 sm:py-1.5 sm:text-xs">
@@ -547,9 +602,10 @@ export function ProgramsBoard() {
                       key={clock.id}
                       type="button"
                       className={cn(
-                        "block w-full truncate rounded bg-background/80 px-0.5 py-px text-start hover:bg-background sm:px-1 sm:py-0.5",
+                        "flex w-full min-w-0 items-center overflow-hidden rounded bg-background/80 px-0.5 py-px text-start hover:bg-background sm:px-1 sm:py-0.5",
                         paused && "opacity-50 line-through",
                       )}
+                      aria-label={`${owner?.name ?? "שעון"} ${clock.onTime ? `הדלקה ${clock.onTime}` : ""} ${clock.offTime ? `כיבוי ${clock.offTime}` : ""}`.trim()}
                       onClick={(event) => {
                         event.stopPropagation();
                         openClock(clock);
@@ -578,6 +634,7 @@ export function ProgramsBoard() {
             );
           })}
         </div>
+        </>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-card">
           {board.programs.length || looseClocks.length ? (
@@ -724,7 +781,7 @@ export function ProgramsBoard() {
           }
         }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           {draft ? (
             <form
               className="contents"
@@ -762,24 +819,35 @@ export function ProgramsBoard() {
                       type="button"
                       size="sm"
                       variant={draft.repeat === value ? "default" : "outline"}
-                      onClick={() =>
-                        updateDraft((current) => ({
-                          ...current,
-                          repeat: value,
-                          weekdays:
-                            value === "daily"
-                              ? [0, 1, 2, 3, 4, 5, 6]
-                              : current.weekdays.length
-                                ? current.weekdays
-                                : [current.day ? weekdayOf(current.day) : 0],
-                        }))
-                      }
+                      onClick={() => {
+                        if (draft.split && value !== "weekdays" && !window.confirm("לעבור לשעונים זהים? השעונים של שאר הימים יוסרו.")) return;
+                        updateDraft((current) => {
+                          const shared = current.split
+                            ? current.slots
+                                .filter((slot) => slot.weekday === current.weekdays[0])
+                                .map((slot) => blankSlot(slot))
+                            : current.slots;
+                          return {
+                            ...current,
+                            repeat: value,
+                            split: value === "weekdays" ? current.split : false,
+                            absorbIds: value === "weekdays" ? current.absorbIds : [],
+                            slots: value === "weekdays" ? current.slots : shared.length ? shared : [blankSlot()],
+                            weekdays:
+                              value === "daily"
+                                ? [0, 1, 2, 3, 4, 5, 6]
+                                : current.weekdays.length
+                                  ? current.weekdays
+                                  : [current.day ? weekdayOf(current.day) : 0],
+                          };
+                        });
+                      }}
                     >
                       {label}
                     </Button>
                   ))}
                 </div>
-                {draft.repeat === "weekdays" ? (
+                {draft.repeat === "weekdays" && !draft.split ? (
                   <div className="grid grid-cols-7 gap-1">
                     {WEEKDAY_CHIPS.map((label, index) => {
                       const selected = draft.weekdays.includes(index);
@@ -840,70 +908,121 @@ export function ProgramsBoard() {
                     <span className="ms-1 font-normal text-muted-foreground">({draft.slots.length})</span>
                   </legend>
                 )}
-                <ol className="space-y-2">
-                  {(draft.repeat === "once" ? draft.slots.slice(0, 1) : draft.slots).map((slot, index) => (
-                    <li
-                      key={slot.key}
-                      data-program-slot
-                      className={cn(
-                        "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2",
-                        draft.repeat !== "once" && "rounded-xl border border-border bg-muted/30 p-2",
-                      )}
-                    >
-                      <Label className="flex-col items-stretch gap-1">
-                        הדלקה
-                        <Input
-                          dir="ltr"
-                          type="time"
-                          aria-label={`הדלקה, שעון ${index + 1}`}
-                          value={slot.onTime}
-                          onChange={(event) => editSlot(slot.key, { onTime: event.target.value })}
+                {draft.split ? (
+                  <div className="space-y-3">
+                    {draft.weekdays.map((day) => {
+                      const rows = draft.slots.filter((slot) => slot.weekday === day);
+                      return (
+                        <section key={day} data-program-day={day} className="space-y-2 rounded-xl border border-border p-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <h3 className="text-sm font-semibold">{DAY_NAMES[day]}</h3>
+                            {draft.weekdays.length > 1 ? (
+                              <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground" onClick={() => removeOwnDay(day)}>
+                                הסרה
+                              </Button>
+                            ) : null}
+                          </div>
+                          <ol className="space-y-2">
+                            {rows.map((slot, index) => (
+                              <SlotRow
+                                key={slot.key}
+                                slot={slot}
+                                index={index}
+                                boxed={false}
+                                canRemove={rows.length > 1}
+                                dayName={dayShort(day)}
+                                onEdit={(patch) => editSlot(slot.key, patch)}
+                                onRemove={() => updateDraft((current) => ({ ...current, slots: current.slots.filter((item) => item.key !== slot.key) }))}
+                              />
+                            ))}
+                          </ol>
+                          {draft.slots.length < maxSlots ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full rounded-xl border-dashed"
+                              onClick={() => updateDraft((current) => ({ ...current, slots: [...current.slots, blankSlot(undefined, day)] }))}
+                            >
+                              <Plus className="size-4" />
+                              עוד שעון
+                            </Button>
+                          ) : null}
+                        </section>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <>
+                    <ol className="space-y-2">
+                      {(draft.repeat === "once" ? draft.slots.slice(0, 1) : draft.slots).map((slot, index) => (
+                        <SlotRow
+                          key={slot.key}
+                          slot={slot}
+                          index={index}
+                          boxed={draft.repeat !== "once"}
+                          canRemove={draft.repeat !== "once" && draft.slots.length > 1}
+                          onEdit={(patch) => editSlot(slot.key, patch)}
+                          onRemove={() => updateDraft((current) => ({ ...current, slots: current.slots.filter((item) => item.key !== slot.key) }))}
                         />
-                      </Label>
-                      <Label className="flex-col items-stretch gap-1">
-                        כיבוי
-                        <Input
-                          dir="ltr"
-                          type="time"
-                          aria-label={`כיבוי, שעון ${index + 1}`}
-                          value={slot.offTime}
-                          onChange={(event) => editSlot(slot.key, { offTime: event.target.value })}
-                        />
-                      </Label>
-                      {draft.repeat !== "once" && draft.slots.length > 1 ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="mb-0.5 text-muted-foreground"
-                          aria-label={`הסרת שעון ${index + 1}`}
-                          onClick={() =>
-                            updateDraft((current) => ({ ...current, slots: current.slots.filter((item) => item.key !== slot.key) }))
-                          }
-                        >
-                          <X className="size-4" />
-                        </Button>
-                      ) : (
-                        <span className="w-8" />
-                      )}
-                    </li>
-                  ))}
-                </ol>
-                {draft.repeat !== "once" && draft.slots.length < 12 ? (
-                  <Button
+                      ))}
+                    </ol>
+                    {draft.repeat !== "once" && draft.slots.length < maxSlots ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full rounded-xl border-dashed"
+                        onClick={() => updateDraft((current) => ({ ...current, slots: [...current.slots, blankSlot()] }))}
+                      >
+                        <Plus className="size-4" />
+                        עוד שעון
+                      </Button>
+                    ) : null}
+                  </>
+                )}
+                {draft.repeat === "weekdays" ? (
+                  <div className="flex flex-wrap gap-1">
+                    {[0, 1, 2, 3, 4, 5, 6]
+                      .filter((day) => !draft.weekdays.includes(day))
+                      .map((day) => {
+                        const donor = soleDonor(day, draft.id);
+                        return (
+                          <Button key={day} type="button" variant="outline" size="sm" onClick={() => addOwnDay(day)}>
+                            אחד עם {dayShort(day)}
+                            {donor ? ` · ${donor.name}` : ""}
+                          </Button>
+                        );
+                      })}
+                  </div>
+                ) : null}
+                {draft.absorbIds.length ? (
+                  <p className="text-xs text-muted-foreground">
+                    בשמירה יועברו לכאן ויימחקו:{" "}
+                    {draft.absorbIds
+                      .map((id) => board.programs.find((program) => program.id === id)?.name)
+                      .filter(Boolean)
+                      .join(", ")}
+                  </p>
+                ) : null}
+                {draft.split ? (
+                  <button
                     type="button"
-                    variant="outline"
-                    className="w-full rounded-xl border-dashed"
-                    onClick={() => updateDraft((current) => ({ ...current, slots: [...current.slots, blankSlot()] }))}
+                    className="text-xs text-muted-foreground underline"
+                    onClick={() => {
+                      if (!window.confirm("השעונים של שאר הימים יוסרו, ויישארו השעונים של היום הראשון לכל הימים.")) return;
+                      updateDraft((current) => {
+                        const first = current.weekdays[0];
+                        const kept = current.slots.filter((slot) => slot.weekday === first).map((slot) => blankSlot(slot));
+                        return { ...current, split: false, absorbIds: [], slots: kept.length ? kept : [blankSlot()] };
+                      });
+                    }}
                   >
-                    <Plus className="size-4" />
-                    עוד שעון
-                  </Button>
+                    אותם שעונים בכל הימים
+                  </button>
                 ) : null}
                 <p className="text-xs text-muted-foreground">
                   {draft.repeat === "once"
-                    ? "אם הכיבוי מוקדם מההדלקה, הוא יתבצע ביום שלמחרת."
-                    : "בכל שעון אפשר רק הדלקה, רק כיבוי או שניהם. כיבוי מוקדם מההדלקה יתבצע למחרת."}
+                    ? "נקודה ירוקה היא הדלקה ונקודה אדומה היא כיבוי. כיבוי מוקדם מההדלקה יתבצע למחרת."
+                    : "ירוק זו הדלקה ואדום זה כיבוי. «אחד עם שבת» מוסיף את היום עם שעונים משלו. תוכנית נפרדת של היום הזה נמחקת בשמירה."}
                 </p>
               </fieldset>
               <fieldset className="space-y-1">
@@ -953,13 +1072,13 @@ export function ProgramsBoard() {
                   {formError}
                 </p>
               ) : null}
-              <DialogFooter className="sticky bottom-0 z-10">
+              <DialogFooter className="sticky bottom-0 z-10 bg-popover/95 py-2 backdrop-blur-sm">
                 {draft.id ? (
                   <Button
                     type="button"
                     variant="destructive"
                     onClick={() => {
-                      if (!draft.id || !window.confirm("למחוק את השעון?")) return;
+                      if (!draft.id || !window.confirm(draft.recurring ? "למחוק את התוכנית?" : "למחוק את השעון?")) return;
                       void send(
                         draft.recurring ? { action: "program-delete", id: draft.id } : { action: "clock-delete", id: draft.id },
                         "clock",
@@ -1112,29 +1231,72 @@ function jerusalemMinutes(date = new Date()) {
   return Number(map.hour) * 60 + Number(map.minute);
 }
 
-function ClockFace({ clock, compact = false }: { clock: Clock; compact?: boolean }) {
-  if (compact) {
-    const label = clock.onTime && clock.offTime ? `${clock.onTime}–${clock.offTime}` : clock.onTime ?? clock.offTime ?? "";
-    return <span dir="ltr">{label}</span>;
-  }
-  if (clock.onTime && clock.offTime) {
-    return (
-      <span className="inline-flex flex-wrap items-center gap-1">
-        <span dir="ltr">{clock.onTime}–{clock.offTime}</span>
-        {clock.offTime <= clock.onTime ? <span>למחרת</span> : null}
-      </span>
-    );
-  }
-  if (clock.onTime) {
-    return (
-      <span>
-        הדלקה <span dir="ltr">{clock.onTime}</span>
-      </span>
-    );
-  }
+function SlotRow({
+  slot,
+  index,
+  boxed,
+  canRemove,
+  dayName,
+  onEdit,
+  onRemove,
+}: {
+  slot: DraftSlot;
+  index: number;
+  boxed: boolean;
+  canRemove: boolean;
+  dayName?: string;
+  onEdit: (patch: Partial<DraftSlot>) => void;
+  onRemove: () => void;
+}) {
+  const where = dayName ? `${dayName}, ` : "";
   return (
-    <span>
-      כיבוי <span dir="ltr">{clock.offTime}</span>
+    <li
+      data-program-slot
+      className={cn(
+        "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2",
+        boxed && "rounded-xl border border-border bg-muted/30 p-2",
+      )}
+    >
+      <Label className="flex-col items-stretch gap-1">
+        <span className="inline-flex items-center gap-1">
+          הדלקה <WayDot way="on" />
+        </span>
+        <Input
+          dir="ltr"
+          type="time"
+          aria-label={`הדלקה, ${where}שעון ${index + 1}`}
+          value={slot.onTime}
+          onChange={(event) => onEdit({ onTime: event.target.value })}
+        />
+      </Label>
+      <Label className="flex-col items-stretch gap-1">
+        <span className="inline-flex items-center gap-1">
+          כיבוי <WayDot way="off" />
+        </span>
+        <Input
+          dir="ltr"
+          type="time"
+          aria-label={`כיבוי, ${where}שעון ${index + 1}`}
+          value={slot.offTime}
+          onChange={(event) => onEdit({ offTime: event.target.value })}
+        />
+      </Label>
+      {canRemove ? (
+        <Button type="button" variant="ghost" size="icon" className="mb-0.5 text-muted-foreground" aria-label={`הסרת שעון ${index + 1}`} onClick={onRemove}>
+          <X className="size-4" />
+        </Button>
+      ) : (
+        <span className="w-8" />
+      )}
+    </li>
+  );
+}
+
+function ClockFace({ clock, compact = false }: { clock: Clock; compact?: boolean }) {
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
+      <TimeBits onTime={clock.onTime} offTime={clock.offTime} />
+      {!compact && clock.onTime && clock.offTime && clock.offTime <= clock.onTime ? <span>למחרת</span> : null}
     </span>
   );
 }
@@ -1152,32 +1314,92 @@ function deviceNames(board: Board, ids: string[]) {
 
 let slotKey = 0;
 
-function blankSlot(from?: Slot): DraftSlot {
+function blankSlot(from?: { onTime?: string | null; offTime?: string | null }, weekday: number | null = null): DraftSlot {
   slotKey += 1;
-  return { key: slotKey, onTime: from?.onTime ?? "", offTime: from?.offTime ?? "" };
+  return { key: slotKey, onTime: from?.onTime ?? "", offTime: from?.offTime ?? "", weekday };
 }
 
-function draftSlots(program: Program): DraftSlot[] {
-  const slots = program.slots.length ? program.slots : [{ onTime: program.onTime, offTime: program.offTime }];
-  return slots.map((slot) => blankSlot(slot));
+function shapeProgram(program: Program): { slots: DraftSlot[]; split: boolean } {
+  const source = program.slots.length ? program.slots : [{ onTime: program.onTime, offTime: program.offTime }];
+  const split = source.some((slot) => (slot.weekdays?.length ?? 0) > 0);
+  if (!split) return { split: false, slots: source.map((slot) => blankSlot(slot)) };
+  return {
+    split: true,
+    slots: source.flatMap((slot) => {
+      const days = slot.weekdays?.length ? slot.weekdays : program.weekdays;
+      return days.map((day) => blankSlot(slot, day));
+    }),
+  };
+}
+
+function splitDraft(current: Draft): Draft {
+  const days = current.repeat === "daily" ? [0, 1, 2, 3, 4, 5, 6] : current.weekdays;
+  const seeds = current.slots.filter((slot) => slot.onTime || slot.offTime);
+  const source = seeds.length ? seeds : current.slots.slice(0, 1);
+  return {
+    ...current,
+    split: true,
+    repeat: "weekdays",
+    weekdays: days,
+    slots: days.flatMap((day) => source.map((slot) => blankSlot(slot, day))),
+  };
+}
+
+function dayShort(day: number) {
+  return DAY_NAMES[day]?.replace("יום ", "") ?? "";
+}
+
+function WayDot({ way }: { way: "on" | "off" }) {
+  return (
+    <span
+      className={cn("inline-block size-1.5 shrink-0 rounded-full", way === "on" ? "bg-online" : "bg-destructive")}
+      aria-hidden="true"
+    />
+  );
+}
+
+function TimeBits({ onTime, offTime }: { onTime: string | null; offTime: string | null }) {
+  const clock = onTime && offTime ? `${onTime}–${offTime}` : onTime ?? offTime ?? "";
+  return (
+    <span className="inline-flex min-w-0 items-center gap-0.5" dir="ltr">
+      {onTime ? <WayDot way="on" /> : null}
+      <span className="truncate">{clock}</span>
+      {offTime ? <WayDot way="off" /> : null}
+      <span className="sr-only">{onTime ? `הדלקה ${onTime}` : ""}{offTime ? ` כיבוי ${offTime}` : ""}</span>
+    </span>
+  );
 }
 
 function SlotsLine({ slots }: { slots: Slot[] }) {
   if (!slots.length) return null;
+  const split = slots.some((slot) => (slot.weekdays?.length ?? 0) > 0);
+  if (!split) {
+    return (
+      <>
+        {slots.map((slot, index) => (
+          <span key={index}>
+            {" · "}
+            <TimeBits onTime={slot.onTime} offTime={slot.offTime} />
+          </span>
+        ))}
+      </>
+    );
+  }
+  const days = [...new Set(slots.flatMap((slot) => slot.weekdays ?? []))].sort((left, right) => left - right);
   return (
     <>
-      {slots.map((slot, index) => (
-        <span key={index}>
+      {days.map((day) => (
+        <span key={day}>
           {" · "}
-          {slot.onTime && slot.offTime ? (
-            <span dir="ltr" className="inline-block">
-              {slot.onTime}–{slot.offTime}
-            </span>
-          ) : (
-            <>
-              {slot.onTime ? "הדלקה" : "כיבוי"} <span dir="ltr">{slot.onTime ?? slot.offTime}</span>
-            </>
-          )}
+          {dayShort(day)}{" "}
+          {slots
+            .filter((slot) => slot.weekdays?.includes(day))
+            .map((slot, index) => (
+              <span key={index}>
+                {index ? " " : null}
+                <TimeBits onTime={slot.onTime} offTime={slot.offTime} />
+              </span>
+            ))}
         </span>
       ))}
     </>

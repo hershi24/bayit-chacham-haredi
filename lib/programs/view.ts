@@ -1,4 +1,5 @@
 import { hebrewLabels, monthBoard, places } from "@/lib/hebrew/calendar";
+import { slotsForWeekday } from "@/lib/programs/slots";
 import { weekdayOf } from "@/lib/programs/weekdays";
 import { getClock, listDayClocks, listPrograms, listTenantDevices } from "@/lib/store";
 
@@ -41,7 +42,7 @@ export async function programsPayload(
     days
       .filter((day) => program.weekdays.includes(weekdayOf(day.date)))
       .flatMap((day) =>
-        program.slots.map((slot, index) => ({
+        slotsForWeekday(program.slots, weekdayOf(day.date)).map((slot, index) => ({
           id: `week:${program.id}:${day.date}:${index}`,
           day: day.date,
           hebrew: day.hebrew,

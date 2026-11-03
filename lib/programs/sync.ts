@@ -1,3 +1,4 @@
+import { slotsForWeekday } from "@/lib/programs/slots";
 import type { DayClock, StoredProgram } from "@/lib/programs/types";
 import { weekdayOf } from "@/lib/programs/weekdays";
 import {
@@ -61,7 +62,7 @@ function runsForWeekdays(program: StoredProgram, allowed: Set<string>, now: Date
   let day = israelDate(now);
   for (let index = 0; index < 84; index += 1) {
     if (program.weekdays.includes(weekdayOf(day))) {
-      for (const slot of program.slots) {
+      for (const slot of slotsForWeekday(program.slots, weekdayOf(day))) {
         clocks.push({
           id: program.id,
           tenantId: program.tenantId,

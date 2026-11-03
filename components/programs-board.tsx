@@ -844,7 +844,7 @@ export function ProgramsBoard() {
                   {(draft.repeat === "once" ? draft.slots.slice(0, 1) : draft.slots).map((slot, index) => (
                     <li
                       key={slot.key}
-                      data-slot
+                      data-program-slot
                       className={cn(
                         "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2",
                         draft.repeat !== "once" && "rounded-xl border border-border bg-muted/30 p-2",

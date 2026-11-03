@@ -224,3 +224,32 @@ test("a weekday program runs every chosen day and skips Friday and Saturday", as
   assert.equal((await listRunsFor(program.id)).length, 0);
   await deleteProgram("ten_shul", program.id);
 });
+
+test("the phone saves a weekday clock on the chosen socket", async () => {
+  const response = await handleMenu(
+    new Request("http://127.0.0.1/api/ivr/menu", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
+      body: new URLSearchParams({
+        ApiPhone: "035551002",
+        pikud_device: "1",
+        pikud_action: "4",
+        pikud_repeat: "3",
+        pikud_on: "1000",
+        pikud_off: "1200",
+      }),
+    }),
+  );
+  const text = await response.text();
+  assert.match(text, /נשמרה תוכנית שקע תאורה כל יום חוץ משישי ושבת/);
+  assert.match(text, /הדלקה 10:00/);
+  assert.match(text, /כיבוי 12:00/);
+  assert.match(text, /go_to_folder=hangup/);
+  const program = (await listPrograms("ten_shul")).find((item) => item.name === "שקע תאורה כל יום חוץ משישי ושבת");
+  assert.ok(program);
+  assert.deepEqual(program?.weekdays, [0, 1, 2, 3, 4]);
+  assert.deepEqual(program?.deviceIds, ["rct074190118"]);
+  assert.equal(program?.onTime, "10:00");
+  assert.equal(program?.offTime, "12:00");
+  if (program) await deleteProgram("ten_shul", program.id);
+});

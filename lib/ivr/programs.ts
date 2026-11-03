@@ -46,7 +46,7 @@ async function parshaIntro(tenantId: string) {
 }
 
 function emptyMessage(intro: string) {
-  return `${intro ? `${intro}. ` : ""}אין עדיין תוכניות. בונים תוכנית באתר`.replace(/\s+/g, " ").trim();
+  return `${intro ? `${intro}. ` : ""}אין עדיין תוכניות. בשיחה הבאה, אחרי השקע, לשעון הקש ארבע`.replace(/\s+/g, " ").trim();
 }
 
 function menu(

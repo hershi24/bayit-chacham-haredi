@@ -183,13 +183,13 @@ function readRepeat(prefix: string): MenuRead {
 function readWeek(prefix: string): MenuRead {
   return {
     type: "read",
-    message: `${prefix}הקש את הימים ברצף. אחד ליום ראשון, שתיים לשני, שלוש לשלישי, ארבע לרביעי, חמש לחמישי, שש לשישי, שבע לשבת`,
+    message: `${prefix}הקש את הימים ברצף ולסיום הקש סולמית. אחד ליום ראשון, שתיים לשני, שלוש לשלישי, ארבע לרביעי, חמש לחמישי, שש לשישי, שבע לשבת`,
     field: "pikud_week",
     min: 1,
     max: 7,
     allowed: "1234567",
     mode: "Number",
-    seconds: 3,
+    seconds: 20,
   };
 }
 
@@ -242,8 +242,9 @@ function readSockets(prefix: string): MenuRead {
 }
 
 function parseWeek(value: string): number[] | null {
-  if (!/^[1-7]+$/.test(value)) return null;
-  return [...new Set([...value].map((digit) => Number(digit) - 1))].sort((left, right) => left - right);
+  const digits = value.replace(/#/g, "");
+  if (!/^[1-7]+$/.test(digits)) return null;
+  return [...new Set([...digits].map((digit) => Number(digit) - 1))].sort((left, right) => left - right);
 }
 
 function parsePhoneDate(value: string): string | null {

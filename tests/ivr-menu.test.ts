@@ -77,7 +77,13 @@ test("timer turns on for the requested minutes and the clock accepts four digits
     assert.equal(saved.offTime, "12:00");
     assert.deepEqual(saved.devices.map((item) => item.deviceId), ["ac"]);
   }
-  const custom = decideMenu([ac], { device: "1", action: "4", repeat: "4", week: "15", on: "2200", off: "0600" });
+  const askDays = decideMenu([ac], { device: "1", action: "4", repeat: "4" });
+  assert.equal(askDays.type, "read");
+  if (askDays.type === "read") {
+    assert.match(askDays.message, /לסיום הקש סולמית/);
+    assert.equal(askDays.seconds, 20);
+  }
+  const custom = decideMenu([ac], { device: "1", action: "4", repeat: "4", week: "15#", on: "2200", off: "0600" });
   assert.equal(custom.type, "clock-save");
   if (custom.type === "clock-save") {
     assert.deepEqual(custom.weekdays, [0, 4]);

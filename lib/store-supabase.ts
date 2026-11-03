@@ -7,6 +7,7 @@ import { HttpError } from "@/lib/http-error";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
+import { resolveDateClocks } from "@/lib/programs/dates";
 import { parseSlots } from "@/lib/programs/slots";
 import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { PlanItem } from "@/lib/devices/upcoming";
@@ -1136,6 +1137,17 @@ export async function deleteDayClock(tenantId: string, id: string) {
   const result = await client().from("clocks").delete().eq("tenant_id", tenantId).eq("id", id).select("id");
   if (result.error) fail(result.error, "מחיקת השעון נכשלה");
   if (!result.data?.length) throw new HttpError(404, "השעון לא נמצא");
+}
+
+export async function saveDateProgram(program: StoredProgram, clocks: DayClock[]) {
+  await upsertProgram(program);
+  const existing = await listDayClocks(program.tenantId);
+  const next = resolveDateClocks(program.id, program.tenantId, clocks, existing);
+  const keep = new Set(next.map((clock) => clock.id));
+  for (const clock of next) await saveDayClock(clock);
+  for (const clock of existing) {
+    if (clock.programId === program.id && !keep.has(clock.id)) await deleteDayClock(program.tenantId, clock.id);
+  }
 }
 
 export async function listRunsFor(programId: string): Promise<ProgramRun[]> {

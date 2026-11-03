@@ -1,66 +1,51 @@
-import { customWindow, places, upcomingAgenda, upcomingPrograms, type ClockSettings, type ProgramWindow } from "@/lib/hebrew/calendar";
-import { getClock, listPrograms, listTenantDevices } from "@/lib/store";
+import { hebrewLabels, monthBoard, places } from "@/lib/hebrew/calendar";
+import { getClock, listDayClocks, listPrograms, listTenantDevices } from "@/lib/store";
 
-export type ProgramCard = {
-  id: string | null;
-  key: string;
-  name: string;
-  blurb: string;
-  enabled: boolean;
-  custom: boolean;
-  deviceIds: string[];
-  startDate: string | null;
-  endDate: string | null;
-  windows: ProgramWindow[];
-};
-
-export async function programsPayload(tenantId: string, now = new Date()) {
+export async function programsPayload(
+  tenantId: string,
+  when?: { year?: number; month?: number },
+  now = new Date(),
+) {
   const settings = await getClock(tenantId);
-  const stored = await listPrograms(tenantId);
-  const devices = await listTenantDevices(tenantId);
-  const catalog = await upcomingPrograms(settings, now);
-  const cards: ProgramCard[] = catalog.map((item) => {
-    const saved = stored.find((program) => program.programKey === item.key);
-    return {
-      id: saved?.id ?? null,
-      key: item.key,
-      name: item.name,
-      blurb: item.blurb,
-      enabled: saved?.enabled ?? false,
-      custom: false,
-      deviceIds: saved?.deviceIds ?? [],
-      startDate: null,
-      endDate: null,
-      windows: item.windows,
-    };
-  });
-  for (const program of stored) {
-    if (!program.programKey.startsWith("custom:") || !program.startDate || !program.endDate) continue;
-    const window = await customWindow(program.name, program.startDate, program.endDate, settings, now);
-    cards.push({
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(now);
+  const today = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const year = when?.year && when.year >= 2020 && when.year <= 2040 ? when.year : Number(today.year);
+  const month = when?.month && when.month >= 1 && when.month <= 12 ? when.month : Number(today.month);
+  const [stored, clocks, devices, days] = await Promise.all([
+    listPrograms(tenantId),
+    listDayClocks(tenantId),
+    listTenantDevices(tenantId),
+    monthBoard(settings.locationId, year, month),
+  ]);
+  const labels = await hebrewLabels(clocks.map((clock) => clock.day));
+  const programs = stored
+    .filter((program) => program.programKey.startsWith("days:"))
+    .map((program) => ({
       id: program.id,
-      key: program.programKey,
       name: program.name,
-      blurb: "תוכנית שבניתם לפי תאריכים",
       enabled: program.enabled,
-      custom: true,
-      deviceIds: program.deviceIds,
-      startDate: program.startDate,
-      endDate: program.endDate,
-      windows: window ? [window] : [],
-    });
-  }
+      days: [...program.days].sort(),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name, "he"));
   return {
     tenantId,
-    settings,
+    locationId: settings.locationId,
     places: places(),
     devices: devices.map((device) => ({ deviceId: device.deviceId, name: device.name })),
-    programs: cards,
-    agenda: (await upcomingAgenda(settings, now)).slice(0, 18),
-    parshiot: (catalog.find((item) => item.key === "shabbat")?.windows ?? []).slice(0, 4),
+    programs,
+    clocks: clocks.map((clock) => ({
+      id: clock.id,
+      day: clock.day,
+      hebrew: labels[clock.day] ?? "",
+      onTime: clock.onTime,
+      offTime: clock.offTime,
+      deviceIds: clock.deviceIds,
+      programId: clock.programId,
+    })),
+    month: { year, month, days },
   };
-}
-
-export function previewCustom(name: string, startDate: string, endDate: string, settings: ClockSettings, now = new Date()) {
-  return customWindow(name, startDate, endDate, settings, now);
 }

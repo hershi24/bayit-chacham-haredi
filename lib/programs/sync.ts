@@ -1,24 +1,36 @@
-import { customWindow, upcomingPrograms, type ClockSettings, type ProgramWindow } from "@/lib/hebrew/calendar";
-import type { StoredProgram } from "@/lib/programs/types";
+import type { DayClock } from "@/lib/programs/types";
 import {
-  getClock,
-  listProgramRuns,
+  listDayClocks,
   listPrograms,
   listTenantDevices,
   listTenants,
   replaceProgramRuns,
 } from "@/lib/store";
+import { jerusalemInstant, shiftDate } from "@/lib/time";
 
 const refreshed = new Map<string, number>();
 
 export async function syncTenantPrograms(tenantId: string, now = new Date()) {
-  const settings = await getClock(tenantId);
   const programs = await listPrograms(tenantId);
-  const devices = await listTenantDevices(tenantId);
+  const clocks = await listDayClocks(tenantId);
+  const allowed = new Set((await listTenantDevices(tenantId)).map((device) => device.deviceId));
+  const byProgram = new Map<string, DayClock[]>();
+  const loose: DayClock[] = [];
+  for (const clock of clocks) {
+    if (!clock.programId) {
+      loose.push(clock);
+      continue;
+    }
+    const bucket = byProgram.get(clock.programId) ?? [];
+    bucket.push(clock);
+    byProgram.set(clock.programId, bucket);
+  }
   for (const program of programs) {
-    const runs = program.enabled ? await runsFor(program, settings, devices.map((device) => device.deviceId), now) : [];
+    const owned = program.programKey.startsWith("days:") ? (byProgram.get(program.id) ?? []) : [];
+    const runs = program.enabled && program.programKey.startsWith("days:") ? runsFor(program.name, owned, allowed, now) : [];
     await replaceProgramRuns(program.id, runs);
   }
+  await replaceProgramRuns(looseId(tenantId), runsFor("שעון", loose, allowed, now));
   refreshed.set(tenantId, Date.now());
 }
 
@@ -35,37 +47,35 @@ export function programId(tenantId: string, key: string) {
   return `prog_${tenantId}_${key}`;
 }
 
-async function runsFor(program: StoredProgram, settings: ClockSettings, allDeviceIds: string[], now: Date) {
-  const chosen = program.deviceIds.filter((id) => allDeviceIds.includes(id));
-  const devices = chosen.length ? chosen : allDeviceIds;
-  const windows = (await windowsFor(program, settings, now)).filter((window) => Date.parse(window.end) > now.getTime());
+export function looseId(tenantId: string) {
+  return `loose:${tenantId}`;
+}
+
+function runsFor(name: string, clocks: DayClock[], allowed: Set<string>, now: Date) {
   const runs = [];
-  for (const deviceId of devices) {
-    for (const window of windows) {
-      const label = runLabel(program.name, window);
-      if (Date.parse(window.start) > now.getTime() - 60_000) {
-        runs.push({ deviceId, action: settings.startAction, runAt: window.start, label });
+  for (const clock of clocks) {
+    for (const deviceId of clock.deviceIds.filter((id) => allowed.has(id))) {
+      if (clock.onTime) {
+        const at = jerusalemInstant(clock.day, clock.onTime);
+        if (at && at.getTime() > now.getTime() - 60_000) {
+          runs.push({ deviceId, action: "ON" as const, runAt: at.toISOString(), label: `${name}: הדלקה ${clock.onTime}` });
+        }
       }
-      runs.push({ deviceId, action: settings.endAction, runAt: window.end, label });
+      if (clock.offTime) {
+        const rolls = Boolean(clock.onTime && clock.offTime <= clock.onTime);
+        const day = rolls ? shiftDate(clock.day, 1) : clock.day;
+        const at = jerusalemInstant(day, clock.offTime);
+        if (at && at.getTime() > now.getTime() - 60_000) {
+          const suffix = rolls ? " למחרת" : "";
+          runs.push({
+            deviceId,
+            action: "OFF" as const,
+            runAt: at.toISOString(),
+            label: `${name}: כיבוי ${clock.offTime}${suffix}`,
+          });
+        }
+      }
     }
   }
   return runs;
-}
-
-async function windowsFor(program: StoredProgram, settings: ClockSettings, now: Date): Promise<ProgramWindow[]> {
-  if (program.programKey.startsWith("custom:") && program.startDate && program.endDate) {
-    const window = await customWindow(program.name, program.startDate, program.endDate, settings, now);
-    return window ? [window] : [];
-  }
-  return (await upcomingPrograms(settings, now)).find((item) => item.key === program.programKey)?.windows ?? [];
-}
-
-function runLabel(name: string, window: ProgramWindow) {
-  const days = window.days === 1 ? "יום אחד" : `${window.days} ימים`;
-  const extra = window.includesShabbat ? ", כולל שבת" : "";
-  return `${name}: ${window.title}, ${days}${extra}`;
-}
-
-export async function openRuns(tenantId: string) {
-  return listProgramRuns(tenantId);
 }

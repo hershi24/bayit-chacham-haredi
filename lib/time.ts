@@ -47,6 +47,26 @@ function zonedToUtc(year: number, month: number, day: number, hour: number, minu
   return new Date(guess.getTime() - corrected * 60_000);
 }
 
+export function jerusalemInstant(date: string, time: string): Date | null {
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const clock = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!day || !clock) return null;
+  const year = Number(day[1]);
+  const month = Number(day[2]);
+  const dateDay = Number(day[3]);
+  const hour = Number(clock[1]);
+  const minute = Number(clock[2]);
+  if (month < 1 || month > 12 || dateDay < 1 || dateDay > 31 || hour > 23 || minute > 59) return null;
+  return zonedToUtc(year, month, dateDay, hour, minute);
+}
+
+export function shiftDate(iso: string, days: number): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 export function formatIsrael(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);

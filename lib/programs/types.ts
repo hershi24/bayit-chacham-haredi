@@ -9,6 +9,17 @@ export type StoredProgram = {
   deviceIds: string[];
   startDate: string | null;
   endDate: string | null;
+  days: string[];
+};
+
+export type DayClock = {
+  id: string;
+  tenantId: string;
+  programId: string | null;
+  day: string;
+  onTime: string | null;
+  offTime: string | null;
+  deviceIds: string[];
 };
 
 export type ProgramRun = {

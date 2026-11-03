@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_CLOCK, formatClock, upcomingPrograms } from "../lib/hebrew/calendar";
+import { DEFAULT_CLOCK, formatClock, monthBoard, upcomingPrograms } from "../lib/hebrew/calendar";
 import { handleMenu } from "../lib/ivr/menu";
-import { syncTenantPrograms } from "../lib/programs/sync";
-import { listProgramRuns, upsertProgram } from "../lib/store";
-import { programId } from "../lib/programs/sync";
+import { looseId, programId, syncTenantPrograms } from "../lib/programs/sync";
+import {
+  deleteDayClock,
+  deleteProgram,
+  listDayClocks,
+  listProgramRuns,
+  listPrograms,
+  listRunsFor,
+  saveDayClock,
+  upsertProgram,
+} from "../lib/store";
 
 test("shabbat shows the parsha and the next week follows it", async () => {
   const programs = await upcomingPrograms(DEFAULT_CLOCK, new Date("2026-10-01T12:00:00.000Z"));
@@ -17,7 +25,7 @@ test("shabbat shows the parsha and the next week follows it", async () => {
   assert.equal(formatClock(shabbat.windows[0]!.end), "18:49");
 });
 
-test("rosh hashana is one clock across two days and pesach is two separate days", async () => {
+test("rosh hashana is one span across two days and pesach is two separate days", async () => {
   const fall = await upcomingPrograms(DEFAULT_CLOCK, new Date("2026-09-01T12:00:00.000Z"));
   const rosh = fall.find((item) => item.key === "rosh-hashana");
   assert.equal(rosh?.windows[0]?.days, 2);
@@ -37,16 +45,32 @@ test("rosh hashana is one clock across two days and pesach is two separate days"
   assert.equal(shavuot?.windows[0]?.includesShabbat, true);
 });
 
-test("the phone builds a holiday program without waiting for the socket", async () => {
+test("november puts the parsha on saturday and keeps candle times as labels", async () => {
+  const days = await monthBoard("jerusalem", 2026, 11);
+  const saturday = days.find((day) => day.date === "2026-11-07");
+  const friday = days.find((day) => day.date === "2026-11-06");
+  assert.equal(saturday?.weekday, 6);
+  assert.equal(saturday?.parsha, "חיי שרה");
+  assert.equal(friday?.parsha, null);
+  assert.equal(friday?.candles, "16:05");
+  assert.equal(saturday?.havdalah, "17:23");
+  assert.equal(days[0]?.date, "2026-11-01");
+});
+
+test("the phone toggles a named program", async () => {
+  for (const program of await listPrograms("ten_yeshiva")) {
+    if (program.programKey.startsWith("days:")) await deleteProgram("ten_yeshiva", program.id);
+  }
   await upsertProgram({
-    id: programId("ten_yeshiva", "rosh-hashana"),
+    id: programId("ten_yeshiva", "days:phone"),
     tenantId: "ten_yeshiva",
-    programKey: "rosh-hashana",
-    name: "ראש השנה",
+    programKey: "days:phone",
+    name: "שבת חתן",
     enabled: false,
     deviceIds: [],
-    startDate: null,
-    endDate: null,
+    startDate: "2026-12-01",
+    endDate: "2026-12-02",
+    days: ["2026-12-01", "2026-12-02"],
   });
   const menu = await handleMenu(
     new Request("http://127.0.0.1/api/ivr/menu", {
@@ -59,6 +83,7 @@ test("the phone builds a holiday program without waiting for the socket", async 
   assert.equal(prompt.includes("אין הרשאה"), false);
   assert.match(prompt, /פרשת/);
   assert.match(prompt, /בשבוע שאחריה/);
+  assert.match(prompt, /שבת חתן/);
   assert.match(prompt, /read=/);
 
   const built = await handleMenu(
@@ -69,17 +94,70 @@ test("the phone builds a holiday program without waiting for the socket", async 
         ApiPhone: "035551001",
         pikud_device: "1",
         pikud_action: "5",
-        pikud_program: "2",
+        pikud_program: "1",
       }),
     }),
   );
   const speech = await built.text();
-  assert.match(speech, /ראש השנה נבנתה ליומיים/);
-  assert.match(speech, /כניסה בשעה/);
+  assert.match(speech, /שבת חתן הופעלה, 2 ימים/);
   assert.match(speech, /go_to_folder=hangup/);
+  await deleteProgram("ten_yeshiva", programId("ten_yeshiva", "days:phone"));
+});
+
+test("a day clock runs on every chosen socket and a paused program does not", async () => {
+  for (const clock of await listDayClocks("ten_yeshiva")) await deleteDayClock("ten_yeshiva", clock.id);
+  const program = {
+    id: programId("ten_yeshiva", "days:test"),
+    tenantId: "ten_yeshiva",
+    programKey: "days:test",
+    name: "בדיקה",
+    enabled: true,
+    deviceIds: [] as string[],
+    startDate: "2026-12-15",
+    endDate: "2026-12-15",
+    days: ["2026-12-15"],
+  };
+  await upsertProgram(program);
+  await saveDayClock({
+    id: "clk_test_two",
+    tenantId: "ten_yeshiva",
+    programId: program.id,
+    day: "2026-12-15",
+    onTime: "18:00",
+    offTime: "07:00",
+    deviceIds: ["rct063285302", "rct063285417"],
+  });
+  const now = new Date("2026-11-01T12:00:00.000Z");
+  await syncTenantPrograms("ten_yeshiva", now);
+  const ons = (await listRunsFor(program.id)).filter((run) => run.action === "ON");
+  assert.deepEqual(ons.map((run) => run.deviceId).sort(), ["rct063285302", "rct063285417"]);
+  assert.equal(ons[0]?.runAt, "2026-12-15T16:00:00.000Z");
+  const offs = (await listRunsFor(program.id)).filter((run) => run.action === "OFF");
+  assert.equal(offs.length, 2);
+  assert.equal(offs[0]?.runAt, "2026-12-16T05:00:00.000Z");
+
+  await upsertProgram({ ...program, enabled: false });
+  await syncTenantPrograms("ten_yeshiva", now);
+  assert.equal((await listRunsFor(program.id)).length, 0);
+  assert.equal((await listRunsFor(looseId("ten_yeshiva"))).length, 0);
+
+  await saveDayClock({
+    id: "clk_test_loose",
+    tenantId: "ten_yeshiva",
+    programId: null,
+    day: "2026-12-20",
+    onTime: "09:00",
+    offTime: null,
+    deviceIds: ["rct063285302"],
+  });
+  await syncTenantPrograms("ten_yeshiva", now);
+  const loose = await listRunsFor(looseId("ten_yeshiva"));
+  assert.equal(loose.length, 1);
+  assert.equal(loose[0]?.action, "ON");
+  assert.equal(loose[0]?.deviceId, "rct063285302");
 
   await upsertProgram({
-    id: "prog_ten_yeshiva_shabbat",
+    id: programId("ten_yeshiva", "shabbat"),
     tenantId: "ten_yeshiva",
     programKey: "shabbat",
     name: "שבת",
@@ -87,12 +165,13 @@ test("the phone builds a holiday program without waiting for the socket", async 
     deviceIds: ["rct063285302"],
     startDate: null,
     endDate: null,
+    days: [],
   });
-  await syncTenantPrograms("ten_yeshiva", new Date("2026-10-01T12:00:00.000Z"));
-  const runs = await listProgramRuns("ten_yeshiva");
-  const shabbatRuns = runs.filter((run) => run.label.includes("בראשית") || run.label.includes("נח"));
-  assert.match(shabbatRuns.map((run) => run.label).join("\n"), /בראשית/);
-  assert.match(shabbatRuns.map((run) => run.label).join("\n"), /נח/);
-  assert.equal(shabbatRuns.every((run) => run.deviceId === "rct063285302"), true);
-  assert.equal(shabbatRuns.some((run) => run.action === "ON"), true);
+  await syncTenantPrograms("ten_yeshiva", now);
+  const preset = (await listProgramRuns("ten_yeshiva")).filter((run) => run.label.includes("בראשית"));
+  assert.equal(preset.length, 0);
+
+  await deleteDayClock("ten_yeshiva", "clk_test_loose");
+  await deleteProgram("ten_yeshiva", program.id);
+  await syncTenantPrograms("ten_yeshiva", now);
 });

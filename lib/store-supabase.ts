@@ -8,6 +8,7 @@ import { hashPassword } from "@/lib/password";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
+import type { PlanItem } from "@/lib/devices/upcoming";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { presentDevice, type StatePatch } from "@/lib/store-sqlite";
 import type { AuditSource, AuditView, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
@@ -29,6 +30,7 @@ type DeviceRow = {
   device_id: string;
   name: string;
   tenant_id: string;
+  icon?: string | null;
   tenants: Embed<{ name: string; phone: string | null }>;
   device_state: Embed<DeviceStateRow>;
 };
@@ -237,16 +239,28 @@ function mapDevice(row: DeviceRow): DeviceView & { phone: string | null } {
     deviceType: state?.device_type ?? null,
     sensorSummary: state?.sensor_summary ?? null,
     lastError: state?.last_error ?? null,
+    icon: row.icon ?? null,
   };
 }
 
-const deviceColumns =
+const deviceColumnsPlain =
   "device_id, name, tenant_id, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)";
+let deviceColumns = `device_id, name, tenant_id, icon, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)`;
+
+function iconColumnMissing(error: DbError) {
+  return deviceColumns !== deviceColumnsPlain && (error.code === "42703" || error.code === "PGRST204" || /icon/i.test(error.message));
+}
 
 async function deviceRows(tenantId?: string | null): Promise<DeviceRow[]> {
   let query = client().from("devices").select(deviceColumns);
   if (tenantId) query = query.eq("tenant_id", tenantId);
-  const result = await query;
+  let result = await query;
+  if (result.error && iconColumnMissing(result.error)) {
+    deviceColumns = deviceColumnsPlain;
+    query = client().from("devices").select(deviceColumns);
+    if (tenantId) query = query.eq("tenant_id", tenantId);
+    result = await query;
+  }
   if (result.error) fail(result.error, "לא ניתן לקרוא שקעים");
   return (result.data ?? []) as unknown as DeviceRow[];
 }
@@ -273,7 +287,11 @@ export async function listIvrTargets(): Promise<Array<DeviceView & { phone: stri
 
 export async function getDevice(deviceId: string): Promise<(DeviceView & { phone: string | null }) | null> {
   await ready();
-  const result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
+  let result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
+  if (result.error && iconColumnMissing(result.error)) {
+    deviceColumns = deviceColumnsPlain;
+    result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
+  }
   if (result.error) fail(result.error, "לא ניתן לקרוא שקע");
   return result.data ? mapDevice(result.data as unknown as DeviceRow) : null;
 }
@@ -579,6 +597,65 @@ export async function listAudit(user: { role: Role; tenantId: string | null }, l
     result: String(row.result),
     detail: row.detail == null ? null : String(row.detail),
   }));
+}
+
+export async function setDeviceIcon(deviceId: string, icon: string): Promise<DeviceView | null> {
+  await ready();
+  const result = await client().from("devices").update({ icon }).eq("device_id", deviceId).select("device_id");
+  if (result.error) {
+    if (result.error.code === "42703" || result.error.code === "PGRST204" || /icon/i.test(result.error.message)) {
+      throw new HttpError(500, "עמודת האייקון חסרה. הריצו: alter table devices add column if not exists icon text;");
+    }
+    fail(result.error, "שמירת האייקון נכשלה");
+  }
+  if (!result.data?.length) return null;
+  const view = await getDevice(deviceId);
+  return view ? presentDevice(view) : null;
+}
+
+function missingRelation(error: DbError) {
+  return error.code === "42P01" || error.code === "PGRST205" || /schema cache|does not exist/i.test(error.message);
+}
+
+export async function listUpcoming(nowIso: string, untilIso: string): Promise<PlanItem[]> {
+  await ready();
+  const schedules = await client()
+    .from("schedules")
+    .select("device_id, kind, run_at")
+    .is("done_at", null)
+    .lt("attempts", 8)
+    .gte("run_at", nowIso)
+    .lte("run_at", untilIso)
+    .order("run_at")
+    .limit(1000);
+  if (schedules.error) {
+    if (missingRelation(schedules.error)) return [];
+    fail(schedules.error, "קריאת מועדים נכשלה");
+  }
+  const runs = await client()
+    .from("program_runs")
+    .select("device_id, action, run_at")
+    .is("done_at", null)
+    .lt("attempts", 8)
+    .gte("run_at", nowIso)
+    .lte("run_at", untilIso)
+    .order("run_at")
+    .limit(1000);
+  const scheduleItems: PlanItem[] = (schedules.data ?? []).map((row) => ({
+    deviceId: String(row.device_id),
+    at: String(row.run_at),
+    action: row.kind === "later_on" ? "ON" : "OFF",
+  }));
+  if (runs.error) {
+    if (missingRelation(runs.error)) return scheduleItems;
+    fail(runs.error, "קריאת מועדים נכשלה");
+  }
+  const runItems: PlanItem[] = (runs.data ?? []).map((row) => ({
+    deviceId: String(row.device_id),
+    at: String(row.run_at),
+    action: row.action === "OFF" ? "OFF" : "ON",
+  }));
+  return [...scheduleItems, ...runItems];
 }
 
 export async function saveSchedule(input: { deviceId: string; kind: ScheduleKind; runAt: string }) {

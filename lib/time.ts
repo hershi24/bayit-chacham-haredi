@@ -76,6 +76,39 @@ export function shiftDate(iso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+export function clockFace(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: ISRAEL,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+export function planWhen(iso: string, now = new Date()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  const today = israelDate(now);
+  const day = israelDate(date);
+  const face = clockFace(iso);
+  if (day === today) return face;
+  if (day === shiftDate(today, 1)) return `מחר ${face}`;
+  const [, month, dateDay] = day.split("-");
+  return `${dateDay}.${month} ${face}`;
+}
+
+export function offClock(onIso: string, offIso: string): string {
+  const onDay = israelDate(new Date(onIso));
+  const offDay = israelDate(new Date(offIso));
+  const face = clockFace(offIso);
+  if (offDay === onDay) return face;
+  if (offDay === shiftDate(onDay, 1)) return `${face} למחרת`;
+  const [, month, day] = offDay.split("-");
+  return `${day}.${month} ${face}`;
+}
+
 export function formatIsrael(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);

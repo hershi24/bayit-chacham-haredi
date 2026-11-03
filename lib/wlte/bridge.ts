@@ -342,7 +342,7 @@ function describe(before: DeviceView, after: DeviceView): string {
   const relay = (value: boolean | null) => (value === null ? "לא ידוע" : value ? "פועל" : "כבוי");
   const link = (value: DeviceView["connectivity"]) =>
     value === "ONLINE" ? "מחובר" : value === "OFFLINE" ? "מנותק" : "אין קריאה";
-  return `ממסר ${relay(before.relayOn)} אל ${relay(after.relayOn)}, מנוע ${link(before.connectivity)} אל ${link(after.connectivity)}`;
+  return `ממסר ${relay(before.relayOn)} אל ${relay(after.relayOn)}, חיבור ${link(before.connectivity)} אל ${link(after.connectivity)}`;
 }
 
 export function getBridge(): Bridge {

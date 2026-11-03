@@ -13,6 +13,11 @@ export type SessionUser = {
   tenantName: string | null;
 };
 
+export type NextPlan = {
+  at: string;
+  action: RelayAction;
+};
+
 export type DeviceView = {
   deviceId: string;
   name: string;
@@ -24,6 +29,8 @@ export type DeviceView = {
   deviceType: string | null;
   sensorSummary: string | null;
   lastError: string | null;
+  icon: string | null;
+  next?: NextPlan | null;
 };
 
 export type AuditSource = "web" | "ivr" | "stream" | "system";

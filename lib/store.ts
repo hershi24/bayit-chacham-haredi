@@ -1,7 +1,8 @@
+import { earliestPlan } from "@/lib/devices/upcoming";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import type { DayClock, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { ScheduleKind } from "@/lib/schedules/types";
-import type { Role } from "@/lib/types";
+import type { DeviceView, Role } from "@/lib/types";
 import { storageMode } from "@/lib/storage";
 import * as remote from "@/lib/store-supabase";
 import * as sqlite from "@/lib/store-sqlite";
@@ -13,9 +14,22 @@ function remoteOn() {
   return storageMode() === "supabase";
 }
 
+const PLAN_HORIZON_MS = 90 * 24 * 60 * 60 * 1000;
+
+async function withPlans<T extends { deviceId: string }>(devices: T[]): Promise<Array<T & Pick<DeviceView, "next">>> {
+  if (!devices.length) return [];
+  const now = new Date();
+  const until = new Date(now.getTime() + PLAN_HORIZON_MS).toISOString();
+  const items = remoteOn()
+    ? await remote.listUpcoming(now.toISOString(), until)
+    : sqlite.listUpcoming(now.toISOString(), until);
+  const plans = earliestPlan(items);
+  return devices.map((device) => ({ ...device, next: plans.get(device.deviceId) ?? null }));
+}
+
 export async function listDevices(user: { role: Role; tenantId: string | null }) {
-  if (remoteOn()) return remote.listDevices(user);
-  return sqlite.listDevices(user);
+  const devices = remoteOn() ? await remote.listDevices(user) : sqlite.listDevices(user);
+  return withPlans(devices);
 }
 
 export async function listIvrTargets() {
@@ -24,8 +38,10 @@ export async function listIvrTargets() {
 }
 
 export async function getDevice(deviceId: string) {
-  if (remoteOn()) return remote.getDevice(deviceId);
-  return sqlite.getDevice(deviceId);
+  const device = remoteOn() ? await remote.getDevice(deviceId) : sqlite.getDevice(deviceId);
+  if (!device) return null;
+  const [withNext] = await withPlans([device]);
+  return withNext;
 }
 
 export async function listDeviceIds() {
@@ -38,8 +54,19 @@ export async function updateDeviceState(
   patch: sqlite.StatePatch,
   options?: { onlyIfNewer?: boolean },
 ) {
-  if (remoteOn()) return remote.updateDeviceState(deviceId, patch, options);
-  return sqlite.updateDeviceState(deviceId, patch, options);
+  const device = remoteOn()
+    ? await remote.updateDeviceState(deviceId, patch, options)
+    : sqlite.updateDeviceState(deviceId, patch, options);
+  if (!device) return null;
+  const [withNext] = await withPlans([device]);
+  return withNext;
+}
+
+export async function setDeviceIcon(deviceId: string, icon: string) {
+  const device = remoteOn() ? await remote.setDeviceIcon(deviceId, icon) : sqlite.setDeviceIcon(deviceId, icon);
+  if (!device) return null;
+  const [withNext] = await withPlans([device]);
+  return withNext;
 }
 
 export async function listTenants() {

@@ -5,6 +5,7 @@ import { verifyPassword } from "../lib/password";
 import {
   addCallerNumber,
   changeOwnPassword,
+  createCustomer,
   createDevice,
   createSession,
   createTenant,
@@ -15,9 +16,11 @@ import {
   findUserForLogin,
   listDevices,
   listIvrTargets,
+  listTenants,
   listUsers,
   readSession,
   removeCallerNumber,
+  renameTenant,
   updateUser,
 } from "../lib/store";
 
@@ -117,5 +120,28 @@ test("a customer can be limited to chosen sockets, and another phone can call th
     await deleteDevice(deviceB).catch(() => undefined);
     await deleteTenant(tenant.id);
     await deleteTenant(other.id);
+  }
+});
+
+test("a new customer is the login and the phone line together", async () => {
+  const created = await createCustomer({
+    name: "לקוח מאוחד",
+    username: "merged-user",
+    password: "secret1",
+    phone: "0540001991",
+  });
+  try {
+    const user = (await listUsers()).find((item) => item.username === "merged-user");
+    assert.equal(user?.tenantId, created.id);
+    assert.equal(user?.name, "לקוח מאוחד");
+    assert.equal(user?.role, "operator");
+    const tenant = (await listTenants()).find((item) => item.id === created.id);
+    assert.equal(tenant?.phones.some((item) => item.phone === "0540001991"), true);
+    await renameTenant(created.id, "לקוח מאוחד עודכן");
+    assert.equal((await listTenants()).find((item) => item.id === created.id)?.name, "לקוח מאוחד עודכן");
+  } finally {
+    const user = (await listUsers()).find((item) => item.username === "merged-user");
+    if (user) await deleteUser(user.id, "usr_admin");
+    await deleteTenant(created.id);
   }
 });

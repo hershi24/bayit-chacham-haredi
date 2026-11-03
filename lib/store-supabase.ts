@@ -462,6 +462,30 @@ export async function createTenant(input: { name: string; phone: string | null }
   return tenant;
 }
 
+export async function renameTenant(id: string, name: string) {
+  await ready();
+  const result = await client().from("tenants").update({ name }).eq("id", id).select("id");
+  if (result.error) fail(result.error, "עדכון הלקוח נכשל");
+  if (!result.data?.length) throw new HttpError(404, "הלקוח לא נמצא");
+}
+
+export async function createCustomer(input: { name: string; username: string; password: string; phone: string | null }) {
+  const tenant = await createTenant({ name: input.name, phone: input.phone });
+  try {
+    await createUser({
+      username: input.username,
+      name: input.name,
+      password: input.password,
+      role: "operator",
+      tenantId: tenant.id,
+    });
+  } catch (error) {
+    await deleteTenant(tenant.id);
+    throw error;
+  }
+  return tenant;
+}
+
 export async function deleteTenant(id: string) {
   await ready();
   const tenant = (await listTenants()).find((item) => item.id === id);

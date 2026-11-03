@@ -490,6 +490,28 @@ export function createTenant(input: { name: string; phone: string | null }): Ten
   return listTenants().find((tenant) => tenant.id === id)!;
 }
 
+export function renameTenant(id: string, name: string) {
+  const result = db().prepare("UPDATE tenants SET name = ? WHERE id = ?").run(name, id);
+  if (Number(result.changes) === 0) throw new HttpError(404, "הלקוח לא נמצא");
+}
+
+export function createCustomer(input: { name: string; username: string; password: string; phone: string | null }) {
+  const tenant = createTenant({ name: input.name, phone: input.phone });
+  try {
+    createUser({
+      username: input.username,
+      name: input.name,
+      password: input.password,
+      role: "operator",
+      tenantId: tenant.id,
+    });
+  } catch (error) {
+    deleteTenant(tenant.id);
+    throw error;
+  }
+  return tenant;
+}
+
 export function deleteTenant(id: string) {
   const tenant = listTenants().find((item) => item.id === id);
   if (!tenant) throw new HttpError(404, "הלקוח לא נמצא");

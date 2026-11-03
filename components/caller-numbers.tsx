@@ -19,8 +19,7 @@ export function CallerNumbers({
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState(false);
 
-  async function add(event: React.FormEvent) {
-    event.preventDefault();
+  async function add() {
     setPending(true);
     try {
       await onAdd(phone);
@@ -34,7 +33,7 @@ export function CallerNumbers({
 
   return (
     <div className="grid gap-3">
-      <form className="flex flex-wrap items-end gap-2" onSubmit={(event) => void add(event)}>
+      <div className="flex flex-wrap items-end gap-2">
         <div className="grid min-w-40 flex-1 gap-2">
           <Label htmlFor={fieldId}>מספר נוסף</Label>
           <Input
@@ -45,12 +44,18 @@ export function CallerNumbers({
             placeholder="0520000000"
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void add();
+              }
+            }}
           />
         </div>
-        <Button type="submit" className="h-11" disabled={pending || phone.trim() === ""}>
+        <Button type="button" className="h-11" disabled={pending || phone.trim() === ""} onClick={() => void add()}>
           הוספה
         </Button>
-      </form>
+      </div>
       {numbers.length ? (
         <ul className="grid gap-2">
           {numbers.map((item) => (

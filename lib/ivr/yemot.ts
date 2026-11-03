@@ -13,22 +13,25 @@ export function yemotRead(input: {
   min: number;
   max: number;
   allowed?: string;
-  mode?: "No" | "Number" | "Time";
+  mode?: "No" | "Number" | "Time" | "Digits" | "Date";
   seconds?: number;
+  allowEmpty?: boolean;
 }): string {
+  const playback =
+    input.mode === "Number" || input.mode === "Time" || input.mode === "Digits" || input.mode === "Date" ? input.mode : "No";
   const capture = [
     input.field,
     "no",
     String(input.max),
     String(input.min),
     String(input.seconds ?? 8),
-    input.mode === "Number" || input.mode === "Time" ? input.mode : "No",
+    playback,
     "yes",
     "",
     "",
     input.allowed ?? "",
     "2",
-    "",
+    input.allowEmpty ? "Ok" : "",
     "",
     "",
     "no",

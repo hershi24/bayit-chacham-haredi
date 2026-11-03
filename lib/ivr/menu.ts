@@ -11,7 +11,9 @@ import { isWlteError } from "@/lib/wlte/errors";
 function bag(entries: Iterable<[string, string]>) {
   const result: Record<string, string> = {};
   for (const [key, value] of entries) {
-    if (value.trim()) result[key.toLowerCase()] = value.trim();
+    const name = key.toLowerCase();
+    const trimmed = value.trim();
+    if (trimmed || name === "pikud_date") result[name] = trimmed;
   }
   return result;
 }
@@ -21,6 +23,11 @@ function present(value: string | undefined) {
   const trimmed = value.trim();
   if (!trimmed || trimmed.toLowerCase() === "none" || trimmed === "null") return undefined;
   return trimmed;
+}
+
+function clockDate(values: Record<string, string>) {
+  if (!Object.hasOwn(values, "pikud_date")) return undefined;
+  return present(values.pikud_date) ?? "";
 }
 
 async function incoming(request: Request) {
@@ -116,7 +123,7 @@ export async function handleMenu(request: Request) {
     minutes: present(input.values.pikud_minutes),
     repeat: present(input.values.pikud_repeat),
     week: present(input.values.pikud_week),
-    date: present(input.values.pikud_date),
+    date: clockDate(input.values),
     on: present(input.values.pikud_on),
     off: present(input.values.pikud_off),
     sockets: present(input.values.pikud_sockets),

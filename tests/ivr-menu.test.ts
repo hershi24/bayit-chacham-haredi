@@ -92,6 +92,27 @@ test("timer turns on for the requested minutes and the clock accepts four digits
     assert.equal(once.offTime, "18:00");
   }
   assert.equal(decideMenu([ac], { device: "1", action: "4", repeat: "1", date: "03112026", on: "1860" }).type, "read");
+  const askDate = decideMenu([ac], { device: "1", action: "4", repeat: "1" });
+  assert.equal(askDate.type, "read");
+  if (askDate.type === "read") {
+    assert.equal(askDate.field, "pikud_date");
+    assert.equal(askDate.min, 8);
+    assert.equal(askDate.max, 8);
+    assert.equal(askDate.mode, "Digits");
+    assert.match(askDate.message, /אפס שלוש אחד אחד שתיים אפס שתיים שש/);
+  }
+  const badDay = decideMenu([ac], { device: "1", action: "4", repeat: "1", date: "31022026" });
+  assert.equal(badDay.type, "read");
+  if (badDay.type === "read") assert.match(badDay.message, /היום לא קיים בחודש הזה/);
+  const badMonth = decideMenu([ac], { device: "1", action: "4", repeat: "1", date: "03132026" });
+  assert.equal(badMonth.type, "read");
+  if (badMonth.type === "read") assert.match(badMonth.message, /החודש לא תקין/);
+  const shortDate = decideMenu([ac], { device: "1", action: "4", repeat: "1", date: "031126" });
+  assert.equal(shortDate.type, "read");
+  if (shortDate.type === "read") assert.match(shortDate.message, /חסרות ספרות/);
+  const missingDate = decideMenu([ac], { device: "1", action: "4", repeat: "1", date: "" });
+  assert.equal(missingDate.type, "read");
+  if (missingDate.type === "read") assert.match(missingDate.message, /לא הוקש תאריך/);
   const both = decideMenu([ac, light], { device: "1", action: "4", repeat: "2", on: "1000", off: "1200" });
   assert.equal(both.type, "read");
   if (both.type === "read") assert.equal(both.field, "pikud_sockets");
@@ -137,6 +158,48 @@ test("a call from yemot does not need our token", async () => {
   const text = await response.text();
   assert.equal(text.includes("אין הרשאה"), false);
   assert.match(text, /המספר הזה לא משויך לשקע/);
+});
+
+test("a caller can correct a full date and an empty date asks again", async () => {
+  const entered = {
+    ApiPhone: "035551001",
+    pikud_device: "1",
+    pikud_action: "4",
+    pikud_repeat: "1",
+  };
+  const ask = await phonePress(entered);
+  const askText = await ask.text();
+  assert.match(askText, /אפס שלוש אחד אחד שתיים אפס שתיים שש/);
+  assert.match(askText, /pikud_date,no,8,8,8,Digits,yes,,/);
+  assert.equal(askText.includes(",Number,"), false);
+  assert.equal(askText.includes("go_to_folder=hangup"), false);
+
+  const impossible = await phonePress({ ...entered, pikud_date: "31022026" });
+  const impossibleText = await impossible.text();
+  assert.match(impossibleText, /היום לא קיים בחודש הזה/);
+  assert.match(impossibleText, /pikud_date,no,8,8,8,Digits,yes,,/);
+  assert.equal(impossibleText.includes("go_to_folder=hangup"), false);
+
+  const short = await phonePress({ ...entered, pikud_date: "031126" });
+  const shortText = await short.text();
+  assert.match(shortText, /חסרות ספרות/);
+  assert.match(shortText, /pikud_date,no,8,8,8,Digits,yes,,/);
+
+  const empty = await phonePress({ ...entered, pikud_date: "" });
+  const emptyText = await empty.text();
+  assert.match(emptyText, /לא הוקש תאריך/);
+  assert.match(emptyText, /pikud_date,no,8,8,8,Digits,yes,,/);
+  assert.equal(emptyText.includes("go_to_folder=hangup"), false);
+
+  const none = await phonePress({ ...entered, pikud_date: "None" });
+  assert.match(await none.text(), /לא הוקש תאריך/);
+
+  const corrected = await phonePress({ ...entered, pikud_date: "03112026" });
+  const correctedText = await corrected.text();
+  assert.match(correctedText, /pikud_on,no,4,4,/);
+  assert.match(correctedText, /לשעת הדלקה הקש ארבע ספרות/);
+  assert.equal(correctedText.includes("pikud_date"), false);
+  assert.equal(correctedText.includes("go_to_folder=hangup"), false);
 });
 
 test("a hangup resend does not open the menu again", async () => {

@@ -13,6 +13,12 @@ export type StoredProgram = {
   weekdays: number[];
   onTime: string | null;
   offTime: string | null;
+  slots: ProgramSlot[];
+};
+
+export type ProgramSlot = {
+  onTime: string | null;
+  offTime: string | null;
 };
 
 export type DayClock = {

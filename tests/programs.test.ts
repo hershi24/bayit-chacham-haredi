@@ -76,6 +76,7 @@ test("the phone toggles a named program", async () => {
     weekdays: [],
     onTime: null,
     offTime: null,
+    slots: [],
   });
   const menu = await handleMenu(
     new Request("http://127.0.0.1/api/ivr/menu", {
@@ -124,6 +125,7 @@ test("a day clock runs on every chosen socket and a paused program does not", as
     weekdays: [],
     onTime: null,
     offTime: null,
+    slots: [],
   };
   await upsertProgram(program);
   await saveDayClock({
@@ -177,6 +179,7 @@ test("a day clock runs on every chosen socket and a paused program does not", as
     weekdays: [],
     onTime: null,
     offTime: null,
+    slots: [],
   });
   await syncTenantPrograms("ten_yeshiva", now);
   const preset = (await listProgramRuns("ten_yeshiva")).filter((run) => run.label.includes("בראשית"));
@@ -202,6 +205,7 @@ test("a weekday program runs every chosen day and skips Friday and Saturday", as
     weekdays: [0, 1, 2, 3, 4],
     onTime: "10:00",
     offTime: "12:00",
+    slots: [{ onTime: "10:00", offTime: "12:00" }],
   };
   await upsertProgram(program);
   await syncTenantPrograms("ten_shul", now);
@@ -222,6 +226,48 @@ test("a weekday program runs every chosen day and skips Friday and Saturday", as
   await upsertProgram({ ...program, enabled: false });
   await syncTenantPrograms("ten_shul", now);
   assert.equal((await listRunsFor(program.id)).length, 0);
+  await deleteProgram("ten_shul", program.id);
+});
+
+test("one program holds several clocks every day", async () => {
+  const now = new Date("2026-11-01T08:00:00.000Z");
+  const program = {
+    id: programId("ten_shul", "days:slots"),
+    tenantId: "ten_shul",
+    programKey: "days:slots",
+    name: "כמה שעונים",
+    enabled: true,
+    deviceIds: ["rct074190118"],
+    startDate: null,
+    endDate: null,
+    days: [] as string[],
+    weekdays: [0, 1, 2, 3, 4, 5, 6],
+    onTime: "14:00",
+    offTime: null,
+    slots: [
+      { onTime: "16:00", offTime: null },
+      { onTime: "14:00", offTime: null },
+      { onTime: "14:30", offTime: "15:00" },
+    ],
+  };
+  await upsertProgram(program);
+  const stored = (await listPrograms("ten_shul")).find((item) => item.id === program.id);
+  assert.deepEqual(
+    stored?.slots.map((slot) => slot.onTime),
+    ["14:00", "14:30", "16:00"],
+  );
+  await syncTenantPrograms("ten_shul", now);
+  const runs = await listRunsFor(program.id);
+  const today = runs.filter((run) => israelDate(new Date(run.runAt)) === "2026-11-01");
+  assert.deepEqual(
+    today.map((run) => [run.action, run.runAt]).sort((left, right) => left[1].localeCompare(right[1])),
+    [
+      ["ON", jerusalemInstant("2026-11-01", "14:00")?.toISOString()],
+      ["ON", jerusalemInstant("2026-11-01", "14:30")?.toISOString()],
+      ["OFF", jerusalemInstant("2026-11-01", "15:00")?.toISOString()],
+      ["ON", jerusalemInstant("2026-11-01", "16:00")?.toISOString()],
+    ],
+  );
   await deleteProgram("ten_shul", program.id);
 });
 

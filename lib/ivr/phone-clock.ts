@@ -41,6 +41,7 @@ export async function savePhoneClock(plan: PhoneClockPlan): Promise<string> {
     weekdays: plan.weekdays,
     onTime: plan.onTime,
     offTime: plan.offTime,
+    slots: [{ onTime: plan.onTime, offTime: plan.offTime }],
   });
   await syncTenantPrograms(tenantId);
   return `נשמרה תוכנית ${name}, ${times}`;

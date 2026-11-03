@@ -7,6 +7,7 @@ import { HttpError } from "@/lib/http-error";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
+import { parseSlots } from "@/lib/programs/slots";
 import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { PlanItem } from "@/lib/devices/upcoming";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
@@ -998,6 +999,7 @@ function mapProgram(row: {
   weekdays?: string | null;
   on_time?: string | null;
   off_time?: string | null;
+  slots?: string | null;
 }): StoredProgram {
   return {
     id: String(row.id),
@@ -1012,6 +1014,7 @@ function mapProgram(row: {
     weekdays: jsonWeekdays(row.weekdays),
     onTime: row.on_time ?? null,
     offTime: row.off_time ?? null,
+    slots: parseSlots(row.slots, row.on_time ?? null, row.off_time ?? null),
   };
 }
 
@@ -1034,25 +1037,39 @@ export async function listPrograms(tenantId: string): Promise<StoredProgram[]> {
 
 export async function upsertProgram(program: StoredProgram) {
   await ready();
-  const result = await client().from("programs").upsert(
-    {
-      id: program.id,
-      tenant_id: program.tenantId,
-      program_key: program.programKey,
-      name: program.name,
-      enabled: program.enabled,
-      device_ids: JSON.stringify(program.deviceIds),
-      start_date: program.startDate,
-      end_date: program.endDate,
-      days: JSON.stringify(program.days ?? []),
-      weekdays: JSON.stringify(program.weekdays ?? []),
-      on_time: program.onTime,
-      off_time: program.offTime,
-      created_at: new Date().toISOString(),
-    },
-    { onConflict: "tenant_id,program_key" },
-  );
+  const row = {
+    id: program.id,
+    tenant_id: program.tenantId,
+    program_key: program.programKey,
+    name: program.name,
+    enabled: program.enabled,
+    device_ids: JSON.stringify(program.deviceIds),
+    start_date: program.startDate,
+    end_date: program.endDate,
+    days: JSON.stringify(program.days ?? []),
+    weekdays: JSON.stringify(program.weekdays ?? []),
+    on_time: program.onTime,
+    off_time: program.offTime,
+    created_at: new Date().toISOString(),
+  };
+  const slots = program.slots ?? [];
+  let result = await client()
+    .from("programs")
+    .upsert({ ...row, slots: JSON.stringify(slots) }, { onConflict: "tenant_id,program_key" });
+  if (result.error && slotsColumnMissing(result.error)) {
+    if (slots.length > 1) {
+      throw new HttpError(
+        500,
+        "עמודת השעונים חסרה. הריצו: alter table programs add column if not exists slots text not null default '[]';",
+      );
+    }
+    result = await client().from("programs").upsert(row, { onConflict: "tenant_id,program_key" });
+  }
   if (result.error) fail(result.error, "שמירת התוכנית נכשלה. הריצו את supabase/schema.sql");
+}
+
+function slotsColumnMissing(error: DbError) {
+  return error.code === "42703" || error.code === "PGRST204" || /slots/i.test(error.message);
 }
 
 export async function deleteProgram(tenantId: string, id: string) {

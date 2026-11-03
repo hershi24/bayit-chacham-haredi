@@ -33,22 +33,25 @@ export async function programsPayload(
       weekdays: [...program.weekdays].sort((left, right) => left - right),
       onTime: program.onTime,
       offTime: program.offTime,
+      slots: program.slots,
       deviceIds: program.deviceIds,
     }))
     .sort((left, right) => left.name.localeCompare(right.name, "he"));
   const repeated = programs.flatMap((program) =>
     days
       .filter((day) => program.weekdays.includes(weekdayOf(day.date)))
-      .map((day) => ({
-        id: `week:${program.id}:${day.date}`,
-        day: day.date,
-        hebrew: day.hebrew,
-        onTime: program.onTime,
-        offTime: program.offTime,
-        deviceIds: program.deviceIds,
-        programId: program.id,
-        recurring: true,
-      })),
+      .flatMap((day) =>
+        program.slots.map((slot, index) => ({
+          id: `week:${program.id}:${day.date}:${index}`,
+          day: day.date,
+          hebrew: day.hebrew,
+          onTime: slot.onTime,
+          offTime: slot.offTime,
+          deviceIds: program.deviceIds,
+          programId: program.id,
+          recurring: true,
+        })),
+      ),
   );
   return {
     tenantId,

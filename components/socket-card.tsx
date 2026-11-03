@@ -118,7 +118,7 @@ export function SocketCard({
     >
       <span className="power-switch-ring" aria-hidden="true" />
       <span className="power-switch-face">
-        {busy !== null ? <Loader2 className="size-3.5 animate-spin" /> : <Power className="size-3.5" strokeWidth={2.5} />}
+        {busy !== null ? <Loader2 className="size-6 animate-spin" /> : <Power className="size-6" strokeWidth={2.5} />}
       </span>
     </button>
   );
@@ -126,9 +126,8 @@ export function SocketCard({
   const timer = (
     <Button
       type="button"
-      variant="ghost"
-      size="sm"
-      className="h-8 rounded-full px-2.5 text-[13px] text-muted-foreground hover:text-foreground"
+      variant="outline"
+      className="h-9 rounded-full bg-card/70 px-3.5 text-[13px]"
       disabled={busy !== null || savingTimer || frozen}
       onClick={() => {
         setTimerError(null);
@@ -140,34 +139,38 @@ export function SocketCard({
     </Button>
   );
 
+  const lit = !frozen && powered;
+
   const status = (
-    <p className="flex flex-wrap items-center gap-x-1.5 text-[13px] text-muted-foreground">
-      <span className={`size-1.5 rounded-full ${offline ? "bg-destructive" : device.connectivity === "ONLINE" ? "bg-online" : "bg-muted-foreground"}`} />
+    <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[14px] text-muted-foreground">
+      <span className={`size-2 rounded-full ${offline ? "bg-destructive" : device.connectivity === "ONLINE" ? "bg-online" : "bg-muted-foreground"}`} />
       <span className={offline ? "text-destructive" : ""}>{link}</span>
-      <span>·</span>
-      <span className={!frozen && powered ? "font-medium text-online-foreground" : ""}>{relayLabel}</span>
-      {device.next ? (
-        <>
-          <span>·</span>
-          <span>
-            {device.next.action === "ON" ? "יידלק" : "יכבה"} <span dir="ltr">{planWhen(device.next.at)}</span>
-          </span>
-        </>
-      ) : null}
     </p>
+  );
+
+  const next = device.next ? (
+    <p className="flex min-w-0 items-center gap-1.5 rounded-full bg-background/70 px-3 py-1.5 text-[13px] text-muted-foreground">
+      <Timer className="size-3.5 shrink-0" />
+      <span className="truncate">
+        {device.next.action === "ON" ? "יידלק" : "יכבה"} <span dir="ltr">{planWhen(device.next.at)}</span>
+      </span>
+    </p>
+  ) : (
+    <span />
   );
 
   return (
     <article
-      className={`flex h-full flex-col rounded-2xl border bg-card p-4 transition-colors ${
-        !frozen && powered ? "border-online/25" : "border-border/60"
+      data-lit={lit ? "" : undefined}
+      className={`socket-card flex h-full flex-col rounded-3xl border p-5 transition-colors duration-300 ${
+        lit ? "border-online/30" : "border-border/70 bg-card"
       }`}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-4">
         <button
           type="button"
-          className={`grid size-10 shrink-0 place-items-center rounded-xl transition-colors ${
-            !frozen && powered ? "bg-online-soft text-online-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+          className={`grid size-14 shrink-0 place-items-center rounded-2xl transition-colors duration-300 ${
+            lit ? "bg-online text-white shadow-[0_6px_16px_rgb(24_122_52/30%)]" : "bg-secondary text-muted-foreground hover:text-foreground"
           }`}
           aria-label={`אייקון ${iconLabel}`}
           onClick={() => {
@@ -175,21 +178,25 @@ export function SocketCard({
             setIconOpen(true);
           }}
         >
-          <Icon className="size-[18px]" />
+          <Icon className="size-7" />
         </button>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[16px] leading-5 font-semibold">{device.name}</h2>
+        <div className="min-w-0 flex-1 pt-1">
+          <h2 className="truncate text-[20px] leading-6 font-semibold">{device.name}</h2>
+          {status}
           {showTenant ? (
-            <p className="truncate text-[12px] text-muted-foreground">
+            <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
               {device.tenantName} · <span className="font-mono" dir="ltr">{device.deviceId}</span>
             </p>
           ) : null}
         </div>
-        {power}
+        <div className="flex shrink-0 flex-col items-center gap-1.5">
+          {power}
+          <span className={`text-[13px] font-semibold ${lit ? "text-online-foreground" : "text-muted-foreground"}`}>{relayLabel}</span>
+        </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2">
-        {status}
+      <div className="mt-auto flex items-center justify-between gap-2 pt-4">
+        {next}
         {timer}
       </div>
       {device.lastError ? <p className="mt-2 text-[13px] text-destructive">{device.lastError}</p> : null}

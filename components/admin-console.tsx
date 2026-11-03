@@ -442,8 +442,13 @@ function UserEditorForm({
               <Input id="edit-name" value={name} onChange={(event) => setName(event.target.value)} />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="edit-password">סיסמה חדשה</Label>
-              <Input id="edit-password" dir="ltr" className="text-left" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="השאירו ריק כדי לא לשנות" />
+              <Label htmlFor="edit-password">איפוס סיסמה</Label>
+              <Input id="edit-password" dir="ltr" className="text-left" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="השאירו ריק כדי לא לשנות" />
+              <p className="text-sm text-muted-foreground">
+                {user.id === actorId
+                  ? "השאירו ריק כדי להשאיר את הסיסמה הקיימת."
+                  : "סיסמה חדשה לכניסה לאתר. המשתמש ינותק ויתחבר איתה."}
+              </p>
             </div>
             <div className="grid gap-2">
               <Label>הרשאה</Label>

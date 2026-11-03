@@ -118,6 +118,11 @@ export async function deleteUser(id: string, actorId: string) {
   return sqlite.deleteUser(id, actorId);
 }
 
+export async function changeOwnPassword(userId: string, currentPassword: string, nextPassword: string) {
+  if (remoteOn()) return remote.changeOwnPassword(userId, currentPassword, nextPassword);
+  return sqlite.changeOwnPassword(userId, currentPassword, nextPassword);
+}
+
 export async function updateUser(input: {
   id: string;
   actorId: string;

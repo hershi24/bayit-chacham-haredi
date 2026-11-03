@@ -1,17 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { devicesForPhone } from "../lib/access";
+import { verifyPassword } from "../lib/password";
 import {
   addCallerNumber,
+  changeOwnPassword,
   createDevice,
+  createSession,
   createTenant,
   createUser,
   deleteDevice,
   deleteTenant,
   deleteUser,
+  findUserForLogin,
   listDevices,
   listIvrTargets,
   listUsers,
+  readSession,
   removeCallerNumber,
   updateUser,
 } from "../lib/store";
@@ -83,6 +88,29 @@ test("a customer can be limited to chosen sockets, and another phone can call th
     });
     const restored = await listDevices({ id: userId, role: "operator", tenantId: tenant.id });
     assert.deepEqual(restored.map((device) => device.deviceId).sort(), [deviceA, deviceB]);
+
+    await assert.rejects(() => changeOwnPassword(userId, "nope", "secret2"), /הנוכחית/);
+    const kept = await createSession(userId);
+    await changeOwnPassword(userId, "secret1", "secret2");
+    assert.equal((await readSession(kept.id))?.id, userId);
+    const changed = await findUserForLogin("access-test");
+    assert.equal(verifyPassword("secret2", changed?.passwordHash ?? ""), true);
+    assert.equal(verifyPassword("secret1", changed?.passwordHash ?? ""), false);
+
+    const dropped = await createSession(userId);
+    await updateUser({
+      id: userId,
+      actorId: "usr_admin",
+      name: "בודק גישה",
+      role: "operator",
+      tenantId: tenant.id,
+      password: "secret3",
+      deviceIds: null,
+    });
+    assert.equal(await readSession(dropped.id), null);
+    assert.equal(await readSession(kept.id), null);
+    const reset = await findUserForLogin("access-test");
+    assert.equal(verifyPassword("secret3", reset?.passwordHash ?? ""), true);
   } finally {
     if (userId) await deleteUser(userId, "usr_admin");
     await deleteDevice(deviceA).catch(() => undefined);

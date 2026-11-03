@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { HttpError } from "@/lib/http-error";
-import { hashPassword } from "@/lib/password";
+import { hashPassword, verifyPassword } from "@/lib/password";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
@@ -609,6 +609,7 @@ export function updateUser(input: {
     db()
       .prepare("UPDATE users SET name = ?, role = ?, tenant_id = ?, password_hash = ? WHERE id = ?")
       .run(input.name, input.role, tenantId, hashPassword(input.password), input.id);
+    if (input.id !== input.actorId) db().prepare("DELETE FROM sessions WHERE user_id = ?").run(input.id);
   } else {
     db().prepare("UPDATE users SET name = ?, role = ?, tenant_id = ? WHERE id = ?").run(input.name, input.role, tenantId, input.id);
   }
@@ -651,6 +652,14 @@ export function updateDevice(input: { deviceId: string; name: string; tenantId: 
 export function deleteDevice(deviceId: string) {
   const result = db().prepare("DELETE FROM devices WHERE device_id = ?").run(deviceId);
   if (Number(result.changes) === 0) throw new HttpError(404, "השקע לא נמצא");
+}
+
+export function changeOwnPassword(userId: string, currentPassword: string, nextPassword: string) {
+  const row = db().prepare("SELECT password_hash FROM users WHERE id = ?").get(userId) as Row | undefined;
+  if (!row) throw new HttpError(404, "המשתמש לא נמצא");
+  if (!verifyPassword(currentPassword, text(row, "password_hash"))) throw new HttpError(400, "הסיסמה הנוכחית שגויה");
+  if (currentPassword === nextPassword) throw new HttpError(400, "בחרו סיסמה שונה מהנוכחית");
+  db().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(nextPassword), userId);
 }
 
 export function findUserForLogin(username: string): (UserView & { passwordHash: string }) | null {

@@ -4,7 +4,7 @@ import path from "node:path";
 import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { HttpError } from "@/lib/http-error";
-import { hashPassword } from "@/lib/password";
+import { hashPassword, verifyPassword } from "@/lib/password";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
@@ -586,6 +586,10 @@ export async function updateUser(input: {
   if (input.password) patch.password_hash = hashPassword(input.password);
   const saved = await client().from("users").update(patch).eq("id", input.id);
   if (saved.error) fail(saved.error, "עדכון המשתמש נכשל");
+  if (input.password && input.id !== input.actorId) {
+    const dropped = await client().from("sessions").delete().eq("user_id", input.id);
+    if (dropped.error) fail(dropped.error, "ניתוק המשתמש נכשל");
+  }
   const cleared = await client().from("user_devices").delete().eq("user_id", input.id);
   if (cleared.error && missingRelation(cleared.error)) {
     if (deviceIds) throw new HttpError(500, GRANTS_SCHEMA);
@@ -641,6 +645,18 @@ export async function deleteDevice(deviceId: string) {
   const result = await client().from("devices").delete().eq("device_id", deviceId).select("device_id");
   if (result.error) fail(result.error, "הסרת שקע נכשלה");
   if (!result.data?.length) throw new HttpError(404, "השקע לא נמצא");
+}
+
+export async function changeOwnPassword(userId: string, currentPassword: string, nextPassword: string) {
+  await ready();
+  const result = await client().from("users").select("password_hash").eq("id", userId).maybeSingle();
+  if (result.error) fail(result.error, "עדכון הסיסמה נכשל");
+  const hash = result.data?.password_hash;
+  if (typeof hash !== "string") throw new HttpError(404, "המשתמש לא נמצא");
+  if (!verifyPassword(currentPassword, hash)) throw new HttpError(400, "הסיסמה הנוכחית שגויה");
+  if (currentPassword === nextPassword) throw new HttpError(400, "בחרו סיסמה שונה מהנוכחית");
+  const saved = await client().from("users").update({ password_hash: hashPassword(nextPassword) }).eq("id", userId);
+  if (saved.error) fail(saved.error, "עדכון הסיסמה נכשל");
 }
 
 export async function findUserForLogin(username: string): Promise<(UserView & { passwordHash: string }) | null> {

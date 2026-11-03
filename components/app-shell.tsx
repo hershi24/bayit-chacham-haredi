@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { CalendarRange, LayoutGrid, LogOut, Phone, ScrollText, Settings, type LucideIcon } from "lucide-react";
+import { CalendarRange, KeyRound, LayoutGrid, LogOut, Phone, ScrollText, Settings, type LucideIcon } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     user?.role === "admin"
       ? [...links, { href: "/admin", label: "ניהול", short: "ניהול", icon: Settings }]
       : user
-        ? [...links, { href: "/phones", label: "מספרים לחיוג", short: "מספרים", icon: Phone }]
+        ? [
+            ...links,
+            { href: "/phones", label: "מספרים לחיוג", short: "מספרים", icon: Phone },
+            { href: "/password", label: "סיסמת כניסה", short: "סיסמה", icon: KeyRound },
+          ]
         : links;
 
   return (

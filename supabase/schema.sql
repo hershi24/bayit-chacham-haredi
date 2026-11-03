@@ -24,6 +24,7 @@ create table if not exists devices (
   device_id text primary key,
   tenant_id text not null references tenants (id),
   name text not null,
+  icon text,
   created_at text not null
 );
 
@@ -130,6 +131,8 @@ alter table programs add column if not exists days text not null default '[]';
 alter table programs add column if not exists weekdays text not null default '[]';
 alter table programs add column if not exists on_time text;
 alter table programs add column if not exists off_time text;
+
+alter table devices add column if not exists icon text;
 
 create table if not exists clocks (
   id text primary key,

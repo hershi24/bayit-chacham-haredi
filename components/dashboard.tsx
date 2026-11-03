@@ -5,16 +5,11 @@ import { toast } from "sonner";
 import { SocketCard } from "@/components/socket-card";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client-api";
+import type { DeviceIconKey } from "@/lib/devices/icons";
 import type { BridgeStatus, DeviceView, RelayAction, SessionUser } from "@/lib/types";
 import { formatIsrael } from "@/lib/time";
 
 type Payload = { devices: DeviceView[]; status: BridgeStatus; user?: SessionUser };
-
-function newer(current: string | null, incoming: string | null) {
-  if (!incoming) return false;
-  if (!current) return true;
-  return Date.parse(incoming) >= Date.parse(current);
-}
 
 export function Dashboard() {
   const [devices, setDevices] = useState<DeviceView[] | null>(null);
@@ -29,11 +24,32 @@ export function Dashboard() {
       if (!current) return [next];
       const index = current.findIndex((device) => device.deviceId === next.deviceId);
       if (index === -1) return [...current, next];
-      if (!newer(current[index].stateUpdatedAt, next.stateUpdatedAt) && next.lastError === current[index].lastError) {
+      const previous = current[index];
+      const merged: DeviceView = {
+        ...next,
+        icon: next.icon !== undefined ? next.icon : previous.icon,
+        next: next.next === undefined ? previous.next : next.next,
+      };
+      const incomingTime = merged.stateUpdatedAt ? Date.parse(merged.stateUpdatedAt) : Number.NaN;
+      const previousTime = previous.stateUpdatedAt ? Date.parse(previous.stateUpdatedAt) : Number.NaN;
+      const strictlyOlder =
+        Number.isFinite(incomingTime) && Number.isFinite(previousTime) && incomingTime < previousTime;
+      if (strictlyOlder && merged.lastError === previous.lastError) return current;
+      const planSame =
+        (previous.next?.at ?? null) === (merged.next?.at ?? null) &&
+        (previous.next?.action ?? null) === (merged.next?.action ?? null);
+      if (
+        merged.lastError === previous.lastError &&
+        merged.icon === previous.icon &&
+        planSame &&
+        merged.relayOn === previous.relayOn &&
+        merged.connectivity === previous.connectivity &&
+        merged.name === previous.name
+      ) {
         return current;
       }
       const copy = current.slice();
-      copy[index] = next;
+      copy[index] = merged;
       return copy;
     });
   }, []);
@@ -88,6 +104,26 @@ export function Dashboard() {
     } finally {
       setBusy((current) => ({ ...current, [device.deviceId]: null }));
     }
+  }
+
+  async function chooseIcon(device: DeviceView, icon: DeviceIconKey) {
+    const result = await api<{ device: DeviceView }>(`/api/devices/${device.deviceId}/icon`, {
+      method: "POST",
+      body: JSON.stringify({ icon }),
+    });
+    applyDevice(result.device);
+    toast.success("האייקון נשמר");
+  }
+
+  async function armTimer(device: DeviceView, input: { mode: "now" | "later"; time?: string; minutes: number }) {
+    const result = await api<{ device: DeviceView; saved: boolean; message: string }>(`/api/devices/${device.deviceId}/timer`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    applyDevice(result.device);
+    if (!result.saved) throw new Error(result.message);
+    toast.success(result.message);
+    return result;
   }
 
   async function simulate(device: DeviceView, patch: { relayOn?: boolean; online?: boolean }) {
@@ -165,6 +201,8 @@ export function Dashboard() {
               mockMode={status?.mode === "mock" && role === "admin"}
               onCommand={(action) => void command(device, action)}
               onSimulate={(patch) => void simulate(device, patch)}
+              onIcon={(icon) => chooseIcon(device, icon)}
+              onTimer={(input) => armTimer(device, input)}
             />
           ))}
         </div>

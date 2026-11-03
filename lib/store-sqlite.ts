@@ -54,6 +54,7 @@ function db(): DatabaseSync {
   }
   if (!dayClocksReady) {
     ensureDayClocks(globalDb.__pikudDb);
+    addDeviceColumn(globalDb.__pikudDb, "icon", "icon TEXT");
     dayClocksReady = true;
   }
   return globalDb.__pikudDb;
@@ -64,6 +65,17 @@ function addColumn(database: DatabaseSync, name: string, definition: string) {
   if (columns.some((column) => column.name === name)) return;
   try {
     database.exec(`ALTER TABLE programs ADD COLUMN ${definition}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!/duplicate column/i.test(message)) throw error;
+  }
+}
+
+function addDeviceColumn(database: DatabaseSync, name: string, definition: string) {
+  const columns = database.prepare("PRAGMA table_info(devices)").all() as Array<{ name?: string }>;
+  if (columns.some((column) => column.name === name)) return;
+  try {
+    database.exec(`ALTER TABLE devices ADD COLUMN ${definition}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (!/duplicate column/i.test(message)) throw error;
@@ -111,6 +123,7 @@ function migrate(database: DatabaseSync) {
       device_id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
       name TEXT NOT NULL,
+      icon TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS device_state (
@@ -185,6 +198,7 @@ function migrate(database: DatabaseSync) {
       detail TEXT
     );
   `);
+  addDeviceColumn(database, "icon", "icon TEXT");
 }
 
 function seed(database: DatabaseSync) {
@@ -225,7 +239,7 @@ function seed(database: DatabaseSync) {
 
 function deviceSelect() {
   return `
-    SELECT d.device_id, d.name, d.tenant_id, t.name AS tenant_name, t.phone AS tenant_phone,
+    SELECT d.device_id, d.name, d.icon, d.tenant_id, t.name AS tenant_name, t.phone AS tenant_phone,
       s.connectivity, s.relay_on, s.state_updated_at, s.device_type, s.sensor_summary, s.last_error
     FROM devices d
     JOIN tenants t ON t.id = d.tenant_id
@@ -247,6 +261,7 @@ function mapDevice(row: Row): DeviceView & { phone: string | null } {
     deviceType: textOrNull(row, "device_type"),
     sensorSummary: textOrNull(row, "sensor_summary"),
     lastError: textOrNull(row, "last_error"),
+    icon: textOrNull(row, "icon"),
   };
 }
 
@@ -262,6 +277,8 @@ export function presentDevice(device: DeviceView & { phone?: string | null }): D
     deviceType: device.deviceType,
     sensorSummary: device.sensorSummary,
     lastError: device.lastError,
+    icon: device.icon ?? null,
+    ...(device.next === undefined ? {} : { next: device.next }),
   };
 }
 
@@ -600,6 +617,45 @@ function mapSchedule(row: Row): PendingSchedule {
     runAt: text(row, "run_at"),
     attempts: Number(row.attempts ?? 0),
   };
+}
+
+export function setDeviceIcon(deviceId: string, icon: string): DeviceView | null {
+  const result = db().prepare("UPDATE devices SET icon = ? WHERE device_id = ?").run(icon, deviceId);
+  if (Number(result.changes) === 0) return null;
+  const view = getDevice(deviceId);
+  return view ? presentDevice(view) : null;
+}
+
+export function listUpcoming(nowIso: string, untilIso: string): Array<{ deviceId: string; at: string; action: "ON" | "OFF" }> {
+  const database = db();
+  const schedules = database
+    .prepare(
+      `SELECT device_id, kind, run_at
+       FROM schedules
+       WHERE done_at IS NULL AND attempts < 8 AND run_at >= ? AND run_at <= ?
+       ORDER BY run_at`,
+    )
+    .all(nowIso, untilIso) as Row[];
+  const runs = database
+    .prepare(
+      `SELECT device_id, action, run_at
+       FROM program_runs
+       WHERE done_at IS NULL AND attempts < 8 AND run_at >= ? AND run_at <= ?
+       ORDER BY run_at`,
+    )
+    .all(nowIso, untilIso) as Row[];
+  return [
+    ...schedules.map((row) => ({
+      deviceId: text(row, "device_id"),
+      at: text(row, "run_at"),
+      action: text(row, "kind") === "later_on" ? ("ON" as const) : ("OFF" as const),
+    })),
+    ...runs.map((row) => ({
+      deviceId: text(row, "device_id"),
+      at: text(row, "run_at"),
+      action: text(row, "action") === "OFF" ? ("OFF" as const) : ("ON" as const),
+    })),
+  ];
 }
 
 export function saveSchedule(input: { deviceId: string; kind: ScheduleKind; runAt: string }) {

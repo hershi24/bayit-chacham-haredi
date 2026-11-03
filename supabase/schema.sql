@@ -149,4 +149,27 @@ create index if not exists clocks_tenant_day_idx on clocks (tenant_id, day);
 
 alter table clocks enable row level security;
 
-revoke all on table tenants, users, devices, device_state, sessions, audit_log, schedules, clock_settings, programs, program_runs, clocks from anon, authenticated;
+create table if not exists caller_numbers (
+  id text primary key,
+  tenant_id text not null references tenants (id) on delete cascade,
+  phone text not null unique,
+  created_at text not null
+);
+
+create index if not exists caller_numbers_tenant_idx on caller_numbers (tenant_id);
+
+insert into caller_numbers (id, tenant_id, phone, created_at)
+select 'ph_' || id, id, phone, created_at from tenants
+where phone is not null and btrim(phone) <> ''
+on conflict (phone) do nothing;
+
+create table if not exists user_devices (
+  user_id text not null references users (id) on delete cascade,
+  device_id text not null references devices (device_id) on delete cascade,
+  primary key (user_id, device_id)
+);
+
+alter table caller_numbers enable row level security;
+alter table user_devices enable row level security;
+
+revoke all on table tenants, users, devices, device_state, sessions, audit_log, schedules, clock_settings, programs, program_runs, clocks, caller_numbers, user_devices from anon, authenticated;

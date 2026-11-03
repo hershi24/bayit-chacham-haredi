@@ -4,10 +4,22 @@ export function normalizePhone(input: string): string {
   return digits;
 }
 
-export function devicesForPhone<T extends { phone: string | null }>(devices: T[], phone: string | undefined): T[] {
+type PhoneCarrier = { phone: string | null; phones?: readonly string[] | null };
+
+export function storedPhones(device: PhoneCarrier): string[] {
+  const listed = (device.phones ?? []).filter((item) => item.trim());
+  if (listed.length) return [...listed];
+  return device.phone ? [device.phone] : [];
+}
+
+export function deviceMatchesPhone(device: PhoneCarrier, incoming: string): boolean {
+  return storedPhones(device).some((stored) => phonesMatch(stored, incoming));
+}
+
+export function devicesForPhone<T extends PhoneCarrier>(devices: T[], phone: string | undefined): T[] {
   const caller = phone?.trim();
   if (!caller) return [];
-  return devices.filter((device) => phonesMatch(device.phone, caller));
+  return devices.filter((device) => deviceMatchesPhone(device, caller));
 }
 
 export function phonesMatch(stored: string | null | undefined, incoming: string): boolean {
@@ -26,7 +38,7 @@ export type DeviceLookup<T> = {
   reason: "not-found" | "ambiguous" | "missing";
 };
 
-export function resolveDevice<T extends { deviceId: string; phone: string | null }>(
+export function resolveDevice<T extends { deviceId: string; phone: string | null; phones?: readonly string[] | null }>(
   devices: T[],
   query: { deviceId?: string; phone?: string },
 ): DeviceLookup<T> {
@@ -39,7 +51,7 @@ export function resolveDevice<T extends { deviceId: string; phone: string | null
   const phone = query.phone?.trim();
   if (!phone) return { ok: false, reason: "missing" };
 
-  const matches = devices.filter((item) => phonesMatch(item.phone, phone));
+  const matches = devices.filter((item) => deviceMatchesPhone(item, phone));
   if (matches.length === 1) return { ok: true, device: matches[0] };
   if (matches.length === 0) return { ok: false, reason: "not-found" };
   return { ok: false, reason: "ambiguous" };

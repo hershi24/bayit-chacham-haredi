@@ -1,8 +1,10 @@
+import { canAccessDevice } from "@/lib/access";
 import { earliestPlan } from "@/lib/devices/upcoming";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
+import { HttpError } from "@/lib/http-error";
 import type { DayClock, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { ScheduleKind } from "@/lib/schedules/types";
-import type { DeviceView, Role } from "@/lib/types";
+import type { DeviceView, Role, SessionUser } from "@/lib/types";
 import { storageMode } from "@/lib/storage";
 import * as remote from "@/lib/store-supabase";
 import * as sqlite from "@/lib/store-sqlite";
@@ -27,9 +29,20 @@ async function withPlans<T extends { deviceId: string }>(devices: T[]): Promise<
   return devices.map((device) => ({ ...device, next: plans.get(device.deviceId) ?? null }));
 }
 
-export async function listDevices(user: { role: Role; tenantId: string | null }) {
+export async function listDevices(user: { id?: string; role: Role; tenantId: string | null }) {
   const devices = remoteOn() ? await remote.listDevices(user) : sqlite.listDevices(user);
   return withPlans(devices);
+}
+
+export async function visibleDeviceIds(user: { id: string; role: Role; tenantId: string | null }) {
+  if (user.role === "admin") return null;
+  return remoteOn() ? remote.grantsFor(user.id) : sqlite.grantsFor(user.id);
+}
+
+export async function assertMayUseDevice(user: SessionUser, device: { deviceId: string; tenantId: string }) {
+  if (!canAccessDevice(user, device.tenantId)) throw new HttpError(403, "אין הרשאה לשקע הזה");
+  const granted = await visibleDeviceIds(user);
+  if (granted && !granted.includes(device.deviceId)) throw new HttpError(403, "אין הרשאה לשקע הזה");
 }
 
 export async function listIvrTargets() {
@@ -103,6 +116,39 @@ export async function createUser(input: {
 export async function deleteUser(id: string, actorId: string) {
   if (remoteOn()) return remote.deleteUser(id, actorId);
   return sqlite.deleteUser(id, actorId);
+}
+
+export async function changeOwnPassword(userId: string, currentPassword: string, nextPassword: string) {
+  if (remoteOn()) return remote.changeOwnPassword(userId, currentPassword, nextPassword);
+  return sqlite.changeOwnPassword(userId, currentPassword, nextPassword);
+}
+
+export async function updateUser(input: {
+  id: string;
+  actorId: string;
+  name: string;
+  role: Role;
+  tenantId: string | null;
+  password: string | null;
+  deviceIds: string[] | null;
+}) {
+  if (remoteOn()) return remote.updateUser(input);
+  return sqlite.updateUser(input);
+}
+
+export async function listCallerNumbers(tenantId: string) {
+  if (remoteOn()) return remote.listCallerNumbers(tenantId);
+  return sqlite.listCallerNumbers(tenantId);
+}
+
+export async function addCallerNumber(tenantId: string, phone: string) {
+  if (remoteOn()) return remote.addCallerNumber(tenantId, phone);
+  return sqlite.addCallerNumber(tenantId, phone);
+}
+
+export async function removeCallerNumber(tenantId: string, id: string) {
+  if (remoteOn()) return remote.removeCallerNumber(tenantId, id);
+  return sqlite.removeCallerNumber(tenantId, id);
 }
 
 export async function createDevice(input: { deviceId: string; name: string; tenantId: string }) {

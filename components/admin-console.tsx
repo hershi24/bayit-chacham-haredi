@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { CallerNumbers } from "@/components/caller-numbers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +33,7 @@ export function AdminConsole() {
   const [devices, setDevices] = useState<DeviceView[]>([]);
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [ivr, setIvr] = useState<IvrInfo | null>(null);
+  const [actorId, setActorId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -33,12 +43,13 @@ export function AdminConsole() {
         api<{ tenants: TenantView[] }>("/api/admin/tenants"),
         api<{ users: UserView[] }>("/api/admin/users"),
         api<{ devices: DeviceView[] }>("/api/admin/devices"),
-        api<{ status: BridgeStatus }>("/api/auth/me"),
+        api<{ user: { id: string }; status: BridgeStatus }>("/api/auth/me"),
         api<IvrInfo>("/api/admin/ivr"),
       ]);
       setTenants(tenantPayload.tenants);
       setUsers(userPayload.users);
       setDevices(devicePayload.devices);
+      setActorId(session.user.id);
       setStatus(session.status);
       setIvr(ivrPayload);
       setError(null);
@@ -83,7 +94,7 @@ export function AdminConsole() {
           <TenantPanel tenants={tenants} onChange={load} />
         </TabsContent>
         <TabsContent value="users" className="pt-4">
-          <UserPanel tenants={tenants} users={users} onChange={load} />
+          <UserPanel actorId={actorId} tenants={tenants} users={users} devices={devices} onChange={load} />
         </TabsContent>
         <TabsContent value="devices" className="pt-4">
           <DevicePanel tenants={tenants} devices={devices} onChange={load} />
@@ -143,18 +154,46 @@ function TenantPanel({ tenants, onChange }: { tenants: TenantView[]; onChange: (
           </form>
         </CardContent>
       </Card>
-      <div className="grid gap-2">
+      <div className="grid gap-3">
         {tenants.map((tenant) => (
-          <div key={tenant.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-            <div>
-              <p className="font-medium">{tenant.name}</p>
-              <p className="text-sm text-muted-foreground">
-                {tenant.phone ?? "בלי טלפון"} · {tenant.deviceCount} שקעים · {tenant.userCount} משתמשים
-              </p>
+          <div key={tenant.id} className="grid gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium">{tenant.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {tenant.deviceCount} שקעים · {tenant.userCount} משתמשים
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void remove(tenant)}>
+                מחיקה
+              </Button>
             </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void remove(tenant)}>
-              מחיקה
-            </Button>
+            <div>
+              <p className="mb-2 text-sm font-medium">מספרים מותרים לחיוג</p>
+              <CallerNumbers
+                numbers={tenant.phones}
+                onAdd={async (phone) => {
+                  try {
+                    await api(`/api/admin/tenants/${tenant.id}/phones`, { method: "POST", body: JSON.stringify({ phone }) });
+                    toast.success("המספר נוסף");
+                    await onChange();
+                  } catch (cause) {
+                    toast.error(cause instanceof Error ? cause.message : "ההוספה נכשלה");
+                    throw cause;
+                  }
+                }}
+                onRemove={async (id) => {
+                  if (!window.confirm("להסיר את המספר מהחיוג למערכת?")) return;
+                  try {
+                    await api(`/api/admin/tenants/${tenant.id}/phones/${id}`, { method: "DELETE" });
+                    toast.success("המספר הוסר");
+                    await onChange();
+                  } catch (cause) {
+                    toast.error(cause instanceof Error ? cause.message : "ההסרה נכשלה");
+                  }
+                }}
+              />
+            </div>
           </div>
         ))}
       </div>
@@ -163,12 +202,16 @@ function TenantPanel({ tenants, onChange }: { tenants: TenantView[]; onChange: (
 }
 
 function UserPanel({
+  actorId,
   tenants,
   users,
+  devices,
   onChange,
 }: {
+  actorId: string;
   tenants: TenantView[];
   users: UserView[];
+  devices: DeviceView[];
   onChange: () => Promise<void>;
 }) {
   const [name, setName] = useState("");
@@ -176,6 +219,7 @@ function UserPanel({
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("operator");
   const [tenantChoice, setTenantChoice] = useState("");
+  const [editing, setEditing] = useState<UserView | null>(null);
   const tenantId = tenantChoice || tenants[0]?.id || "";
 
   async function create(event: React.FormEvent) {
@@ -268,16 +312,209 @@ function UserPanel({
               <p className="text-sm text-muted-foreground">
                 <span dir="ltr" className="font-mono">{user.username}</span>
                 {" · "}
-                {user.role === "admin" ? "מנהל" : user.tenantName}
+                {user.role === "admin" ? "מנהל" : `${user.tenantName ?? "לקוח"} · ${user.deviceIds ? (user.deviceIds.length === 1 ? "שקע אחד" : `${user.deviceIds.length} שקעים`) : "כל השקעים"}`}
               </p>
             </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void remove(user)}>
-              מחיקה
-            </Button>
+            <span className="flex gap-1">
+              <Button type="button" variant="outline" size="sm" onClick={() => setEditing(user)}>
+                עריכה
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void remove(user)}>
+                מחיקה
+              </Button>
+            </span>
           </div>
         ))}
       </div>
+      <UserEditor
+        actorId={actorId}
+        user={editing}
+        tenants={tenants}
+        devices={devices}
+        onClose={() => setEditing(null)}
+        onSaved={async () => {
+          setEditing(null);
+          await onChange();
+        }}
+      />
     </div>
+  );
+}
+
+function UserEditor({
+  actorId,
+  user,
+  tenants,
+  devices,
+  onClose,
+  onSaved,
+}: {
+  actorId: string;
+  user: UserView | null;
+  tenants: TenantView[];
+  devices: DeviceView[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  return (
+    <Dialog open={user !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+        {user ? (
+          <UserEditorForm
+            key={user.id}
+            actorId={actorId}
+            user={user}
+            tenants={tenants}
+            devices={devices}
+            onClose={onClose}
+            onSaved={onSaved}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UserEditorForm({
+  actorId,
+  user,
+  tenants,
+  devices,
+  onClose,
+  onSaved,
+}: {
+  actorId: string;
+  user: UserView;
+  tenants: TenantView[];
+  devices: DeviceView[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [name, setName] = useState(user.name);
+  const [role, setRole] = useState<UserView["role"]>(user.role);
+  const [tenantChoice, setTenantChoice] = useState(user.tenantId ?? "");
+  const [password, setPassword] = useState("");
+  const [allDevices, setAllDevices] = useState(user.deviceIds === null);
+  const [chosen, setChosen] = useState<string[]>(user.deviceIds ?? []);
+  const [pending, setPending] = useState(false);
+  const tenantId = tenantChoice || user.tenantId || tenants[0]?.id || "";
+  const tenantDevices = devices.filter((device) => device.tenantId === tenantId);
+  const items = Object.fromEntries(tenants.map((tenant) => [tenant.id, tenant.name]));
+
+  function toggleDevice(deviceId: string) {
+    setChosen((current) => (current.includes(deviceId) ? current.filter((id) => id !== deviceId) : [...current, deviceId]));
+  }
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (!user) return;
+    setPending(true);
+    try {
+      await api(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name,
+          role,
+          tenantId: role === "admin" ? null : tenantId,
+          password,
+          deviceIds: role === "admin" || allDevices ? null : chosen.filter((id) => tenantDevices.some((device) => device.deviceId === id)),
+        }),
+      });
+      toast.success("המשתמש עודכן");
+      await onSaved();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "השמירה נכשלה");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+          <form className="grid gap-3" onSubmit={(event) => void save(event)}>
+            <DialogHeader>
+              <DialogTitle>עריכת משתמש</DialogTitle>
+              <DialogDescription>
+                <span dir="ltr" className="font-mono">{user.username}</span>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-name">שם לתצוגה</Label>
+              <Input id="edit-name" value={name} onChange={(event) => setName(event.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-password">איפוס סיסמה</Label>
+              <Input id="edit-password" dir="ltr" className="text-left" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="השאירו ריק כדי לא לשנות" />
+              <p className="text-sm text-muted-foreground">
+                {user.id === actorId
+                  ? "השאירו ריק כדי להשאיר את הסיסמה הקיימת."
+                  : "סיסמה חדשה לכניסה לאתר. המשתמש ינותק ויתחבר איתה."}
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label>הרשאה</Label>
+              <Select value={role} onValueChange={(value) => setRole(value === "admin" ? "admin" : "operator")} items={{ operator: "לקוח", admin: "מנהל" }} disabled={user.id === actorId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="operator">לקוח</SelectItem>
+                  <SelectItem value="admin">מנהל</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {role === "operator" ? (
+              <>
+                <div className="grid gap-2">
+                  <Label>לקוח</Label>
+                  <Select
+                    value={tenantId}
+                    onValueChange={(value) => {
+                      setTenantChoice(value ?? "");
+                      setAllDevices(true);
+                      setChosen([]);
+                    }}
+                    items={items}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="בחירת לקוח" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tenants.map((tenant) => (
+                        <SelectItem key={tenant.id} value={tenant.id}>
+                          {tenant.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <fieldset className="grid gap-2">
+                  <legend className="text-sm font-medium">שקעים</legend>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={allDevices} onChange={(event) => setAllDevices(event.target.checked)} />
+                    כל השקעים של הלקוח
+                  </label>
+                  {allDevices ? null : tenantDevices.length ? (
+                    tenantDevices.map((device) => (
+                      <label key={device.deviceId} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={chosen.includes(device.deviceId)}
+                          onChange={() => toggleDevice(device.deviceId)}
+                        />
+                        {device.name}
+                      </label>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">ללקוח הזה אין עדיין שקעים.</p>
+                  )}
+                </fieldset>
+              </>
+            ) : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>ביטול</Button>
+              <Button type="submit" disabled={pending}>{pending ? "שומר…" : "שמירה"}</Button>
+            </DialogFooter>
+          </form>
   );
 }
 

@@ -48,10 +48,16 @@ export type AuditView = {
   detail: string | null;
 };
 
+export type CallerNumber = {
+  id: string;
+  phone: string;
+};
+
 export type TenantView = {
   id: string;
   name: string;
   phone: string | null;
+  phones: CallerNumber[];
   deviceCount: number;
   userCount: number;
 };
@@ -63,6 +69,7 @@ export type UserView = {
   role: Role;
   tenantId: string | null;
   tenantName: string | null;
+  deviceIds: string[] | null;
 };
 
 export type BridgeStatus = {

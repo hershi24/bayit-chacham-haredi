@@ -14,6 +14,7 @@ import {
   listPrograms,
   listTenantDevices,
   listTenants,
+  visibleDeviceIds,
   saveClock,
   saveDayClock,
   upsertProgram,
@@ -29,6 +30,14 @@ function tenantOf(user: SessionUser, requested: unknown) {
   }
   if (typeof requested !== "string" || !requested.trim()) throw new HttpError(400, "בחרו לקוח");
   return requested.trim();
+}
+
+async function tenantDeviceIds(user: SessionUser, tenantId: string) {
+  const ids = (await listTenantDevices(tenantId)).map((device) => device.deviceId);
+  if (user.role === "admin") return ids;
+  const granted = await visibleDeviceIds(user);
+  if (!granted) return ids;
+  return ids.filter((id) => granted.includes(id));
 }
 
 function deviceList(value: unknown, allowed: string[]) {
@@ -86,7 +95,7 @@ export function GET(request: Request) {
     const year = Number(url.searchParams.get("year"));
     const month = Number(url.searchParams.get("month"));
     return Response.json(
-      await programsPayload(tenantId, {
+      await presentPrograms(user, tenantId, {
         year: Number.isInteger(year) ? year : undefined,
         month: Number.isInteger(month) ? month : undefined,
       }),
@@ -106,9 +115,9 @@ export function POST(request: Request) {
       const current = await getClock(tenantId);
       await saveClock(tenantId, clampClock({ ...current, locationId: typeof body.locationId === "string" ? body.locationId : "" }));
     } else if (action === "clock-save") {
-      await saveClockAction(tenantId, body);
+      await saveClockAction(user, tenantId, body);
     } else if (action === "repeat-save") {
-      await saveRepeatAction(tenantId, body);
+      await saveRepeatAction(user, tenantId, body);
     } else if (action === "clock-delete") {
       const id = typeof body.id === "string" ? body.id : "";
       if (!id) throw new HttpError(400, "חסר שעון");
@@ -130,16 +139,25 @@ export function POST(request: Request) {
     }
 
     await syncTenantPrograms(tenantId);
-    return Response.json(await programsPayload(tenantId, viewed(body)));
+    return Response.json(await presentPrograms(user, tenantId, viewed(body)));
   });
 }
 
-async function saveClockAction(tenantId: string, body: Record<string, unknown>) {
+async function presentPrograms(user: SessionUser, tenantId: string, when?: { year?: number; month?: number }) {
+  const payload = await programsPayload(tenantId, when);
+  if (user.role !== "admin") {
+    const allowed = new Set(await tenantDeviceIds(user, tenantId));
+    payload.devices = payload.devices.filter((device) => allowed.has(device.deviceId));
+  }
+  return payload;
+}
+
+async function saveClockAction(user: SessionUser, tenantId: string, body: Record<string, unknown>) {
   const day = dayString(body.day);
   const onTime = clockTime(body.onTime);
   const offTime = clockTime(body.offTime);
   if (!onTime && !offTime) throw new HttpError(400, "בחרו שעת הדלקה או כיבוי");
-  const allowed = (await listTenantDevices(tenantId)).map((device) => device.deviceId);
+  const allowed = await tenantDeviceIds(user, tenantId);
   const deviceIds = deviceList(body.deviceIds, allowed);
   if (!deviceIds.length) throw new HttpError(400, "בחרו לפחות שקע אחד");
   const programs = await listPrograms(tenantId);
@@ -170,7 +188,7 @@ async function saveClockAction(tenantId: string, body: Record<string, unknown>) 
   });
 }
 
-async function saveRepeatAction(tenantId: string, body: Record<string, unknown>) {
+async function saveRepeatAction(user: SessionUser, tenantId: string, body: Record<string, unknown>) {
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 40) : "";
   if (!name) throw new HttpError(400, "תנו שם לתוכנית");
   const weekdays = cleanWeekdays(Array.isArray(body.weekdays) ? body.weekdays.map((item) => Number(item)) : []);
@@ -178,7 +196,7 @@ async function saveRepeatAction(tenantId: string, body: Record<string, unknown>)
   const onTime = clockTime(body.onTime);
   const offTime = clockTime(body.offTime);
   if (!onTime && !offTime) throw new HttpError(400, "בחרו שעת הדלקה או כיבוי");
-  const allowed = (await listTenantDevices(tenantId)).map((device) => device.deviceId);
+  const allowed = await tenantDeviceIds(user, tenantId);
   const deviceIds = deviceList(body.deviceIds, allowed);
   if (!deviceIds.length) throw new HttpError(400, "בחרו לפחות שקע אחד");
   const programs = await listPrograms(tenantId);

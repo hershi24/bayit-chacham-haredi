@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { canAccessDevice, normalizePhone, phonesMatch, resolveDevice } from "../lib/access";
+import { canAccessDevice, devicesForPhone, normalizePhone, phonesMatch, resolveDevice } from "../lib/access";
 import { speechFor, yemotBody } from "../lib/ivr/speech";
 import { MockGateway } from "../lib/wlte/mock-gateway";
 import {
@@ -210,6 +210,12 @@ describe("IVR and tenants", () => {
     const byPhone = resolveDevice(devices, { phone: "035551002" });
     assert.equal(byPhone.ok, true);
     if (byPhone.ok) assert.equal(byPhone.device.deviceId, "c");
+    const extra = devicesForPhone(
+      [{ deviceId: "d", phone: "035551001", phones: ["035551001", "0521234567"] }],
+      "972521234567",
+    );
+    assert.equal(extra.length, 1);
+    assert.equal(extra[0]?.deviceId, "d");
     assert.equal(canAccessDevice({ role: "operator", tenantId: "ten_a" }, "ten_b"), false);
     assert.equal(canAccessDevice({ role: "admin", tenantId: null }, "ten_b"), true);
   });

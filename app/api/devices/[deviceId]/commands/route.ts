@@ -1,7 +1,6 @@
-import { canAccessDevice } from "@/lib/access";
 import { HttpError } from "@/lib/http-error";
 import { requireUser, withErrors } from "@/lib/session";
-import { getDevice } from "@/lib/store";
+import { assertMayUseDevice, getDevice } from "@/lib/store";
 import { readJson } from "@/lib/validate";
 import { getBridge } from "@/lib/wlte/bridge";
 
@@ -13,7 +12,7 @@ export function POST(request: Request, context: { params: Promise<{ deviceId: st
     const { deviceId } = await context.params;
     const device = await getDevice(deviceId);
     if (!device) throw new HttpError(404, "השקע לא נמצא");
-    if (!canAccessDevice(user, device.tenantId)) throw new HttpError(403, "אין הרשאה לשקע הזה");
+    await assertMayUseDevice(user, device);
     const body = await readJson(request);
     if (body.action !== "ON" && body.action !== "OFF") {
       throw new HttpError(400, "הפעולה חייבת להיות ON או OFF");

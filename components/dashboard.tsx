@@ -138,7 +138,7 @@ export function Dashboard() {
 
   const count = devices?.length ?? 0;
   const powered = devices?.filter((device) => device.relayOn).length ?? 0;
-  const boardWidth = count <= 1 ? "max-w-md" : count === 2 ? "max-w-3xl" : "max-w-5xl";
+  const boardWidth = count <= 1 ? "max-w-3xl" : count === 2 ? "max-w-4xl" : "max-w-5xl";
 
   return (
     <section className={`mx-auto w-full ${boardWidth}`}>
@@ -187,6 +187,7 @@ export function Dashboard() {
               onSimulate={(patch) => void simulate(device, patch)}
               onIcon={(icon) => chooseIcon(device, icon)}
               onTimer={(input) => armTimer(device, input)}
+              layout={count === 1 ? "row" : "stack"}
             />
           ))}
         </div>

@@ -16,6 +16,11 @@
   cursor: progress;
 }
 
+.power-switch[data-frozen] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .power-switch:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 4px;

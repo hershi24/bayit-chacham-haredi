@@ -9,6 +9,7 @@ export type IvrOutcome =
   | { kind: "ambiguous" }
   | { kind: "missing" }
   | { kind: "failed" }
+  | { kind: "frozen" }
   | { kind: "unauthorized" };
 
 export function speechFor(outcome: IvrOutcome): string {
@@ -37,6 +38,8 @@ export function speechFor(outcome: IvrOutcome): string {
       return "לא צוין שקע או מספר טלפון";
     case "failed":
       return "הפעולה נכשלה";
+    case "frozen":
+      return "השקע מוקפא";
     case "unauthorized":
       return "אין הרשאה לפעולה";
   }

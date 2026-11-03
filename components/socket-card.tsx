@@ -48,8 +48,9 @@ export function SocketCard({
 }) {
   const powered = device.relayOn === true;
   const offline = device.connectivity === "OFFLINE";
+  const frozen = device.frozen === true;
   const link = device.connectivity === "ONLINE" ? "מחובר" : offline ? "מנותק" : "אין קשר";
-  const relayLabel = powered ? "פועל" : device.relayOn === false ? "כבוי" : "לא ידוע";
+  const relayLabel = frozen ? "מוקפא" : powered ? "פועל" : device.relayOn === false ? "כבוי" : "לא ידוע";
   const iconKey = isDeviceIcon(device.icon) ? device.icon : suggestIcon(device.name);
   const Icon = ICONS[iconKey];
   const iconLabel = DEVICE_ICONS.find((item) => item.key === iconKey)?.label ?? "שקע";
@@ -128,10 +129,10 @@ export function SocketCard({
         </div>
         <span
           className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-            powered ? "bg-online-soft text-online-foreground" : "bg-muted text-muted-foreground"
+            frozen ? "bg-muted text-muted-foreground" : powered ? "bg-online-soft text-online-foreground" : "bg-muted text-muted-foreground"
           }`}
         >
-          <span className={`size-1.5 rounded-full ${powered ? "bg-online" : "bg-current opacity-40"}`} />
+          <span className={`size-1.5 rounded-full ${!frozen && powered ? "bg-online" : "bg-current opacity-40"}`} />
           {relayLabel}
         </span>
       </div>
@@ -155,17 +156,19 @@ export function SocketCard({
         <p className="mt-1 text-xs text-muted-foreground">{device.sensorSummary}</p>
       ) : null}
       {device.lastError ? <p className="mt-3 text-sm text-destructive">{device.lastError}</p> : null}
+      {frozen ? <p className="mt-3 text-sm text-muted-foreground">ההתקן מוקפא. פנו למנהל.</p> : null}
 
       <div className="mt-auto flex flex-col items-center pt-5">
         <button
           type="button"
           className="power-switch"
           data-power=""
+          data-frozen={frozen ? "" : undefined}
           data-state={powered ? "on" : device.relayOn === false ? "off" : "unknown"}
           aria-pressed={powered}
           aria-busy={busy !== null}
-          aria-label={powered ? `כיבוי ${device.name}` : `הפעלה ${device.name}`}
-          disabled={busy !== null}
+          aria-label={frozen ? `${device.name} מוקפא` : powered ? `כיבוי ${device.name}` : `הפעלה ${device.name}`}
+          disabled={busy !== null || frozen}
           onClick={() => onCommand(powered ? "OFF" : "ON")}
         >
           <span className="power-switch-ring" aria-hidden="true" />
@@ -173,13 +176,13 @@ export function SocketCard({
             {busy !== null ? <Loader2 className="size-7 animate-spin" /> : <Power className="size-8" strokeWidth={2.25} />}
           </span>
         </button>
-        <p className={`mt-2 text-[13px] font-medium ${powered ? "text-online-foreground" : "text-muted-foreground"}`}>{relayLabel}</p>
+        <p className={`mt-2 text-[13px] font-medium ${!frozen && powered ? "text-online-foreground" : "text-muted-foreground"}`}>{relayLabel}</p>
       </div>
       <Button
         type="button"
         variant="outline"
         className="mt-2 h-11"
-        disabled={busy !== null || savingTimer}
+        disabled={busy !== null || savingTimer || frozen}
         onClick={() => {
           setTimerError(null);
           setTimerOpen(true);

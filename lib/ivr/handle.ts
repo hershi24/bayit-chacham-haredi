@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { normalizePhone, resolveDevice } from "@/lib/access";
 import { loadConfig } from "@/lib/config";
+import { HttpError } from "@/lib/http-error";
 import { speechFor, yemotBody, type IvrOutcome } from "@/lib/ivr/speech";
 import { isYemotCall } from "@/lib/ivr/yemot";
 import { listIvrTargets } from "@/lib/store";
@@ -98,6 +99,8 @@ export async function handleIvr(request: Request, action: "on" | "off" | "status
     }
   }
 
+  if (resolved.device.frozen) return respond(input.format, { kind: "frozen" }, undefined, 403);
+
   try {
     const result = await bridge.command({
       deviceId: resolved.device.deviceId,
@@ -114,6 +117,9 @@ export async function handleIvr(request: Request, action: "on" | "off" | "status
     }
     return respond(input.format, { kind: "failed" }, result, 502);
   } catch (error) {
+    if (error instanceof HttpError && error.message === "השקע מוקפא") {
+      return respond(input.format, { kind: "frozen" }, undefined, 403);
+    }
     if (isWlteError(error) && (error.code === "DEVICE_OFFLINE" || error.status === 422)) {
       return respond(input.format, { kind: "offline" });
     }

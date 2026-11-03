@@ -4,7 +4,8 @@ import { devicesForPhone } from "../lib/access";
 import { decideMenu, type MenuDevice } from "../lib/ivr/flow";
 import { handleMenu } from "../lib/ivr/menu";
 import { cleanYemotText, yemotRead } from "../lib/ivr/yemot";
-import { getDevice, updateDeviceState } from "../lib/store";
+import { handleIvr } from "../lib/ivr/handle";
+import { createDevice, createTenant, deleteDevice, deleteTenant, getDevice, setDeviceFrozen, updateDeviceState } from "../lib/store";
 import { nextJerusalemClock } from "../lib/time";
 
 const ac: MenuDevice = { deviceId: "ac", name: "מזגן", relayOn: false, connectivity: "ONLINE" };
@@ -200,6 +201,45 @@ test("the on and off keys are answered before the socket finishes switching", as
 
   const offline = await phonePress({ ApiPhone: "035551001", pikud_device: "2", pikud_action: "1" });
   assert.match(await offline.text(), /השקע אינו מחובר כעת/);
+});
+
+test("a frozen socket is refused on the phone and stays as it was", async () => {
+  const tenant = await createTenant({ name: "לקוח הקפאה", phone: "0540001777" });
+  const deviceId = "rctfreeze0001";
+  try {
+    await createDevice({ deviceId, name: "שקע מוקפא", tenantId: tenant.id });
+    await updateDeviceState(deviceId, {
+      connectivity: "ONLINE",
+      relayOn: false,
+      stateUpdatedAt: new Date().toISOString(),
+      lastError: null,
+    });
+    await setDeviceFrozen(deviceId, true);
+
+    const turn = await phonePress({ ApiPhone: "0540001777", pikud_device: "1", pikud_action: "1" });
+    assert.match(await turn.text(), /השקע מוקפא/);
+    const timer = await phonePress({ ApiPhone: "0540001777", pikud_device: "1", pikud_action: "3", pikud_minutes: "15" });
+    assert.match(await timer.text(), /השקע מוקפא/);
+    assert.equal((await getDevice(deviceId))?.relayOn, false);
+
+    const direct = await handleIvr(
+      new Request(`http://127.0.0.1/api/ivr/on?format=json&deviceId=${deviceId}`, {
+        method: "POST",
+        headers: { "user-agent": "yemot-core-api/1.0", "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ ApiPhone: "0540001777" }),
+      }),
+      "on",
+    );
+    assert.equal(direct.status, 403);
+    const payload = (await direct.json()) as { outcome?: string; speech?: string };
+    assert.equal(payload.outcome, "frozen");
+    assert.equal(payload.speech, "השקע מוקפא");
+    assert.equal((await getDevice(deviceId))?.relayOn, false);
+  } finally {
+    await setDeviceFrozen(deviceId, false).catch(() => undefined);
+    await deleteDevice(deviceId).catch(() => undefined);
+    await deleteTenant(tenant.id);
+  }
 });
 
 test("a clock time that already passed is scheduled for tomorrow in Israel", () => {

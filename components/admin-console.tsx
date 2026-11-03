@@ -82,18 +82,14 @@ export function AdminConsole() {
   return (
     <section>
       <h2 className="text-2xl font-semibold tracking-tight">ניהול</h2>
-      <p className="mb-4 text-sm text-muted-foreground">לקוחות, שיוך שקעים, וחיבור לימות המשיח.</p>
+      <p className="mb-4 text-sm text-muted-foreground">כל נתוני הלקוח, וחיבור לימות המשיח.</p>
       <Tabs defaultValue="tenants">
         <TabsList>
           <TabsTrigger value="tenants">לקוחות</TabsTrigger>
-          <TabsTrigger value="devices">שקעים</TabsTrigger>
           <TabsTrigger value="link">חיבור וטלפון</TabsTrigger>
         </TabsList>
         <TabsContent value="tenants" className="pt-4">
           <CustomerPanel actorId={actorId} tenants={tenants} users={users} devices={devices} onChange={load} />
-        </TabsContent>
-        <TabsContent value="devices" className="pt-4">
-          <DevicePanel tenants={tenants} devices={devices} onChange={load} />
         </TabsContent>
         <TabsContent value="link" className="pt-4">
           <LinkPanel status={status} ivr={ivr} devices={devices} />
@@ -255,6 +251,7 @@ function CustomerPanel({
                   ) : (
                     <p className="text-sm text-muted-foreground">אין מספר לחיוג</p>
                   )}
+                  <CustomerSocketsLine devices={devices.filter((device) => device.tenantId === tenant.id)} />
                 </div>
                 <span className="flex shrink-0 gap-1">
                   <Button type="button" variant="outline" size="sm" onClick={() => setEditing({ tenantId: tenant.id, userId: primary?.id ?? null })}>
@@ -335,7 +332,7 @@ function CustomerEditor({
 }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         {open ? (
           <CustomerEditorForm
             key={`${tenant?.id ?? "none"}:${user?.id ?? "none"}`}
@@ -374,10 +371,62 @@ function CustomerEditorForm({
   const [allDevices, setAllDevices] = useState(user ? user.deviceIds === null : true);
   const [chosen, setChosen] = useState<string[]>(user?.deviceIds ?? []);
   const [pending, setPending] = useState(false);
+  const [socketId, setSocketId] = useState("");
+  const [socketName, setSocketName] = useState("");
+  const [socketBusy, setSocketBusy] = useState<string | null>(null);
   const tenantDevices = devices.filter((device) => device.tenantId === tenant?.id);
 
   function toggleDevice(deviceId: string) {
     setChosen((current) => (current.includes(deviceId) ? current.filter((id) => id !== deviceId) : [...current, deviceId]));
+  }
+
+  async function addSocket() {
+    if (!tenant) return;
+    setSocketBusy("add");
+    try {
+      await api("/api/admin/devices", {
+        method: "POST",
+        body: JSON.stringify({ deviceId: socketId, name: socketName, tenantId: tenant.id }),
+      });
+      setSocketId("");
+      setSocketName("");
+      toast.success("השקע שויך");
+      await onSaved();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "שמירה נכשלה");
+    } finally {
+      setSocketBusy(null);
+    }
+  }
+
+  async function freezeSocket(device: DeviceView) {
+    setSocketBusy(device.deviceId);
+    try {
+      await api(`/api/admin/devices/${device.deviceId}/freeze`, {
+        method: "POST",
+        body: JSON.stringify({ frozen: !device.frozen }),
+      });
+      toast.success(device.frozen ? "השקע שוחרר" : "השקע הוקפא");
+      await onSaved();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "ההקפאה נכשלה");
+    } finally {
+      setSocketBusy(null);
+    }
+  }
+
+  async function removeSocket(device: DeviceView) {
+    if (!window.confirm(`להסיר את ${device.name}?`)) return;
+    setSocketBusy(device.deviceId);
+    try {
+      await api(`/api/admin/devices/${device.deviceId}`, { method: "DELETE" });
+      toast.success("השקע הוסר");
+      await onSaved();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "ההסרה נכשלה");
+    } finally {
+      setSocketBusy(null);
+    }
   }
 
   async function save(event: React.FormEvent) {
@@ -480,9 +529,53 @@ function CustomerEditorForm({
               }}
             />
           </div>
+          <div className="grid gap-2">
+            <p className="text-sm font-medium">שקעים</p>
+            {tenantDevices.length ? (
+              <ul className="grid gap-2">
+                {tenantDevices.map((device) => (
+                  <li key={device.deviceId} className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">
+                        {device.name}
+                        {device.frozen ? " (מוקפא)" : ""}
+                      </span>
+                      <span dir="ltr" className="block truncate text-left font-mono text-xs text-muted-foreground">{device.deviceId}</span>
+                    </span>
+                    <span className="flex shrink-0 gap-1">
+                      <Button type="button" variant="outline" size="sm" disabled={socketBusy !== null} onClick={() => void freezeSocket(device)}>
+                        {device.frozen ? "שחרור" : "הקפאה"}
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" disabled={socketBusy !== null} onClick={() => void removeSocket(device)}>
+                        הסרה
+                      </Button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">ללקוח הזה אין עדיין שקעים.</p>
+            )}
+            <div
+              className="grid gap-2"
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                void addSocket();
+              }}
+            >
+              <Label htmlFor="socket-device-id">מזהה ב-WLTE</Label>
+              <Input id="socket-device-id" dir="ltr" className="text-left font-mono" value={socketId} onChange={(event) => setSocketId(event.target.value)} placeholder="rct063285302" />
+              <Label htmlFor="socket-device-name">שם בלוח</Label>
+              <Input id="socket-device-name" value={socketName} onChange={(event) => setSocketName(event.target.value)} />
+              <Button type="button" variant="outline" disabled={socketBusy !== null} onClick={() => void addSocket()}>
+                הוספת שקע
+              </Button>
+            </div>
+          </div>
           {user ? (
             <fieldset className="grid gap-2">
-              <legend className="text-sm font-medium">שקעים</legend>
+              <legend className="text-sm font-medium">כניסה לאתר</legend>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={allDevices} onChange={(event) => setAllDevices(event.target.checked)} />
                 כל השקעים של הלקוח
@@ -491,7 +584,10 @@ function CustomerEditorForm({
                 tenantDevices.length ? (
                   <ul className="grid gap-1 text-sm text-muted-foreground">
                     {tenantDevices.map((device) => (
-                      <li key={device.deviceId}>{device.name}</li>
+                      <li key={device.deviceId}>
+                        {device.name}
+                        {device.frozen ? " (מוקפא)" : ""}
+                      </li>
                     ))}
                   </ul>
                 ) : (
@@ -502,6 +598,7 @@ function CustomerEditorForm({
                   <label key={device.deviceId} className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={chosen.includes(device.deviceId)} onChange={() => toggleDevice(device.deviceId)} />
                     {device.name}
+                    {device.frozen ? " (מוקפא)" : ""}
                   </label>
                 ))
               ) : (
@@ -519,94 +616,19 @@ function CustomerEditorForm({
   );
 }
 
-function DevicePanel({
-  tenants,
-  devices,
-  onChange,
-}: {
-  tenants: TenantView[];
-  devices: DeviceView[];
-  onChange: () => Promise<void>;
-}) {
-  const [deviceId, setDeviceId] = useState("");
-  const [name, setName] = useState("");
-  const [tenantChoice, setTenantChoice] = useState("");
-  const tenantId = tenantChoice || tenants[0]?.id || "";
-  const items = Object.fromEntries(tenants.map((tenant) => [tenant.id, tenant.name]));
-
-  async function create(event: React.FormEvent) {
-    event.preventDefault();
-    try {
-      await api("/api/admin/devices", { method: "POST", body: JSON.stringify({ deviceId, name, tenantId }) });
-      setDeviceId("");
-      setName("");
-      toast.success("השקע שויך");
-      await onChange();
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "שמירה נכשלה");
-    }
-  }
-
-  async function remove(device: DeviceView) {
-    if (!window.confirm(`להסיר את ${device.name}?`)) return;
-    try {
-      await api(`/api/admin/devices/${device.deviceId}`, { method: "DELETE" });
-      await onChange();
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "ההסרה נכשלה");
-    }
-  }
-
+function CustomerSocketsLine({ devices }: { devices: DeviceView[] }) {
+  if (!devices.length) return <p className="text-sm text-muted-foreground">אין שקעים</p>;
   return (
-    <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
-      <Card>
-        <CardHeader>
-          <CardTitle>שיוך שקע</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-3" onSubmit={(event) => void create(event)}>
-            <div className="grid gap-2">
-              <Label htmlFor="device-id">מזהה ב-WLTE</Label>
-              <Input id="device-id" dir="ltr" className="text-left font-mono" value={deviceId} onChange={(event) => setDeviceId(event.target.value)} placeholder="rct063285302" />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="device-name">שם בלוח</Label>
-              <Input id="device-name" value={name} onChange={(event) => setName(event.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label>לקוח</Label>
-              <Select value={tenantId} onValueChange={(value) => setTenantChoice(value ?? "")} items={items}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="בחירת לקוח" />
-                </SelectTrigger>
-                <SelectContent>
-                  {tenants.map((tenant) => (
-                    <SelectItem key={tenant.id} value={tenant.id}>
-                      {tenant.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="submit">שיוך</Button>
-          </form>
-        </CardContent>
-      </Card>
-      <div className="grid gap-2">
-        {devices.map((device) => (
-          <div key={device.deviceId} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-            <div>
-              <p className="font-medium">{device.name}</p>
-              <p className="font-mono text-xs text-muted-foreground" dir="ltr">{device.deviceId}</p>
-              <p className="text-sm text-muted-foreground">{device.tenantName}</p>
-            </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void remove(device)}>
-              הסרה
-            </Button>
-          </div>
-        ))}
-      </div>
-    </div>
+    <ul className="mt-1 grid gap-0.5 text-sm text-muted-foreground">
+      {devices.map((device) => (
+        <li key={device.deviceId}>
+          {device.name}
+          {device.frozen ? " (מוקפא)" : ""}
+          {" · "}
+          <span dir="ltr" className="font-mono">{device.deviceId}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

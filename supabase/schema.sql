@@ -133,6 +133,7 @@ alter table programs add column if not exists on_time text;
 alter table programs add column if not exists off_time text;
 
 alter table devices add column if not exists icon text;
+alter table devices add column if not exists frozen integer not null default 0;
 
 create table if not exists clocks (
   id text primary key,

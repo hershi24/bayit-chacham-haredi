@@ -30,6 +30,7 @@ export type DeviceView = {
   sensorSummary: string | null;
   lastError: string | null;
   icon: string | null;
+  frozen: boolean;
   next?: NextPlan | null;
 };
 

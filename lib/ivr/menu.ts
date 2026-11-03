@@ -1,10 +1,10 @@
 import { devicesForPhone, normalizePhone } from "@/lib/access";
 import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
+import { savePhoneClock } from "@/lib/ivr/phone-clock";
 import { answerPrograms } from "@/lib/ivr/programs";
 import { speechFor } from "@/lib/ivr/speech";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
 import { listIvrTargets, saveSchedule } from "@/lib/store";
-import { nextJerusalemClock } from "@/lib/time";
 import { getBridge } from "@/lib/wlte/bridge";
 import { isWlteError } from "@/lib/wlte/errors";
 
@@ -112,7 +112,12 @@ export async function handleMenu(request: Request) {
     device: present(input.values.pikud_device),
     action: present(input.values.pikud_action),
     minutes: present(input.values.pikud_minutes),
-    clock: present(input.values.pikud_clock),
+    repeat: present(input.values.pikud_repeat),
+    week: present(input.values.pikud_week),
+    date: present(input.values.pikud_date),
+    on: present(input.values.pikud_on),
+    off: present(input.values.pikud_off),
+    sockets: present(input.values.pikud_sockets),
   });
 
   if (decision.type === "read") return reply(input.format, yemotRead(decision));
@@ -144,16 +149,6 @@ export async function handleMenu(request: Request) {
     return reply(input.format, yemotSpeak(`${lead}, הוא יכבה בעוד ${decision.minutes} דקות`));
   }
 
-  const when = nextJerusalemClock(decision.hour, decision.minute);
-  await saveSchedule({
-    deviceId: decision.device.deviceId,
-    kind: "later_on",
-    runAt: when.at.toISOString(),
-  });
-  const hour = String(decision.hour).padStart(2, "0");
-  const minute = String(decision.minute).padStart(2, "0");
-  return reply(
-    input.format,
-    yemotSpeak(`${decision.device.name} יופעל ${when.today ? "היום" : "מחר"} בשעה ${hour}:${minute}`),
-  );
+  const message = await savePhoneClock(decision);
+  return reply(input.format, yemotSpeak(message));
 }

@@ -14,13 +14,14 @@ export function yemotRead(input: {
   max: number;
   allowed?: string;
   mode?: "No" | "Number" | "Time";
+  seconds?: number;
 }): string {
   const capture = [
     input.field,
     "no",
     String(input.max),
     String(input.min),
-    "8",
+    String(input.seconds ?? 8),
     input.mode === "Number" || input.mode === "Time" ? input.mode : "No",
     "yes",
     "",

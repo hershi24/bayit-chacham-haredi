@@ -1,11 +1,18 @@
 "use client"
 
-import { useTheme } from "next-themes"
+import { useEffect, useState } from "react"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+  const [theme, setTheme] = useState<ToasterProps["theme"]>("light")
+
+  useEffect(() => {
+    const sync = () => setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light")
+    sync()
+    window.addEventListener("ksh-theme-change", sync)
+    return () => window.removeEventListener("ksh-theme-change", sync)
+  }, [])
 
   return (
     <Sonner

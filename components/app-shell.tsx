@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { CalendarRange, LayoutGrid, LogOut, ScrollText, Settings, type LucideIcon } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client-api";
 import type { SessionUser } from "@/lib/types";
@@ -65,11 +66,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="mt-auto flex items-center gap-2 px-2 pt-4">
-          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{user?.name ?? "מתחבר"}</span>
-          <Button variant="ghost" size="icon" className="size-11" onClick={() => void logout()} aria-label="יציאה">
-            <LogOut />
-          </Button>
+        <div className="mt-auto grid gap-2 px-2 pt-4">
+          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{user?.name ?? "מתחבר"}</span>
+            <Button variant="ghost" size="icon" className="size-11" onClick={() => void logout()} aria-label="יציאה">
+              <LogOut />
+            </Button>
+          </div>
         </div>
       </aside>
       <div className="flex min-w-0 flex-col">
@@ -77,10 +81,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/" aria-label="Kosher Smart Home" className="rounded-xl bg-white px-2 py-1">
             <BrandLogo className="h-11 w-auto" />
           </Link>
-          <Button variant="ghost" className="h-11 px-3" onClick={() => void logout()} aria-label="יציאה">
-            <LogOut />
-            יציאה
-          </Button>
+          <div className="flex items-center gap-1">
+            <ThemeToggle compact />
+            <Button variant="ghost" className="h-11 px-3" onClick={() => void logout()} aria-label="יציאה">
+              <LogOut />
+              יציאה
+            </Button>
+          </div>
         </header>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-5 pb-28 md:px-8 md:pt-8 md:pb-12">{children}</main>
         <nav className="hig-bar fixed inset-x-3 bottom-3 z-30 grid grid-flow-col rounded-[28px] border border-border p-1 md:hidden" style={{ marginBottom: "env(safe-area-inset-bottom)" }}>

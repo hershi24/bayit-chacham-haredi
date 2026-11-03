@@ -373,6 +373,8 @@ export function ProgramsBoard() {
   const listed = board.clocks.filter((clock) => !clock.recurring).sort(
     (left, right) => left.day.localeCompare(right.day) || (left.onTime ?? "").localeCompare(right.onTime ?? ""),
   );
+  const programIds = new Set(board.programs.map((program) => program.id));
+  const looseClocks = listed.filter((clock) => !clock.programId || !programIds.has(clock.programId));
 
   const period = view === "hours" ? prettyDay(cursor || israelDate()) : title;
   const views = [
@@ -382,34 +384,32 @@ export function ProgramsBoard() {
   ];
 
   return (
-    <section className="space-y-5">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <h2 className="text-[28px] leading-[34px] font-normal">תוכניות</h2>
-        </div>
-        <Button type="button" className="h-11 rounded-xl px-4" onClick={() => beginProgram()} disabled={Boolean(selecting)}>
+    <section className="min-w-0 space-y-3 sm:space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[22px] leading-7 font-normal sm:text-[28px] sm:leading-[34px]">תוכניות</h2>
+        <Button type="button" className="h-11 shrink-0 rounded-xl px-3 sm:px-4" onClick={() => beginProgram()} disabled={Boolean(selecting)}>
           תוכנית חדשה
         </Button>
       </div>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center rounded-[14px] bg-secondary p-1" role="group" aria-label="הזזת התאריך">
+      <div className="flex min-w-0 flex-col gap-2 sm:gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center rounded-[14px] bg-secondary p-1" role="group" aria-label="הזזת התאריך">
           <button
             type="button"
-            className="h-11 rounded-[10px] bg-card px-4 text-[15px]"
+            className="h-11 shrink-0 rounded-[10px] bg-card px-3 text-[15px] sm:px-4"
             onClick={() => (view === "hours" ? shiftDay(-1) : shiftMonth(-1))}
           >
             הקודם
           </button>
-          <p className="min-w-40 px-3 text-center text-[17px] font-semibold">{period}</p>
+          <p className="min-w-0 flex-1 truncate px-2 text-center text-[15px] font-semibold sm:px-3 sm:text-[17px]">{period}</p>
           <button
             type="button"
-            className="h-11 rounded-[10px] bg-card px-4 text-[15px]"
+            className="h-11 shrink-0 rounded-[10px] bg-card px-3 text-[15px] sm:px-4"
             onClick={() => (view === "hours" ? shiftDay(1) : shiftMonth(1))}
           >
             הבא
           </button>
         </div>
-        <div className="grid grid-flow-col rounded-[14px] bg-secondary p-1" role="tablist" aria-label="תצוגת הלוח">
+        <div className="grid min-w-0 grid-flow-col rounded-[14px] bg-secondary p-1" role="tablist" aria-label="תצוגת הלוח">
           {views.map((item) => {
             const selected = view === item.key;
             return (
@@ -419,7 +419,7 @@ export function ProgramsBoard() {
                 role="tab"
                 aria-selected={selected}
                 className={cn(
-                  "h-11 rounded-[10px] px-4 text-[15px]",
+                  "h-11 min-w-0 rounded-[10px] px-2 text-[14px] sm:px-4 sm:text-[15px]",
                   selected ? "bg-card font-semibold text-primary" : "text-foreground",
                 )}
                 onClick={item.onClick}
@@ -430,11 +430,11 @@ export function ProgramsBoard() {
           })}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-[15px]">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+        <label className="flex min-w-0 items-center gap-2 text-[15px]">
           עיר
           <select
-            className={cn(fieldClass, "h-11 w-auto rounded-xl bg-card px-3")}
+            className={cn(fieldClass, "h-11 w-auto max-w-[12rem] rounded-xl bg-card px-3")}
             aria-label="עיר לזמני היום"
             value={board.locationId}
             onChange={(event) => void send({ action: "location", locationId: event.target.value }, "location")}
@@ -452,8 +452,11 @@ export function ProgramsBoard() {
           </Button>
         ) : null}
       </div>
-      <p className="text-sm text-muted-foreground">
-        לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. בחזרה אפשר כל יום, או ימים בשבוע, ולשמור את זה כתוכנית. בתצוגת 24 שעות רואים בכל שקע מתי הוא דולק. נרות והבדלה מוצגים לידיעה.
+      <p className="text-[13px] leading-5 text-muted-foreground sm:text-sm">
+        <span className="sm:hidden">+ מוסיף שעון ליום. נרות והבדלה לידיעה.</span>
+        <span className="hidden sm:inline">
+          לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. בחזרה אפשר כל יום, או ימים בשבוע, ולשמור את זה כתוכנית. בתצוגת 24 שעות רואים בכל שקע מתי הוא דולק. נרות והבדלה מוצגים לידיעה.
+        </span>
       </p>
 
       {selecting ? (
@@ -484,7 +487,7 @@ export function ProgramsBoard() {
       ) : view === "month" ? (
         <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl border border-border bg-border">
           {WEEKDAYS.map((weekday) => (
-            <div key={weekday} className="bg-muted px-1 py-1.5 text-center text-xs font-medium">
+            <div key={weekday} className="truncate bg-muted px-0.5 py-1 text-center text-[10px] font-medium sm:px-1 sm:py-1.5 sm:text-xs">
               {weekday}
             </div>
           ))}
@@ -500,7 +503,7 @@ export function ProgramsBoard() {
                 key={day.date}
                 data-date={day.date}
                 className={cn(
-                  "flex min-h-24 flex-col gap-0.5 bg-card p-1 text-[11px] sm:min-h-32 sm:p-1.5",
+                  "flex min-h-0 flex-col gap-px overflow-hidden bg-card p-0.5 text-[10px] leading-[1.15] sm:min-h-32 sm:gap-0.5 sm:p-1.5 sm:text-[11px] sm:leading-tight",
                   !day.inMonth && "bg-muted/50 text-muted-foreground",
                   program && TINTS[programIndex % TINTS.length],
                   chosen && "ring-2 ring-primary ring-inset",
@@ -510,14 +513,20 @@ export function ProgramsBoard() {
                   if (selecting) toggleDay(day.date);
                 }}
               >
-                <div className="flex items-start justify-between gap-1">
-                  <span className="font-semibold">{day.day}</span>
-                  <span className="text-end text-[9px] leading-tight text-muted-foreground sm:text-[10px]">{day.hebrew}</span>
+                <div className="flex items-center justify-between gap-0.5">
+                  <span className="font-semibold tabular-nums">{day.day}</span>
+                  <button
+                    type="button"
+                    aria-label={`הוספת שעון ב-${day.date}`}
+                    className="size-5 shrink-0 rounded-full border border-border bg-background text-[12px] leading-none hover:bg-muted sm:size-8 sm:text-sm"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openNew(day);
+                    }}
+                  >
+                    +
+                  </button>
                 </div>
-                {day.parsha ? <p className="font-semibold leading-tight text-primary">{day.parsha}</p> : null}
-                {day.holiday ? <p className="line-clamp-2 leading-tight">{day.holiday}</p> : null}
-                {day.candles ? <p className="text-[10px] text-muted-foreground">נרות {day.candles}</p> : null}
-                {day.havdalah ? <p className="text-[10px] text-muted-foreground">הבדלה {day.havdalah}</p> : null}
                 {clocks.map((clock) => {
                   const owner = board.programs.find((item) => item.id === clock.programId);
                   const paused = Boolean(owner && !owner.enabled);
@@ -526,7 +535,7 @@ export function ProgramsBoard() {
                       key={clock.id}
                       type="button"
                       className={cn(
-                        "rounded bg-background/80 px-1 py-0.5 text-start leading-tight hover:bg-background",
+                        "block w-full truncate rounded bg-background/80 px-0.5 py-px text-start hover:bg-background sm:px-1 sm:py-0.5",
                         paused && "opacity-50 line-through",
                       )}
                       onClick={(event) => {
@@ -534,89 +543,106 @@ export function ProgramsBoard() {
                         openClock(clock);
                       }}
                     >
-                      <ClockFace clock={clock} />
+                      <ClockFace clock={clock} compact />
                     </button>
                   );
                 })}
-                <button
-                  type="button"
-                  aria-label={`הוספת שעון ב-${day.date}`}
-                  className="mt-auto size-8 self-start rounded-full border border-border bg-background text-sm leading-none hover:bg-muted"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openNew(day);
-                  }}
-                >
-                  +
-                </button>
+                <p className="hidden truncate text-muted-foreground sm:block">{day.hebrew}</p>
+                {day.parsha ? <p className="truncate font-semibold text-primary">{day.parsha}</p> : null}
+                {day.holiday ? <p className="truncate">{day.holiday}</p> : null}
+                {day.candles ? (
+                  <p className="truncate text-muted-foreground" title={`נרות ${day.candles}`}>
+                    <span className="sm:hidden" dir="ltr">{day.candles}</span>
+                    <span className="hidden sm:inline">נרות <span dir="ltr">{day.candles}</span></span>
+                  </p>
+                ) : null}
+                {day.havdalah ? (
+                  <p className="truncate text-muted-foreground" title={`הבדלה ${day.havdalah}`}>
+                    <span className="sm:hidden" dir="ltr">{day.havdalah}</span>
+                    <span className="hidden sm:inline">הבדלה <span dir="ltr">{day.havdalah}</span></span>
+                  </p>
+                ) : null}
               </div>
             );
           })}
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-card">
-          {listed.length || board.programs.some((program) => program.weekdays.length) ? (
+          {board.programs.length || looseClocks.length ? (
             <ul>
-              {board.programs
-                .filter((program) => program.weekdays.length)
-                .map((program) => (
-                  <li key={program.id} className="grid gap-3 border-b border-border px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                    <div className="min-w-0">
-                      <p className="font-medium">{program.name}</p>
-                      <p className="mt-0.5 text-muted-foreground">
-                        {weekdayPhrase(program.weekdays)}
-                        <span dir="ltr"> · {[program.onTime, program.offTime].filter(Boolean).join("–")}</span>
-                        {" · "}
-                        {deviceNames(board, program.deviceIds)}
-                        {" · "}
-                        {program.enabled ? "פועלת" : "כבויה"}
-                      </p>
-                    </div>
-                    <span className="flex gap-2">
-                      <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => openRepeat(program)}>
-                        עריכה
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="h-11 rounded-xl px-3 text-destructive"
-                        onClick={() => {
-                          if (window.confirm("למחוק את התוכנית?")) void send({ action: "program-delete", id: program.id }, program.id);
-                        }}
-                      >
-                        מחיקה
-                      </Button>
-                    </span>
-                  </li>
-                ))}
-              {listed.map((clock) => {
-                const program = board.programs.find((item) => item.id === clock.programId);
-                return (
-                  <li key={clock.id} className="grid gap-3 border-b border-border px-4 py-3 text-sm last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                    <div className="min-w-0">
-                      <p className="font-medium">{prettyDay(clock.day)}</p>
-                      <p className="mt-0.5 text-muted-foreground">
-                        {clock.hebrew} · <ClockFace clock={clock} /> · {deviceNames(board, clock.deviceIds)} · {program ? program.name : "בלי תוכנית"}
-                      </p>
-                    </div>
-                    <span className="flex gap-2">
-                      <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => openClock(clock)}>
-                        עריכה
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="h-11 rounded-xl px-3 text-destructive"
-                        onClick={() => {
-                          if (window.confirm("למחוק את השעון?")) void send({ action: "clock-delete", id: clock.id }, clock.id);
-                        }}
-                      >
-                        מחיקה
-                      </Button>
-                    </span>
-                  </li>
-                );
-              })}
+              {board.programs.map((program) => (
+                <li key={program.id} className="grid gap-3 border-b border-border px-4 py-3 text-sm last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="font-medium">{program.name}</p>
+                    <p className="mt-0.5 text-muted-foreground">
+                      {program.enabled ? "פועלת" : "כבויה"}
+                      {" · "}
+                      {program.weekdays.length ? (
+                        <>
+                          {weekdayPhrase(program.weekdays)}
+                          {program.onTime || program.offTime ? (
+                            <span dir="ltr"> · {[program.onTime, program.offTime].filter(Boolean).join("–")}</span>
+                          ) : null}
+                        </>
+                      ) : (
+                        program.days.map(prettyDay).join(" · ") || "אין ימים"
+                      )}
+                      {program.deviceIds.length ? ` · ${deviceNames(board, program.deviceIds)}` : ""}
+                    </p>
+                  </div>
+                  <span className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 rounded-xl px-4"
+                      disabled={pending === program.id}
+                      onClick={() => void send({ action: "program-toggle", id: program.id }, program.id)}
+                    >
+                      {program.enabled ? "כיבוי" : "הפעלה"}
+                    </Button>
+                    <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => beginProgram(program)}>
+                      עריכה
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-11 rounded-xl px-3 text-destructive"
+                      onClick={() => {
+                        if (window.confirm("למחוק את התוכנית ואת השעונים שלה?")) {
+                          void send({ action: "program-delete", id: program.id }, program.id);
+                        }
+                      }}
+                    >
+                      מחיקה
+                    </Button>
+                  </span>
+                </li>
+              ))}
+              {looseClocks.map((clock) => (
+                <li key={clock.id} className="grid gap-3 border-b border-border px-4 py-3 text-sm last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="font-medium">{prettyDay(clock.day)}</p>
+                    <p className="mt-0.5 text-muted-foreground">
+                      {clock.hebrew} · <ClockFace clock={clock} /> · {deviceNames(board, clock.deviceIds)} · בלי תוכנית
+                    </p>
+                  </div>
+                  <span className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => openClock(clock)}>
+                      עריכה
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-11 rounded-xl px-3 text-destructive"
+                      onClick={() => {
+                        if (window.confirm("למחוק את השעון?")) void send({ action: "clock-delete", id: clock.id }, clock.id);
+                      }}
+                    >
+                      מחיקה
+                    </Button>
+                  </span>
+                </li>
+              ))}
             </ul>
           ) : (
             <p className="px-4 py-6 text-sm text-muted-foreground">אין עדיין שעונים. בלוח, לחצו + על היום.</p>
@@ -624,7 +650,7 @@ export function ProgramsBoard() {
         </div>
       )}
 
-      <div className="space-y-3">
+      {view === "list" ? null : <div className="space-y-3">
         <h3 className="text-[17px] font-semibold">התוכניות השמורות</h3>
         {board.programs.length ? (
           <div className="grid gap-px overflow-hidden rounded-[22px] bg-border">
@@ -679,7 +705,7 @@ export function ProgramsBoard() {
         ) : (
           <p className="text-sm text-muted-foreground">אין תוכניות. תוכנית היא כמה ימים בלוח, או חזרה לפי ימים בשבוע.</p>
         )}
-      </div>
+      </div>}
 
       <Dialog
         open={draft !== null}
@@ -1008,7 +1034,11 @@ function jerusalemMinutes(date = new Date()) {
   return Number(map.hour) * 60 + Number(map.minute);
 }
 
-function ClockFace({ clock }: { clock: Clock }) {
+function ClockFace({ clock, compact = false }: { clock: Clock; compact?: boolean }) {
+  if (compact) {
+    const label = clock.onTime && clock.offTime ? `${clock.onTime}–${clock.offTime}` : clock.onTime ?? clock.offTime ?? "";
+    return <span dir="ltr">{label}</span>;
+  }
   if (clock.onTime && clock.offTime) {
     return (
       <span className="inline-flex flex-wrap items-center gap-1">

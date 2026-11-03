@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client-api";
 import type { DeviceIconKey } from "@/lib/devices/icons";
 import type { BridgeStatus, DeviceView, RelayAction, SessionUser } from "@/lib/types";
-import { formatIsrael } from "@/lib/time";
-
 type Payload = { devices: DeviceView[]; status: BridgeStatus; user?: SessionUser };
 
 export function Dashboard() {
@@ -138,30 +136,22 @@ export function Dashboard() {
     }
   }
 
+  const count = devices?.length ?? 0;
   const powered = devices?.filter((device) => device.relayOn).length ?? 0;
+  const boardWidth = count <= 1 ? "max-w-3xl" : count === 2 ? "max-w-4xl" : "max-w-5xl";
 
   return (
-    <section>
+    <section className={`mx-auto w-full ${boardWidth}`}>
       <div className="mb-5 flex items-end justify-between gap-3">
         <div>
           <h2 className="text-[28px] leading-[34px] font-normal">השקעים</h2>
           <p className="text-[15px] leading-5 text-muted-foreground">
-            {devices ? `${devices.length} שקעים · ${powered} פועלים` : "טוען את מצב הממסרים"}
+            {devices ? boardSummary(count, powered, live) : "טוען את מצב הממסרים"}
           </p>
         </div>
         <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => void load(true)}>
           רענון
         </Button>
-      </div>
-      <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-[22px] bg-border md:grid-cols-4">
-        <Stat label="שקעים" value={devices ? String(devices.length) : "—"} />
-        <Stat label="פועלים" value={devices ? String(powered) : "—"} />
-        <Stat label="שידור" value={live ? "מחובר" : "מתחבר"} />
-        <Stat
-          label="מקור"
-          value={status?.mode === "live" ? "WLTE" : status ? "הדגמה" : "—"}
-          hint={status?.token.expiresAt ? `אסימון עד ${formatIsrael(status.token.expiresAt)}` : undefined}
-        />
       </div>
       {status?.lastError ? <p className="mb-4 text-sm text-destructive">{status.lastError}</p> : null}
       {status?.token.missingScopes.length ? (
@@ -170,28 +160,22 @@ export function Dashboard() {
         </p>
       ) : null}
       {error ? (
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <div className="rounded-[22px] bg-card p-6">
           <p className="text-destructive">{error}</p>
           <Button className="mt-4" type="button" onClick={() => void load(true)}>
             נסו שוב
           </Button>
         </div>
       ) : null}
-      {devices === null && !error ? (
-        <div className="grid gap-4 md:grid-cols-2">
-          {[0, 1].map((item) => (
-            <div key={item} className="h-56 animate-pulse rounded-2xl border border-border bg-muted" />
-          ))}
-        </div>
-      ) : null}
+      {devices === null && !error ? <div className="h-80 animate-pulse rounded-[22px] bg-muted" /> : null}
       {devices && devices.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+        <div className="rounded-[22px] bg-card p-8">
           <h3 className="text-lg font-medium">אין שקעים משויכים לחשבון הזה</h3>
           <p className="mt-1 text-sm text-muted-foreground">מנהל המערכת יכול לשייך שקע ללקוח מתוך מסך הניהול.</p>
         </div>
       ) : null}
       {devices && devices.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className={count === 1 ? "grid" : count === 2 ? "grid gap-4 sm:grid-cols-2" : "grid gap-4 sm:grid-cols-2 xl:grid-cols-3"}>
           {devices.map((device) => (
             <SocketCard
               key={device.deviceId}
@@ -203,6 +187,7 @@ export function Dashboard() {
               onSimulate={(patch) => void simulate(device, patch)}
               onIcon={(icon) => chooseIcon(device, icon)}
               onTimer={(input) => armTimer(device, input)}
+              layout={count === 1 ? "row" : "stack"}
             />
           ))}
         </div>
@@ -211,12 +196,8 @@ export function Dashboard() {
   );
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="bg-card px-4 py-3">
-      <p className="text-[12px] leading-4 text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-[20px] leading-6 font-semibold">{value}</p>
-      {hint ? <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
+function boardSummary(count: number, powered: number, live: boolean) {
+  const sockets = count === 1 ? "שקע אחד" : `${count} שקעים`;
+  const running = powered === 1 ? "פועל אחד" : `${powered} פועלים`;
+  return `${sockets} · ${running} · ${live ? "מחובר" : "מתחבר"}`;
 }

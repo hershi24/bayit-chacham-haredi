@@ -36,6 +36,7 @@ export function SocketCard({
   onIcon,
   onTimer,
   mockMode,
+  layout = "stack",
 }: {
   device: DeviceView;
   busy: RelayAction | null;
@@ -45,6 +46,7 @@ export function SocketCard({
   onIcon: (icon: DeviceIconKey) => Promise<void>;
   onTimer: (input: { mode: "now" | "later"; time?: string; minutes: number }) => Promise<{ saved: boolean; message: string }>;
   mockMode: boolean;
+  layout?: "stack" | "row";
 }) {
   const powered = device.relayOn === true;
   const offline = device.connectivity === "OFFLINE";
@@ -103,8 +105,45 @@ export function SocketCard({
     }
   }
 
+  const power = (
+    <button
+      type="button"
+      className="power-switch"
+      data-power=""
+      data-frozen={frozen ? "" : undefined}
+      data-state={powered ? "on" : device.relayOn === false ? "off" : "unknown"}
+      aria-pressed={powered}
+      aria-busy={busy !== null}
+      aria-label={frozen ? `${device.name} מוקפא` : powered ? `כיבוי ${device.name}` : `הפעלה ${device.name}`}
+      disabled={busy !== null || frozen}
+      onClick={() => onCommand(powered ? "OFF" : "ON")}
+    >
+      <span className="power-switch-ring" aria-hidden="true" />
+      <span className="power-switch-face">
+        {busy !== null ? <Loader2 className="size-3.5 animate-spin" /> : <Power className="size-3.5" strokeWidth={2.5} />}
+      </span>
+    </button>
+  );
+
+  const timer = (
+    <Button
+      type="button"
+      variant="outline"
+      className={layout === "row" ? "h-11 px-4" : "mt-2 h-11"}
+      disabled={busy !== null || savingTimer || frozen}
+      onClick={() => {
+        setTimerError(null);
+        setTimerOpen(true);
+      }}
+    >
+      <Timer />
+      טיימר
+    </Button>
+  );
+
   return (
-    <article className="flex h-full flex-col rounded-[22px] bg-card p-4">
+    <article className={`flex h-full rounded-[22px] bg-card p-4 ${layout === "row" ? "flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" : "flex-col"}`}>
+      <div className="min-w-0 flex-1">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <Button
@@ -127,19 +166,14 @@ export function SocketCard({
             </p>
           </div>
         </div>
-        <span
-          className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-            frozen ? "bg-muted text-muted-foreground" : powered ? "bg-online-soft text-online-foreground" : "bg-muted text-muted-foreground"
-          }`}
-        >
-          <span className={`size-1.5 rounded-full ${!frozen && powered ? "bg-online" : "bg-current opacity-40"}`} />
-          {relayLabel}
-        </span>
+        {layout === "stack" ? power : null}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         <span className={`size-1.5 rounded-full ${offline ? "bg-destructive" : device.connectivity === "ONLINE" ? "bg-online" : "bg-muted-foreground"}`} />
         <span className={offline ? "text-destructive" : ""}>{link}</span>
+        <span className="text-muted-foreground">·</span>
+        <span className={!frozen && powered ? "font-medium text-online-foreground" : "text-muted-foreground"}>{relayLabel}</span>
       </div>
       {device.next ? (
         <p className="mt-3 text-base font-medium">
@@ -157,40 +191,7 @@ export function SocketCard({
       ) : null}
       {device.lastError ? <p className="mt-3 text-sm text-destructive">{device.lastError}</p> : null}
       {frozen ? <p className="mt-3 text-sm text-muted-foreground">ההתקן מוקפא. פנו למנהל.</p> : null}
-
-      <div className="mt-auto flex flex-col items-center pt-5">
-        <button
-          type="button"
-          className="power-switch"
-          data-power=""
-          data-frozen={frozen ? "" : undefined}
-          data-state={powered ? "on" : device.relayOn === false ? "off" : "unknown"}
-          aria-pressed={powered}
-          aria-busy={busy !== null}
-          aria-label={frozen ? `${device.name} מוקפא` : powered ? `כיבוי ${device.name}` : `הפעלה ${device.name}`}
-          disabled={busy !== null || frozen}
-          onClick={() => onCommand(powered ? "OFF" : "ON")}
-        >
-          <span className="power-switch-ring" aria-hidden="true" />
-          <span className="power-switch-face">
-            {busy !== null ? <Loader2 className="size-7 animate-spin" /> : <Power className="size-8" strokeWidth={2.25} />}
-          </span>
-        </button>
-        <p className={`mt-2 text-[13px] font-medium ${!frozen && powered ? "text-online-foreground" : "text-muted-foreground"}`}>{relayLabel}</p>
-      </div>
-      <Button
-        type="button"
-        variant="outline"
-        className="mt-2 h-11"
-        disabled={busy !== null || savingTimer || frozen}
-        onClick={() => {
-          setTimerError(null);
-          setTimerOpen(true);
-        }}
-      >
-        <Timer />
-        טיימר
-      </Button>
+      {layout === "stack" ? timer : null}
       {mockMode && onSimulate ? (
         <div className="mt-3 flex flex-wrap gap-1 border-t border-border pt-3">
           <Button type="button" size="sm" variant="ghost" onClick={() => onSimulate({ relayOn: !powered })}>
@@ -199,6 +200,13 @@ export function SocketCard({
           <Button type="button" size="sm" variant="ghost" onClick={() => onSimulate({ online: offline })}>
             {offline ? "דימוי חיבור" : "דימוי ניתוק"}
           </Button>
+        </div>
+      ) : null}
+      </div>
+      {layout === "row" ? (
+        <div className="flex shrink-0 items-center gap-3">
+          {timer}
+          {power}
         </div>
       ) : null}
 

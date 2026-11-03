@@ -18,7 +18,7 @@ export type TimelineProgram = {
   weekdays: number[];
   onTime: string | null;
   offTime: string | null;
-  slots?: Array<{ onTime: string | null; offTime: string | null }>;
+  slots?: Array<{ onTime: string | null; offTime: string | null; weekdays?: number[] }>;
   deviceIds: string[];
 };
 
@@ -131,11 +131,11 @@ export function dayBars(date: string, clocks: TimelineClock[], programs: Timelin
   const previousWeekday = weekdayOf(previous);
   for (const program of programs) {
     if (!program.weekdays.length) continue;
-    const offsets = [
-      ...(program.weekdays.includes(previousWeekday) ? [-1440] : []),
-      ...(program.weekdays.includes(weekday) ? [0] : []),
+    const groups = [
+      ...(program.weekdays.includes(previousWeekday) ? [{ offset: -1440, slots: slotsFor(program, previousWeekday) }] : []),
+      ...(program.weekdays.includes(weekday) ? [{ offset: 0, slots: slotsFor(program, weekday) }] : []),
     ];
-    programSpans(slotsOf(program), offsets).forEach(([start, end], index) => {
+    programSpans(groups).forEach(([start, end], index) => {
       const title = `${program.name} ${formatMin(start)}–${formatMin(end)}`;
       for (const deviceId of program.deviceIds) {
         bars.push({
@@ -156,19 +156,23 @@ export function dayBars(date: string, clocks: TimelineClock[], programs: Timelin
   return bars;
 }
 
-function slotsOf(program: TimelineProgram) {
-  if (program.slots?.length) return program.slots;
-  return program.onTime || program.offTime ? [{ onTime: program.onTime, offTime: program.offTime }] : [];
+function slotsFor(program: TimelineProgram, weekday: number) {
+  const slots = program.slots?.length
+    ? program.slots
+    : program.onTime || program.offTime
+      ? [{ onTime: program.onTime, offTime: program.offTime }]
+      : [];
+  return slots.filter((slot) => !slot.weekdays?.length || slot.weekdays.includes(weekday));
 }
 
-function programSpans(slots: Array<{ onTime: string | null; offTime: string | null }>, offsets: number[]) {
+function programSpans(groups: Array<{ offset: number; slots: Array<{ onTime: string | null; offTime: string | null }> }>) {
   const events: Array<{ at: number; on: boolean }> = [];
-  for (const offset of offsets) {
-    for (const slot of slots) {
+  for (const group of groups) {
+    for (const slot of group.slots) {
       const on = minutes(slot.onTime);
       const off = minutes(slot.offTime);
-      if (on != null) events.push({ at: offset + on, on: true });
-      if (off != null) events.push({ at: offset + off + (on != null && off <= on ? 1440 : 0), on: false });
+      if (on != null) events.push({ at: group.offset + on, on: true });
+      if (off != null) events.push({ at: group.offset + off + (on != null && off <= on ? 1440 : 0), on: false });
     }
   }
   events.sort((left, right) => left.at - right.at || Number(left.on) - Number(right.on));

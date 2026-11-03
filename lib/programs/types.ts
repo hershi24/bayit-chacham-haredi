@@ -19,6 +19,7 @@ export type StoredProgram = {
 export type ProgramSlot = {
   onTime: string | null;
   offTime: string | null;
+  weekdays?: number[];
 };
 
 export type DayClock = {

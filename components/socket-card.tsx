@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { DEVICE_ICONS, isDeviceIcon, suggestIcon, type DeviceIconKey } from "@/lib/devices/icons";
 import "./power-switch.css";
-import { formatIsrael, planWhen } from "@/lib/time";
+import { planWhen } from "@/lib/time";
 import type { DeviceView, RelayAction } from "@/lib/types";
 
 const ICONS: Record<DeviceIconKey, LucideIcon> = {
@@ -36,7 +36,6 @@ export function SocketCard({
   onIcon,
   onTimer,
   mockMode,
-  layout = "stack",
 }: {
   device: DeviceView;
   busy: RelayAction | null;
@@ -46,7 +45,6 @@ export function SocketCard({
   onIcon: (icon: DeviceIconKey) => Promise<void>;
   onTimer: (input: { mode: "now" | "later"; time?: string; minutes: number }) => Promise<{ saved: boolean; message: string }>;
   mockMode: boolean;
-  layout?: "stack" | "row";
 }) {
   const powered = device.relayOn === true;
   const offline = device.connectivity === "OFFLINE";
@@ -128,85 +126,82 @@ export function SocketCard({
   const timer = (
     <Button
       type="button"
-      variant="outline"
-      className={layout === "row" ? "h-11 px-4" : "mt-2 h-11"}
+      variant="ghost"
+      size="sm"
+      className="h-8 rounded-full px-2.5 text-[13px] text-muted-foreground hover:text-foreground"
       disabled={busy !== null || savingTimer || frozen}
       onClick={() => {
         setTimerError(null);
         setTimerOpen(true);
       }}
     >
-      <Timer />
+      <Timer className="size-3.5" />
       טיימר
     </Button>
   );
 
+  const status = (
+    <p className="flex flex-wrap items-center gap-x-1.5 text-[13px] text-muted-foreground">
+      <span className={`size-1.5 rounded-full ${offline ? "bg-destructive" : device.connectivity === "ONLINE" ? "bg-online" : "bg-muted-foreground"}`} />
+      <span className={offline ? "text-destructive" : ""}>{link}</span>
+      <span>·</span>
+      <span className={!frozen && powered ? "font-medium text-online-foreground" : ""}>{relayLabel}</span>
+      {device.next ? (
+        <>
+          <span>·</span>
+          <span>
+            {device.next.action === "ON" ? "יידלק" : "יכבה"} <span dir="ltr">{planWhen(device.next.at)}</span>
+          </span>
+        </>
+      ) : null}
+    </p>
+  );
+
   return (
-    <article className={`flex h-full rounded-[22px] bg-card p-4 ${layout === "row" ? "flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" : "flex-col"}`}>
-      <div className="min-w-0 flex-1">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            className="size-11 shrink-0"
-            aria-label={`אייקון ${iconLabel}`}
-            onClick={() => {
-              setIconError(null);
-              setIconOpen(true);
-            }}
-          >
-            <Icon className="size-5" />
-          </Button>
-          <div className="min-w-0">
-            <h2 className="truncate text-[17px] font-semibold leading-[22px]">{device.name}</h2>
-            {showTenant ? <p className="mt-0.5 truncate text-sm text-muted-foreground">{device.tenantName}</p> : null}
-            <p className="mt-1 font-mono text-xs text-muted-foreground" dir="ltr">
-              {device.deviceId}
+    <article
+      className={`flex h-full flex-col rounded-2xl border bg-card p-4 transition-colors ${
+        !frozen && powered ? "border-online/25" : "border-border/60"
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          className={`grid size-10 shrink-0 place-items-center rounded-xl transition-colors ${
+            !frozen && powered ? "bg-online-soft text-online-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+          }`}
+          aria-label={`אייקון ${iconLabel}`}
+          onClick={() => {
+            setIconError(null);
+            setIconOpen(true);
+          }}
+        >
+          <Icon className="size-[18px]" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[16px] leading-5 font-semibold">{device.name}</h2>
+          {showTenant ? (
+            <p className="truncate text-[12px] text-muted-foreground">
+              {device.tenantName} · <span className="font-mono" dir="ltr">{device.deviceId}</span>
             </p>
-          </div>
+          ) : null}
         </div>
-        {layout === "stack" ? power : null}
+        {power}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span className={`size-1.5 rounded-full ${offline ? "bg-destructive" : device.connectivity === "ONLINE" ? "bg-online" : "bg-muted-foreground"}`} />
-        <span className={offline ? "text-destructive" : ""}>{link}</span>
-        <span className="text-muted-foreground">·</span>
-        <span className={!frozen && powered ? "font-medium text-online-foreground" : "text-muted-foreground"}>{relayLabel}</span>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        {status}
+        {timer}
       </div>
-      {device.next ? (
-        <p className="mt-3 text-base font-medium">
-          <span className="text-muted-foreground">הבא </span>
-          <span dir="ltr">{planWhen(device.next.at)}</span>
-          <span className={device.next.action === "ON" ? "text-online-foreground" : ""}>
-            {" "}
-            {device.next.action === "ON" ? "דולק" : "כבוי"}
-          </span>
-        </p>
-      ) : null}
-      <p className="mt-1 text-xs text-muted-foreground">עודכן {formatIsrael(device.stateUpdatedAt)}</p>
-      {device.sensorSummary && /\d/.test(device.sensorSummary) ? (
-        <p className="mt-1 text-xs text-muted-foreground">{device.sensorSummary}</p>
-      ) : null}
-      {device.lastError ? <p className="mt-3 text-sm text-destructive">{device.lastError}</p> : null}
-      {frozen ? <p className="mt-3 text-sm text-muted-foreground">ההתקן מוקפא. פנו למנהל.</p> : null}
-      {layout === "stack" ? timer : null}
+      {device.lastError ? <p className="mt-2 text-[13px] text-destructive">{device.lastError}</p> : null}
+      {frozen ? <p className="mt-2 text-[13px] text-muted-foreground">ההתקן מוקפא. פנו למנהל.</p> : null}
       {mockMode && onSimulate ? (
-        <div className="mt-3 flex flex-wrap gap-1 border-t border-border pt-3">
-          <Button type="button" size="sm" variant="ghost" onClick={() => onSimulate({ relayOn: !powered })}>
+        <div className="mt-3 flex flex-wrap gap-1 border-t border-border/60 pt-2">
+          <Button type="button" size="sm" variant="ghost" className="text-[12px] text-muted-foreground" onClick={() => onSimulate({ relayOn: !powered })}>
             דימוי לחיצה פיזית
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => onSimulate({ online: offline })}>
+          <Button type="button" size="sm" variant="ghost" className="text-[12px] text-muted-foreground" onClick={() => onSimulate({ online: offline })}>
             {offline ? "דימוי חיבור" : "דימוי ניתוק"}
           </Button>
-        </div>
-      ) : null}
-      </div>
-      {layout === "row" ? (
-        <div className="flex shrink-0 items-center gap-3">
-          {timer}
-          {power}
         </div>
       ) : null}
 

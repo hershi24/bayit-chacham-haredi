@@ -1,8 +1,8 @@
 .power-switch {
   position: relative;
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   place-items: center;
   border: 0;
   border-radius: 999px;
@@ -54,8 +54,8 @@
 .power-switch-face {
   position: relative;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   place-items: center;
   border-radius: inherit;
   background: linear-gradient(180deg, #ffffff 0%, #f2f2f7 100%);

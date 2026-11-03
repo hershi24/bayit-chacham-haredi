@@ -16,13 +16,21 @@ const fontMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "פיקד",
-  description: "שליטה בשקעים חכמים SC1, באתר ובטלפון",
+  title: "Kosher Smart Home",
+  description: "בית חכם מהפלאפון הכשר. שליטה בשקעים חכמים, באתר ובטלפון",
+  applicationName: "Kosher Smart Home",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="he" dir="rtl" className={`${fontSans.variable} ${fontMono.variable} h-full antialiased`}>
+    <html lang="he" dir="rtl" className={`${fontSans.variable} ${fontMono.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(localStorage.getItem("ksh-theme")==="dark")document.documentElement.dataset.theme="dark"}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="min-h-dvh bg-background text-foreground">
         <DirectionProvider direction="rtl">
           {children}

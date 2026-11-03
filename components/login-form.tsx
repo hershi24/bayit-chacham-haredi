@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -50,13 +51,9 @@ export function LoginForm() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-4 py-12">
-      <div className="mb-6 flex items-center gap-3">
-        <span className="grid size-10 place-items-center rounded-xl bg-foreground text-lg font-semibold text-background">פ</span>
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">פיקד</h1>
-          <p className="text-sm text-muted-foreground">שליטה בשקעים חכמים</p>
-        </div>
-      </div>
+      <h1 className="mb-6">
+        <BrandLogo className="h-auto w-full" />
+      </h1>
       <Card>
         <CardHeader>
           <CardTitle>התחברות</CardTitle>

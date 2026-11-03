@@ -16,8 +16,9 @@ const fontMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "פיקד",
-  description: "שליטה בשקעים חכמים SC1, באתר ובטלפון",
+  title: "Kosher Smart Home",
+  description: "בית חכם מהפלאפון הכשר. שליטה בשקעים חכמים, באתר ובטלפון",
+  applicationName: "Kosher Smart Home",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

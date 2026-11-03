@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { CalendarRange, LayoutGrid, LogOut, ScrollText, Settings, type LucideIcon } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client-api";
 import type { SessionUser } from "@/lib/types";
@@ -42,9 +43,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[232px_minmax(0,1fr)]">
       <aside className="hig-bar sticky top-0 z-20 hidden h-dvh flex-col border-e border-border px-3 py-4 md:flex">
-        <Link href="/" className="flex items-center gap-2.5 px-2">
-          <span className="grid size-8 place-items-center rounded-[10px] bg-foreground text-sm font-semibold text-background">פ</span>
-          <span className="text-[17px] font-semibold">פיקד</span>
+        <Link href="/" aria-label="Kosher Smart Home" className="block rounded-2xl bg-white px-2 py-1.5">
+          <BrandLogo className="h-auto w-full" />
         </Link>
         <nav className="mt-6 grid gap-1">
           {items.map((item) => {
@@ -74,8 +74,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-col">
         <header className="hig-bar sticky top-0 z-20 flex items-center justify-between border-b border-border px-4 py-2 md:hidden">
-          <Link href="/" className="text-[17px] font-semibold">
-            פיקד
+          <Link href="/" aria-label="Kosher Smart Home" className="rounded-xl bg-white px-2 py-1">
+            <BrandLogo className="h-11 w-auto" />
           </Link>
           <Button variant="ghost" className="h-11 px-3" onClick={() => void logout()} aria-label="יציאה">
             <LogOut />

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { AirVent, Droplets, Fan, Heater, Lightbulb, Loader2, Plug, Refrigerator, Timer, type LucideIcon } from "lucide-react";
+import { AirVent, Droplets, Fan, Heater, Lightbulb, Loader2, Plug, Power, Refrigerator, Timer, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { DEVICE_ICONS, isDeviceIcon, suggestIcon, type DeviceIconKey } from "@/lib/devices/icons";
+import "./power-switch.css";
 import { formatIsrael, planWhen } from "@/lib/time";
 import type { DeviceView, RelayAction } from "@/lib/types";
 
@@ -155,31 +156,24 @@ export function SocketCard({
       ) : null}
       {device.lastError ? <p className="mt-3 text-sm text-destructive">{device.lastError}</p> : null}
 
-      <div className="mt-auto grid grid-cols-2 gap-2 pt-5">
-        <Button
+      <div className="mt-auto flex flex-col items-center pt-5">
+        <button
           type="button"
-          size="lg"
-          variant="outline"
-          className={`h-11 rounded-xl ${powered ? "border-transparent bg-online text-white hover:bg-online/90" : ""}`}
+          className="power-switch"
+          data-power=""
+          data-state={powered ? "on" : device.relayOn === false ? "off" : "unknown"}
           aria-pressed={powered}
+          aria-busy={busy !== null}
+          aria-label={powered ? `כיבוי ${device.name}` : `הפעלה ${device.name}`}
           disabled={busy !== null}
-          onClick={() => onCommand("ON")}
+          onClick={() => onCommand(powered ? "OFF" : "ON")}
         >
-          {busy === "ON" ? <Loader2 className="animate-spin" /> : null}
-          הפעלה
-        </Button>
-        <Button
-          type="button"
-          size="lg"
-          variant="outline"
-          className={`h-11 rounded-xl ${device.relayOn === false ? "border-transparent bg-foreground text-background hover:bg-foreground/90" : ""}`}
-          aria-pressed={device.relayOn === false}
-          disabled={busy !== null}
-          onClick={() => onCommand("OFF")}
-        >
-          {busy === "OFF" ? <Loader2 className="animate-spin" /> : null}
-          כיבוי
-        </Button>
+          <span className="power-switch-ring" aria-hidden="true" />
+          <span className="power-switch-face">
+            {busy !== null ? <Loader2 className="size-7 animate-spin" /> : <Power className="size-8" strokeWidth={2.25} />}
+          </span>
+        </button>
+        <p className={`mt-2 text-[13px] font-medium ${powered ? "text-online-foreground" : "text-muted-foreground"}`}>{relayLabel}</p>
       </div>
       <Button
         type="button"

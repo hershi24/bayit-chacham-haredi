@@ -681,6 +681,9 @@ function mapProgram(row: {
   start_date: string | null;
   end_date: string | null;
   days?: string | null;
+  weekdays?: string | null;
+  on_time?: string | null;
+  off_time?: string | null;
 }): StoredProgram {
   return {
     id: String(row.id),
@@ -692,7 +695,20 @@ function mapProgram(row: {
     startDate: row.start_date,
     endDate: row.end_date,
     days: jsonList(row.days),
+    weekdays: jsonWeekdays(row.weekdays),
+    onTime: row.on_time ?? null,
+    offTime: row.off_time ?? null,
   };
+}
+
+function jsonWeekdays(value: unknown): number[] {
+  try {
+    const parsed = JSON.parse(typeof value === "string" ? value || "[]" : "[]") as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item >= 0 && item <= 6);
+  } catch {
+    return [];
+  }
 }
 
 export async function listPrograms(tenantId: string): Promise<StoredProgram[]> {
@@ -715,6 +731,9 @@ export async function upsertProgram(program: StoredProgram) {
       start_date: program.startDate,
       end_date: program.endDate,
       days: JSON.stringify(program.days ?? []),
+      weekdays: JSON.stringify(program.weekdays ?? []),
+      on_time: program.onTime,
+      off_time: program.offTime,
       created_at: new Date().toISOString(),
     },
     { onConflict: "tenant_id,program_key" },

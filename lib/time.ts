@@ -60,6 +60,15 @@ export function jerusalemInstant(date: string, time: string): Date | null {
   return zonedToUtc(year, month, dateDay, hour, minute);
 }
 
+export function israelDate(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: ISRAEL,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 export function shiftDate(iso: string, days: number): string {
   const [year, month, day] = iso.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));

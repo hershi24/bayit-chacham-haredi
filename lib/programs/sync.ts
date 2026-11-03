@@ -1,4 +1,5 @@
-import type { DayClock } from "@/lib/programs/types";
+import type { DayClock, StoredProgram } from "@/lib/programs/types";
+import { weekdayOf } from "@/lib/programs/weekdays";
 import {
   listDayClocks,
   listPrograms,
@@ -6,7 +7,7 @@ import {
   listTenants,
   replaceProgramRuns,
 } from "@/lib/store";
-import { jerusalemInstant, shiftDate } from "@/lib/time";
+import { israelDate, jerusalemInstant, shiftDate } from "@/lib/time";
 
 const refreshed = new Map<string, number>();
 
@@ -27,7 +28,10 @@ export async function syncTenantPrograms(tenantId: string, now = new Date()) {
   }
   for (const program of programs) {
     const owned = program.programKey.startsWith("days:") ? (byProgram.get(program.id) ?? []) : [];
-    const runs = program.enabled && program.programKey.startsWith("days:") ? runsFor(program.name, owned, allowed, now) : [];
+    const runs =
+      program.enabled && program.programKey.startsWith("days:")
+        ? [...runsFor(program.name, owned, allowed, now), ...runsForWeekdays(program, allowed, now)]
+        : [];
     await replaceProgramRuns(program.id, runs);
   }
   await replaceProgramRuns(looseId(tenantId), runsFor("שעון", loose, allowed, now));
@@ -49,6 +53,27 @@ export function programId(tenantId: string, key: string) {
 
 export function looseId(tenantId: string) {
   return `loose:${tenantId}`;
+}
+
+function runsForWeekdays(program: StoredProgram, allowed: Set<string>, now: Date) {
+  if (!program.weekdays.length || (!program.onTime && !program.offTime)) return [];
+  const clocks: DayClock[] = [];
+  let day = israelDate(now);
+  for (let index = 0; index < 84; index += 1) {
+    if (program.weekdays.includes(weekdayOf(day))) {
+      clocks.push({
+        id: program.id,
+        tenantId: program.tenantId,
+        programId: program.id,
+        day,
+        onTime: program.onTime,
+        offTime: program.offTime,
+        deviceIds: program.deviceIds,
+      });
+    }
+    day = shiftDate(day, 1);
+  }
+  return runsFor(program.name, clocks, allowed, now);
 }
 
 function runsFor(name: string, clocks: DayClock[], allowed: Set<string>, now: Date) {

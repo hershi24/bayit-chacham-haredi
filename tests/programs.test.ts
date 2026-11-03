@@ -3,6 +3,7 @@ import test from "node:test";
 import { DEFAULT_CLOCK, formatClock, monthBoard, upcomingPrograms } from "../lib/hebrew/calendar";
 import { handleMenu } from "../lib/ivr/menu";
 import { looseId, programId, syncTenantPrograms } from "../lib/programs/sync";
+import { weekdayOf, weekdayPhrase } from "../lib/programs/weekdays";
 import {
   deleteDayClock,
   deleteProgram,
@@ -13,6 +14,7 @@ import {
   saveDayClock,
   upsertProgram,
 } from "../lib/store";
+import { israelDate, jerusalemInstant } from "../lib/time";
 
 test("shabbat shows the parsha and the next week follows it", async () => {
   const programs = await upcomingPrograms(DEFAULT_CLOCK, new Date("2026-10-01T12:00:00.000Z"));
@@ -71,6 +73,9 @@ test("the phone toggles a named program", async () => {
     startDate: "2026-12-01",
     endDate: "2026-12-02",
     days: ["2026-12-01", "2026-12-02"],
+    weekdays: [],
+    onTime: null,
+    offTime: null,
   });
   const menu = await handleMenu(
     new Request("http://127.0.0.1/api/ivr/menu", {
@@ -116,6 +121,9 @@ test("a day clock runs on every chosen socket and a paused program does not", as
     startDate: "2026-12-15",
     endDate: "2026-12-15",
     days: ["2026-12-15"],
+    weekdays: [],
+    onTime: null,
+    offTime: null,
   };
   await upsertProgram(program);
   await saveDayClock({
@@ -166,6 +174,9 @@ test("a day clock runs on every chosen socket and a paused program does not", as
     startDate: null,
     endDate: null,
     days: [],
+    weekdays: [],
+    onTime: null,
+    offTime: null,
   });
   await syncTenantPrograms("ten_yeshiva", now);
   const preset = (await listProgramRuns("ten_yeshiva")).filter((run) => run.label.includes("בראשית"));
@@ -174,4 +185,42 @@ test("a day clock runs on every chosen socket and a paused program does not", as
   await deleteDayClock("ten_yeshiva", "clk_test_loose");
   await deleteProgram("ten_yeshiva", program.id);
   await syncTenantPrograms("ten_yeshiva", now);
+});
+
+test("a weekday program runs every chosen day and skips Friday and Saturday", async () => {
+  const now = new Date("2026-12-01T06:00:00.000Z");
+  const program = {
+    id: programId("ten_shul", "days:ac"),
+    tenantId: "ten_shul",
+    programKey: "days:ac",
+    name: "מזגן",
+    enabled: true,
+    deviceIds: ["rct074190118"],
+    startDate: null,
+    endDate: null,
+    days: [] as string[],
+    weekdays: [0, 1, 2, 3, 4],
+    onTime: "10:00",
+    offTime: "12:00",
+  };
+  await upsertProgram(program);
+  await syncTenantPrograms("ten_shul", now);
+  const runs = await listRunsFor(program.id);
+  const ons = runs.filter((run) => run.action === "ON");
+  const offs = runs.filter((run) => run.action === "OFF");
+  assert.equal(weekdayPhrase(program.weekdays), "כל יום חוץ משישי ושבת");
+  assert.ok(ons.length >= 40);
+  assert.equal(ons.length, offs.length);
+  for (const run of ons) {
+    const day = israelDate(new Date(run.runAt));
+    assert.equal(program.weekdays.includes(weekdayOf(day)), true);
+    assert.equal(run.runAt, jerusalemInstant(day, "10:00")?.toISOString());
+    assert.equal(run.deviceId, "rct074190118");
+  }
+  assert.equal(ons.some((run) => weekdayOf(israelDate(new Date(run.runAt))) === 5), false);
+  assert.equal(ons.some((run) => weekdayOf(israelDate(new Date(run.runAt))) === 6), false);
+  await upsertProgram({ ...program, enabled: false });
+  await syncTenantPrograms("ten_shul", now);
+  assert.equal((await listRunsFor(program.id)).length, 0);
+  await deleteProgram("ten_shul", program.id);
 });

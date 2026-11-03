@@ -3,6 +3,7 @@ import { clampClock } from "@/lib/hebrew/calendar";
 import { HttpError } from "@/lib/http-error";
 import { programId, syncTenantPrograms } from "@/lib/programs/sync";
 import type { StoredProgram } from "@/lib/programs/types";
+import { cleanWeekdays } from "@/lib/programs/weekdays";
 import { programsPayload } from "@/lib/programs/view";
 import { requireUser, withErrors } from "@/lib/session";
 import {
@@ -106,6 +107,8 @@ export function POST(request: Request) {
       await saveClock(tenantId, clampClock({ ...current, locationId: typeof body.locationId === "string" ? body.locationId : "" }));
     } else if (action === "clock-save") {
       await saveClockAction(tenantId, body);
+    } else if (action === "repeat-save") {
+      await saveRepeatAction(tenantId, body);
     } else if (action === "clock-delete") {
       const id = typeof body.id === "string" ? body.id : "";
       if (!id) throw new HttpError(400, "חסר שעון");
@@ -167,6 +170,38 @@ async function saveClockAction(tenantId: string, body: Record<string, unknown>) 
   });
 }
 
+async function saveRepeatAction(tenantId: string, body: Record<string, unknown>) {
+  const name = typeof body.name === "string" ? body.name.trim().slice(0, 40) : "";
+  if (!name) throw new HttpError(400, "תנו שם לתוכנית");
+  const weekdays = cleanWeekdays(Array.isArray(body.weekdays) ? body.weekdays.map((item) => Number(item)) : []);
+  if (!weekdays.length) throw new HttpError(400, "בחרו לפחות יום אחד בשבוע");
+  const onTime = clockTime(body.onTime);
+  const offTime = clockTime(body.offTime);
+  if (!onTime && !offTime) throw new HttpError(400, "בחרו שעת הדלקה או כיבוי");
+  const allowed = (await listTenantDevices(tenantId)).map((device) => device.deviceId);
+  const deviceIds = deviceList(body.deviceIds, allowed);
+  if (!deviceIds.length) throw new HttpError(400, "בחרו לפחות שקע אחד");
+  const programs = await listPrograms(tenantId);
+  const requested = typeof body.id === "string" ? body.id : "";
+  const current = requested ? programs.find((program) => program.id === requested && program.programKey.startsWith("days:")) : undefined;
+  if (requested && !current) throw new HttpError(404, "התוכנית לא נמצאה");
+  const key = current?.programKey ?? `days:${randomUUID()}`;
+  await upsertProgram({
+    id: current?.id ?? programId(tenantId, key),
+    tenantId,
+    programKey: key,
+    name,
+    enabled: current?.enabled ?? true,
+    deviceIds,
+    startDate: current?.startDate ?? null,
+    endDate: current?.endDate ?? null,
+    days: current?.days ?? [],
+    weekdays,
+    onTime,
+    offTime,
+  });
+}
+
 async function saveProgramAction(tenantId: string, body: Record<string, unknown>) {
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 40) : "";
   if (!name) throw new HttpError(400, "חסר שם לתוכנית");
@@ -183,10 +218,13 @@ async function saveProgramAction(tenantId: string, body: Record<string, unknown>
       programKey: key,
       name,
       enabled: current?.enabled ?? true,
-      deviceIds: [],
+      deviceIds: current?.deviceIds ?? [],
       startDate: null,
       endDate: null,
       days,
+      weekdays: current?.weekdays ?? [],
+      onTime: current?.onTime ?? null,
+      offTime: current?.offTime ?? null,
     },
     days,
   );

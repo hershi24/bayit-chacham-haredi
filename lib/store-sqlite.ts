@@ -59,16 +59,22 @@ function db(): DatabaseSync {
   return globalDb.__pikudDb;
 }
 
-function ensureDayClocks(database: DatabaseSync) {
+function addColumn(database: DatabaseSync, name: string, definition: string) {
   const columns = database.prepare("PRAGMA table_info(programs)").all() as Array<{ name?: string }>;
-  if (!columns.some((column) => column.name === "days")) {
-    try {
-      database.exec("ALTER TABLE programs ADD COLUMN days TEXT NOT NULL DEFAULT '[]'");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (!/duplicate column/i.test(message)) throw error;
-    }
+  if (columns.some((column) => column.name === name)) return;
+  try {
+    database.exec(`ALTER TABLE programs ADD COLUMN ${definition}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!/duplicate column/i.test(message)) throw error;
   }
+}
+
+function ensureDayClocks(database: DatabaseSync) {
+  addColumn(database, "days", "days TEXT NOT NULL DEFAULT '[]'");
+  addColumn(database, "weekdays", "weekdays TEXT NOT NULL DEFAULT '[]'");
+  addColumn(database, "on_time", "on_time TEXT");
+  addColumn(database, "off_time", "off_time TEXT");
   database.exec(`
     CREATE TABLE IF NOT EXISTS clocks (
       id TEXT PRIMARY KEY,
@@ -688,6 +694,18 @@ function jsonList(row: Row, key: string): string[] {
   return [];
 }
 
+function jsonWeekdays(row: Row): number[] {
+  try {
+    const parsed = JSON.parse(text(row, "weekdays") || "[]") as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => Number(item))
+      .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6);
+  } catch {
+    return [];
+  }
+}
+
 function mapProgram(row: Row): StoredProgram {
   return {
     id: text(row, "id"),
@@ -699,6 +717,9 @@ function mapProgram(row: Row): StoredProgram {
     startDate: textOrNull(row, "start_date"),
     endDate: textOrNull(row, "end_date"),
     days: jsonList(row, "days"),
+    weekdays: jsonWeekdays(row),
+    onTime: textOrNull(row, "on_time"),
+    offTime: textOrNull(row, "off_time"),
   };
 }
 
@@ -710,15 +731,18 @@ export function upsertProgram(program: StoredProgram) {
   db()
     .prepare(
       `INSERT INTO programs (
-        id, tenant_id, program_key, name, enabled, device_ids, start_date, end_date, days, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, tenant_id, program_key, name, enabled, device_ids, start_date, end_date, days, weekdays, on_time, off_time, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(tenant_id, program_key) DO UPDATE SET
         name = excluded.name,
         enabled = excluded.enabled,
         device_ids = excluded.device_ids,
         start_date = excluded.start_date,
         end_date = excluded.end_date,
-        days = excluded.days`,
+        days = excluded.days,
+        weekdays = excluded.weekdays,
+        on_time = excluded.on_time,
+        off_time = excluded.off_time`,
     )
     .run(
       program.id,
@@ -730,6 +754,9 @@ export function upsertProgram(program: StoredProgram) {
       program.startDate,
       program.endDate,
       JSON.stringify(program.days ?? []),
+      JSON.stringify(program.weekdays ?? []),
+      program.onTime,
+      program.offTime,
       new Date().toISOString(),
     );
 }

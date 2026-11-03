@@ -26,8 +26,9 @@ export type MenuRead = {
   min: number;
   max: number;
   allowed?: string;
-  mode?: "No" | "Number" | "Time";
+  mode?: "No" | "Number" | "Time" | "Digits" | "Date";
   seconds?: number;
+  allowEmpty?: boolean;
 };
 
 export type PhoneClockPlan = {
@@ -144,8 +145,10 @@ function clockFlow(device: MenuDevice, devices: MenuDevice[], values: MenuValues
 
   let day: string | null = null;
   if (repeat === "1") {
-    day = values.date ? parsePhoneDate(values.date) : null;
-    if (!day) return readDate(values.date ? "התאריך לא תקין, " : "");
+    if (!values.date) return readDate(values.date === "" ? "לא הוקש תאריך, " : "");
+    const parsed = parsePhoneDate(values.date);
+    if (!parsed.iso) return readDate(`${parsed.reason}, `);
+    day = parsed.iso;
   }
 
   if (!values.on) return readOn("");
@@ -201,11 +204,14 @@ function readWeek(prefix: string): MenuRead {
 function readDate(prefix: string): MenuRead {
   return {
     type: "read",
-    message: `${prefix}הקש תאריך בן שמונה ספרות, יום חודש ושנה. לשלושה בנובמבר אלפיים עשרים ושש הקש אפס שלוש אחד אחד שתיים שש`,
+    message: `${prefix}הקש שמונה ספרות, שתיים ליום, שתיים לחודש, וארבע ספרות לשנה. לשלושה בנובמבר אלפיים עשרים ושש הקש אפס שלוש אחד אחד שתיים אפס שתיים שש`,
     field: "pikud_date",
     min: 8,
     max: 8,
-    mode: "Number",
+    // Number drops a leading zero, so 03112026 never reaches eight digits and Yemot speaks an error.
+    mode: "Digits",
+    seconds: 8,
+    allowEmpty: true,
   };
 }
 
@@ -251,15 +257,18 @@ function parseWeek(value: string): number[] | null {
   return [...new Set([...value].map((digit) => Number(digit) - 1))].sort((left, right) => left - right);
 }
 
-function parsePhoneDate(value: string): string | null {
-  if (!/^\d{8}$/.test(value)) return null;
+function parsePhoneDate(value: string): { iso: string; reason?: undefined } | { iso?: undefined; reason: string } {
+  if (!/^\d{8}$/.test(value)) return { reason: "חסרות ספרות, צריך שמונה ספרות יום חודש ושנה" };
   const day = Number(value.slice(0, 2));
   const month = Number(value.slice(2, 4));
   const year = Number(value.slice(4));
-  if (year < 2020 || year > 2040) return null;
+  if (month < 1 || month > 12) return { reason: "החודש לא תקין" };
+  if (year < 2020 || year > 2040) return { reason: "השנה לא תקינה" };
   const date = new Date(Date.UTC(year, month - 1, day));
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return { reason: "היום לא קיים בחודש הזה" };
+  }
+  return { iso: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}` };
 }
 
 function parsePhoneClock(value: string): string | "skip" | null {

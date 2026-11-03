@@ -161,6 +161,11 @@ export async function removeCallerNumber(tenantId: string, id: string) {
   return sqlite.removeCallerNumber(tenantId, id);
 }
 
+export async function setDeviceFrozen(deviceId: string, frozen: boolean) {
+  if (remoteOn()) return remote.setDeviceFrozen(deviceId, frozen);
+  return sqlite.setDeviceFrozen(deviceId, frozen);
+}
+
 export async function createDevice(input: { deviceId: string; name: string; tenantId: string }) {
   if (remoteOn()) return remote.createDevice(input);
   return sqlite.createDevice(input);

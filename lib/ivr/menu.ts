@@ -74,7 +74,9 @@ export async function handleMenu(request: Request) {
   if (input.values.hangup === "yes") return reply(input.format, "noop=hangup\n");
 
   if (!input.phone) return reply(input.format, yemotSpeak("לא זוהה מספר הטלפון"));
-  const devices: MenuDevice[] = devicesForPhone(await listIvrTargets(), input.phone)
+  const targets = devicesForPhone(await listIvrTargets(), input.phone);
+  const frozen = new Set(targets.filter((device) => device.frozen).map((device) => device.deviceId));
+  const devices: MenuDevice[] = targets
     .map((device) => ({
       deviceId: device.deviceId,
       name: device.name,
@@ -126,6 +128,9 @@ export async function handleMenu(request: Request) {
   const actor = caller(input.phone);
 
   if (decision.type === "turn") {
+    if (frozen.has(decision.device.deviceId)) {
+      return reply(input.format, yemotSpeak(speechFor({ kind: "frozen" })));
+    }
     if (decision.device.connectivity === "OFFLINE") {
       return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
     }
@@ -134,6 +139,9 @@ export async function handleMenu(request: Request) {
   }
 
   if (decision.type === "timer") {
+    if (frozen.has(decision.device.deviceId)) {
+      return reply(input.format, yemotSpeak(speechFor({ kind: "frozen" })));
+    }
     if (decision.device.relayOn !== true) {
       if (decision.device.connectivity === "OFFLINE") {
         return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
@@ -149,6 +157,9 @@ export async function handleMenu(request: Request) {
     return reply(input.format, yemotSpeak(`${lead}, הוא יכבה בעוד ${decision.minutes} דקות`));
   }
 
+  if (decision.devices.some((device) => frozen.has(device.deviceId))) {
+    return reply(input.format, yemotSpeak(speechFor({ kind: "frozen" })));
+  }
   const message = await savePhoneClock(decision);
   return reply(input.format, yemotSpeak(message));
 }

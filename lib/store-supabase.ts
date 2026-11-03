@@ -31,6 +31,7 @@ type DeviceRow = {
   name: string;
   tenant_id: string;
   icon?: string | null;
+  frozen?: boolean | number | null;
   tenants: Embed<{ name: string; phone: string | null }>;
   device_state: Embed<DeviceStateRow>;
 };
@@ -243,21 +244,32 @@ function mapDevice(row: DeviceRow): DeviceView & { phone: string | null } {
     sensorSummary: state?.sensor_summary ?? null,
     lastError: state?.last_error ?? null,
     icon: row.icon ?? null,
+    frozen: row.frozen === true || row.frozen === 1,
   };
 }
 
 const deviceColumnsPlain =
   "device_id, name, tenant_id, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)";
-let deviceColumns = `device_id, name, tenant_id, icon, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)`;
+let deviceColumns = `device_id, name, tenant_id, icon, frozen, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)`;
 
 function iconColumnMissing(error: DbError) {
-  return deviceColumns !== deviceColumnsPlain && (error.code === "42703" || error.code === "PGRST204" || /icon/i.test(error.message));
+  return deviceColumns.includes("icon") && (error.code === "42703" || error.code === "PGRST204" || /icon/i.test(error.message));
+}
+
+function frozenColumnMissing(error: DbError) {
+  return deviceColumns.includes("frozen") && (error.code === "42703" || error.code === "PGRST204" || /frozen/i.test(error.message));
 }
 
 async function deviceRows(tenantId?: string | null): Promise<DeviceRow[]> {
   let query = client().from("devices").select(deviceColumns);
   if (tenantId) query = query.eq("tenant_id", tenantId);
   let result = await query;
+  if (result.error && frozenColumnMissing(result.error)) {
+    deviceColumns = deviceColumns.replace(", frozen", "");
+    query = client().from("devices").select(deviceColumns);
+    if (tenantId) query = query.eq("tenant_id", tenantId);
+    result = await query;
+  }
   if (result.error && iconColumnMissing(result.error)) {
     deviceColumns = deviceColumnsPlain;
     query = client().from("devices").select(deviceColumns);
@@ -301,6 +313,10 @@ export async function listIvrTargets(): Promise<Array<DeviceView & { phone: stri
 export async function getDevice(deviceId: string): Promise<(DeviceView & { phone: string | null }) | null> {
   await ready();
   let result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
+  if (result.error && frozenColumnMissing(result.error)) {
+    deviceColumns = deviceColumns.replace(", frozen", "");
+    result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
+  }
   if (result.error && iconColumnMissing(result.error)) {
     deviceColumns = deviceColumnsPlain;
     result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
@@ -802,6 +818,20 @@ export async function listAudit(user: { role: Role; tenantId: string | null }, l
     result: String(row.result),
     detail: row.detail == null ? null : String(row.detail),
   }));
+}
+
+export async function setDeviceFrozen(deviceId: string, frozen: boolean): Promise<DeviceView | null> {
+  await ready();
+  const result = await client().from("devices").update({ frozen: frozen ? 1 : 0 }).eq("device_id", deviceId).select("device_id");
+  if (result.error) {
+    if (result.error.code === "42703" || result.error.code === "PGRST204" || /frozen/i.test(result.error.message)) {
+      throw new HttpError(500, "עמודת ההקפאה חסרה. הריצו: alter table devices add column if not exists frozen integer not null default 0;");
+    }
+    fail(result.error, "הקפאת ההתקן נכשלה");
+  }
+  if (!result.data?.length) return null;
+  const view = await getDevice(deviceId);
+  return view ? presentDevice(view) : null;
 }
 
 export async function setDeviceIcon(deviceId: string, icon: string): Promise<DeviceView | null> {

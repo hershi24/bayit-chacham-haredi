@@ -14,6 +14,7 @@ import {
   deleteTenant,
   deleteUser,
   findUserForLogin,
+  getDevice,
   listDevices,
   listIvrTargets,
   listTenants,
@@ -21,6 +22,7 @@ import {
   readSession,
   removeCallerNumber,
   renameTenant,
+  setDeviceFrozen,
   updateUser,
 } from "../lib/store";
 
@@ -114,7 +116,14 @@ test("a customer can be limited to chosen sockets, and another phone can call th
     assert.equal(await readSession(kept.id), null);
     const reset = await findUserForLogin("access-test");
     assert.equal(verifyPassword("secret3", reset?.passwordHash ?? ""), true);
+
+    assert.equal((await getDevice(deviceA))?.frozen, false);
+    assert.equal((await setDeviceFrozen(deviceA, true))?.frozen, true);
+    assert.equal((await getDevice(deviceA))?.frozen, true);
+    assert.equal((await setDeviceFrozen(deviceA, false))?.frozen, false);
+    assert.equal((await getDevice(deviceA))?.frozen, false);
   } finally {
+    await setDeviceFrozen(deviceA, false).catch(() => undefined);
     if (userId) await deleteUser(userId, "usr_admin");
     await deleteDevice(deviceA).catch(() => undefined);
     await deleteDevice(deviceB).catch(() => undefined);

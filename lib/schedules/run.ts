@@ -1,5 +1,6 @@
+import { HttpError } from "@/lib/http-error";
 import { syncProgramsIfStale } from "@/lib/programs/sync";
-import { failProgramRun, failSchedule, finishProgramRun, finishSchedule, listDueProgramRuns, listDueSchedules } from "@/lib/store";
+import { failProgramRun, failSchedule, finishProgramRun, finishSchedule, getDevice, listDueProgramRuns, listDueSchedules } from "@/lib/store";
 import { getBridge } from "@/lib/wlte/bridge";
 
 const globalScheduler = globalThis as { __pikudScheduler?: boolean };
@@ -28,6 +29,7 @@ export async function runDueSchedules() {
   const bridge = getBridge();
   for (const job of due) {
     try {
+      if ((await getDevice(job.deviceId))?.frozen) continue;
       const result = await bridge.command({
         deviceId: job.deviceId,
         action: job.kind === "timer_off" ? "OFF" : "ON",
@@ -37,11 +39,13 @@ export async function runDueSchedules() {
       if (result.status === "SUCCESS" || result.status === "SENT") await finishSchedule(job.id);
       else await failSchedule(job.id, result.status);
     } catch (error) {
+      if (error instanceof HttpError && error.message === "השקע מוקפא") continue;
       await failSchedule(job.id, error instanceof Error ? error.message : "הפעולה נכשלה");
     }
   }
   for (const job of await listDueProgramRuns()) {
     try {
+      if ((await getDevice(job.deviceId))?.frozen) continue;
       const result = await bridge.command({
         deviceId: job.deviceId,
         action: job.action,
@@ -51,6 +55,7 @@ export async function runDueSchedules() {
       if (result.status === "SUCCESS" || result.status === "SENT") await finishProgramRun(job.id);
       else await failProgramRun(job.id, result.status);
     } catch (error) {
+      if (error instanceof HttpError && error.message === "השקע מוקפא") continue;
       await failProgramRun(job.id, error instanceof Error ? error.message : "הפעולה נכשלה");
     }
   }

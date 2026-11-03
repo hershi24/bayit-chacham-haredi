@@ -76,10 +76,12 @@ test("a published socket keeps its next event and drops the phone", () => {
     sensorSummary: "טמפרטורה: לא מחובר",
     lastError: null,
     icon: "ac",
+    frozen: false,
     next: { at: "2026-11-03T11:00:00.000Z", action: "ON" },
   };
   const view = presentDevice(device);
   assert.equal(view.icon, "ac");
+  assert.equal(view.frozen, false);
   assert.deepEqual(view.next, { at: "2026-11-03T11:00:00.000Z", action: "ON" });
   assert.equal("phone" in view, false);
 });

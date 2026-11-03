@@ -201,6 +201,9 @@ class Bridge {
     actor: string;
   }): Promise<{ device: DeviceView; commandId: string | null; status: string; idempotencyKey: string; requestId: string | null }> {
     await this.ready;
+    const current = await getDevice(input.deviceId);
+    if (!current) throw new HttpError(404, "השקע לא נמצא");
+    if (current.frozen) throw new HttpError(403, "השקע מוקפא");
     const key = createIdempotencyKey();
     try {
       const command = await this.gateway.command(input.deviceId, input.action, key);

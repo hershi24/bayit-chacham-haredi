@@ -57,9 +57,11 @@ function db(): DatabaseSync {
   if (!dayClocksReady) {
     ensureDayClocks(globalDb.__pikudDb);
     addDeviceColumn(globalDb.__pikudDb, "icon", "icon TEXT");
+    addDeviceColumn(globalDb.__pikudDb, "frozen", "frozen INTEGER NOT NULL DEFAULT 0");
     ensureAccessTables(globalDb.__pikudDb);
     dayClocksReady = true;
   }
+  addDeviceColumn(globalDb.__pikudDb, "frozen", "frozen INTEGER NOT NULL DEFAULT 0");
   return globalDb.__pikudDb;
 }
 
@@ -202,6 +204,7 @@ function migrate(database: DatabaseSync) {
     );
   `);
   addDeviceColumn(database, "icon", "icon TEXT");
+  addDeviceColumn(database, "frozen", "frozen INTEGER NOT NULL DEFAULT 0");
   ensureAccessTables(database);
 }
 
@@ -269,7 +272,7 @@ function seed(database: DatabaseSync) {
 
 function deviceSelect() {
   return `
-    SELECT d.device_id, d.name, d.icon, d.tenant_id, t.name AS tenant_name, t.phone AS tenant_phone,
+    SELECT d.device_id, d.name, d.icon, d.frozen, d.tenant_id, t.name AS tenant_name, t.phone AS tenant_phone,
       s.connectivity, s.relay_on, s.state_updated_at, s.device_type, s.sensor_summary, s.last_error
     FROM devices d
     JOIN tenants t ON t.id = d.tenant_id
@@ -292,6 +295,7 @@ function mapDevice(row: Row): DeviceView & { phone: string | null } {
     sensorSummary: textOrNull(row, "sensor_summary"),
     lastError: textOrNull(row, "last_error"),
     icon: textOrNull(row, "icon"),
+    frozen: Number(row.frozen) === 1,
   };
 }
 
@@ -308,8 +312,16 @@ export function presentDevice(device: DeviceView & { phone?: string | null }): D
     sensorSummary: device.sensorSummary,
     lastError: device.lastError,
     icon: device.icon ?? null,
+    frozen: device.frozen === true,
     ...(device.next === undefined ? {} : { next: device.next }),
   };
+}
+
+export function setDeviceFrozen(deviceId: string, frozen: boolean): DeviceView | null {
+  if (!getDevice(deviceId)) return null;
+  db().prepare("UPDATE devices SET frozen = ? WHERE device_id = ?").run(frozen ? 1 : 0, deviceId);
+  const view = getDevice(deviceId);
+  return view ? presentDevice(view) : null;
 }
 
 export function grantsFor(userId: string): string[] | null {

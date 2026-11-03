@@ -13,6 +13,7 @@ export function POST(request: Request, context: { params: Promise<{ deviceId: st
     const device = await getDevice(deviceId);
     if (!device) throw new HttpError(404, "השקע לא נמצא");
     await assertMayUseDevice(user, device);
+    if (device.frozen) throw new HttpError(403, "השקע מוקפא");
     const body = await readJson(request);
     if (body.action !== "ON" && body.action !== "OFF") {
       throw new HttpError(400, "הפעולה חייבת להיות ON או OFF");

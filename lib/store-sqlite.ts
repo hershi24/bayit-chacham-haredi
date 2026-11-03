@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword } from "@/lib/password";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
+import { resolveDateClocks } from "@/lib/programs/dates";
 import { parseSlots } from "@/lib/programs/slots";
 import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type {
@@ -1083,6 +1084,30 @@ export function saveDayClock(clock: DayClock) {
 export function deleteDayClock(tenantId: string, id: string) {
   const result = db().prepare("DELETE FROM clocks WHERE tenant_id = ? AND id = ?").run(tenantId, id);
   if (Number(result.changes) === 0) throw new HttpError(404, "השעון לא נמצא");
+}
+
+export function saveDateProgram(program: StoredProgram, clocks: DayClock[]) {
+  const database = db();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    upsertProgram(program);
+    const existing = listDayClocks(program.tenantId);
+    const next = resolveDateClocks(program.id, program.tenantId, clocks, existing);
+    const keep = new Set(next.map((clock) => clock.id));
+    for (const clock of next) saveDayClock(clock);
+    const remove = database.prepare("DELETE FROM clocks WHERE tenant_id = ? AND id = ?");
+    for (const clock of existing) {
+      if (clock.programId === program.id && !keep.has(clock.id)) remove.run(program.tenantId, clock.id);
+    }
+    database.exec("COMMIT");
+  } catch (error) {
+    try {
+      database.exec("ROLLBACK");
+    } catch {
+      // The write error is the one to surface when the rollback itself fails.
+    }
+    throw error;
+  }
 }
 
 export function listRunsFor(programId: string): ProgramRun[] {

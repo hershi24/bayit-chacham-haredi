@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CLOCK, formatClock, monthBoard, upcomingPrograms } from "../lib/hebrew/calendar";
 import { handleMenu } from "../lib/ivr/menu";
+import { mergeVisibleDevices } from "../lib/programs/devices";
 import { looseId, programId, syncTenantPrograms } from "../lib/programs/sync";
 import { weekdayOf, weekdayPhrase } from "../lib/programs/weekdays";
 import {
@@ -11,6 +12,7 @@ import {
   listProgramRuns,
   listPrograms,
   listRunsFor,
+  saveDateProgram,
   saveDayClock,
   upsertProgram,
 } from "../lib/store";
@@ -309,6 +311,75 @@ test("friday and saturday clocks of one program stay on their own day", async ()
     ],
   );
   await deleteProgram("ten_shul", program.id);
+});
+
+test("hidden sockets stay when a date program is edited by someone who cannot see them", () => {
+  assert.deepEqual(mergeVisibleDevices(["seen"], ["seen", "secret"], ["seen", "other"]), ["seen", "secret"]);
+  assert.deepEqual(mergeVisibleDevices(["other"], ["secret"], ["seen", "other"]), ["other", "secret"]);
+});
+
+test("one date program with two dates schedules every clock and a pause clears the runs", async () => {
+  const now = new Date("2026-11-01T08:00:00.000Z");
+  const id = programId("ten_shul", "days:builder");
+  const deviceIds = ["rct074190118"];
+  const program = {
+    id,
+    tenantId: "ten_shul",
+    programKey: "days:builder",
+    name: "בדיקה",
+    enabled: true,
+    deviceIds,
+    startDate: "2026-11-10",
+    endDate: "2026-11-12",
+    days: ["2026-11-10", "2026-11-12"],
+    weekdays: [] as number[],
+    onTime: null,
+    offTime: null,
+    slots: [],
+  };
+  const clocks = [
+    { id: "clk_builder_on", tenantId: "ten_shul", programId: id, day: "2026-11-10", onTime: "14:00", offTime: null, deviceIds },
+    { id: "clk_builder_pair", tenantId: "ten_shul", programId: id, day: "2026-11-10", onTime: "16:00", offTime: "17:00", deviceIds },
+    { id: "clk_builder_morn", tenantId: "ten_shul", programId: id, day: "2026-11-12", onTime: "09:00", offTime: null, deviceIds },
+  ];
+  try {
+    await saveDateProgram(program, clocks);
+    await syncTenantPrograms("ten_shul", now);
+    const runs = await listRunsFor(id);
+    assert.deepEqual(
+      runs.map((run) => [run.action, run.runAt, run.deviceId]).sort((left, right) => left[1].localeCompare(right[1])),
+      [
+        ["ON", jerusalemInstant("2026-11-10", "14:00")?.toISOString(), "rct074190118"],
+        ["ON", jerusalemInstant("2026-11-10", "16:00")?.toISOString(), "rct074190118"],
+        ["OFF", jerusalemInstant("2026-11-10", "17:00")?.toISOString(), "rct074190118"],
+        ["ON", jerusalemInstant("2026-11-12", "09:00")?.toISOString(), "rct074190118"],
+      ],
+    );
+
+    await upsertProgram({ ...program, enabled: false });
+    await syncTenantPrograms("ten_shul", now);
+    assert.equal((await listRunsFor(id)).length, 0);
+    const loose = await listRunsFor(looseId("ten_shul"));
+    assert.equal(
+      loose.some((run) => run.deviceId === "rct074190118" && run.runAt === jerusalemInstant("2026-11-12", "09:00")?.toISOString()),
+      false,
+    );
+
+    await saveDateProgram({ ...program, days: ["2026-11-10"], endDate: "2026-11-10" }, clocks.slice(0, 2));
+    const left = (await listDayClocks("ten_shul")).filter((clock) => clock.programId === id || clock.id === "clk_builder_morn");
+    assert.deepEqual(
+      left.map((clock) => clock.day).sort(),
+      ["2026-11-10", "2026-11-10"],
+    );
+    assert.equal(left.some((clock) => clock.id === "clk_builder_morn"), false);
+  } finally {
+    try {
+      await deleteProgram("ten_shul", id);
+    } catch {
+      // The program is already gone when the save never landed.
+    }
+    await syncTenantPrograms("ten_shul", now);
+  }
 });
 
 test("the phone saves a weekday clock on the chosen socket", async () => {

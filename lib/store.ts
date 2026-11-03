@@ -301,6 +301,11 @@ export async function deleteDayClock(tenantId: string, id: string) {
   return sqlite.deleteDayClock(tenantId, id);
 }
 
+export async function saveDateProgram(program: StoredProgram, clocks: DayClock[]) {
+  if (remoteOn()) return remote.saveDateProgram(program, clocks);
+  return sqlite.saveDateProgram(program, clocks);
+}
+
 export async function listRunsFor(programId: string) {
   if (remoteOn()) return remote.listRunsFor(programId);
   return sqlite.listRunsFor(programId);

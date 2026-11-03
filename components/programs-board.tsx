@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/client-api";
 import type { MonthDay } from "@/lib/hebrew/calendar";
-import { maxSlots } from "@/lib/programs/slots";
+import { maxDayClocks, maxProgramDays, maxSlots } from "@/lib/programs/slots";
 import { dayBars, laneBars } from "@/lib/programs/timeline";
 import { weekdayOf, weekdayPhrase } from "@/lib/programs/weekdays";
 import { israelDate, shiftDate } from "@/lib/time";
@@ -77,7 +77,9 @@ type Draft = {
   absorbIds: string[];
 };
 
-type Selection = { id: string | null; name: string; days: string[] };
+type PlanClock = { key: number; id: string | null; onTime: string; offTime: string };
+type PlanDay = { key: number; date: string; clocks: PlanClock[] };
+type Plan = { id: string | null; name: string; deviceIds: string[]; days: PlanDay[] };
 
 const WEEKDAYS = ["א", "ב", "ג", "ד", "ה", "ו", "שבת"];
 
@@ -101,7 +103,7 @@ export function ProgramsBoard() {
   const [cursor, setCursor] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [selecting, setSelecting] = useState<Selection | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
 
   const load = useCallback(async (tenantId: string | null, year?: number, month?: number) => {
     const params = new URLSearchParams();
@@ -263,12 +265,20 @@ export function ProgramsBoard() {
     });
   }
 
-  function toggleDay(date: string) {
-    setSelecting((current) => {
-      if (!current) return current;
-      const days = current.days.includes(date) ? current.days.filter((item) => item !== date) : [...current.days, date].sort();
-      return { ...current, days };
-    });
+  function updatePlan(recipe: (current: Plan) => Plan) {
+    setFormError(null);
+    setPlan((current) => (current ? recipe(current) : current));
+  }
+
+  function editPlanClock(dayKey: number, clockKey: number, patch: Partial<Pick<PlanClock, "onTime" | "offTime">>) {
+    updatePlan((current) => ({
+      ...current,
+      days: current.days.map((day) =>
+        day.key === dayKey
+          ? { ...day, clocks: day.clocks.map((clock) => (clock.key === clockKey ? { ...clock, ...patch } : clock)) }
+          : day,
+      ),
+    }));
   }
 
   function shiftMonth(delta: number) {
@@ -297,32 +307,91 @@ export function ProgramsBoard() {
   }
 
   function beginProgram(program?: Program) {
+    if (!board) return;
     if (program?.weekdays.length) {
       openRepeat(program);
       return;
     }
-    setView("month");
-    setSelecting(program ? { id: program.id, name: program.name, days: [...program.days] } : { id: null, name: "", days: [] });
-    const first = program?.days[0];
-    if (first && board) {
+    setFormError(null);
+    if (!program) {
+      setPlan({
+        id: null,
+        name: "",
+        deviceIds: board.devices.length === 1 ? [board.devices[0].deviceId] : [],
+        days: [blankPlanDay(israelDate())],
+      });
+      return;
+    }
+    const first = program.days[0];
+    if (first) {
       const [year, month] = first.split("-").map(Number);
       if (year !== board.month.year || month !== board.month.month) void load(board.tenantId, year, month);
     }
+    setPlan(planFrom(program, board.clocks, board.devices));
   }
 
-  async function saveProgram() {
-    if (!selecting) return;
-    const name = selecting.name.trim();
+  async function savePlan() {
+    if (!plan) return;
+    const name = plan.name.trim();
     if (!name) {
-      toast.error("תנו שם לתוכנית");
+      setFormError("תנו שם לתוכנית");
       return;
     }
-    if (!selecting.days.length) {
-      toast.error("בחרו לפחות יום אחד בלוח");
+    if (!plan.days.length) {
+      setFormError("בחרו לפחות יום אחד");
       return;
     }
-    const saved = await send({ action: "program-save", id: selecting.id, name, days: selecting.days }, "program");
-    if (saved) setSelecting(null);
+    if (plan.days.length > maxProgramDays) {
+      setFormError(`אפשר עד ${maxProgramDays} ימים בתוכנית`);
+      return;
+    }
+    const seen = new Set<string>();
+    for (const day of plan.days) {
+      if (!day.date) {
+        setFormError("בחרו תאריך");
+        return;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day.date)) {
+        setFormError("התאריך לא תקין");
+        return;
+      }
+      if (seen.has(day.date)) {
+        setFormError("אי אפשר לבחור את אותו תאריך פעמיים");
+        return;
+      }
+      seen.add(day.date);
+      if (!day.clocks.length) {
+        setFormError("הוסיפו לפחות שעון אחד עם שעת הדלקה או כיבוי");
+        return;
+      }
+      if (day.clocks.length > maxDayClocks) {
+        setFormError(`אפשר עד ${maxDayClocks} שעונים ביום`);
+        return;
+      }
+      if (day.clocks.some((clock) => !clock.onTime && !clock.offTime)) {
+        setFormError("בחרו שעת הדלקה או כיבוי");
+        return;
+      }
+    }
+    if (!plan.deviceIds.length) {
+      setFormError("בחרו לפחות שקע אחד");
+      return;
+    }
+    setFormError(null);
+    const saved = await send(
+      {
+        action: "program-save",
+        id: plan.id,
+        name,
+        deviceIds: plan.deviceIds,
+        days: plan.days.map((day) => ({
+          date: day.date,
+          clocks: day.clocks.map((clock) => ({ id: clock.id, onTime: clock.onTime, offTime: clock.offTime })),
+        })),
+      },
+      "program",
+    );
+    if (saved) setPlan(null);
   }
 
   async function saveClock() {
@@ -454,7 +523,7 @@ export function ProgramsBoard() {
     <section className="min-w-0 space-y-3 sm:space-y-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[22px] leading-7 font-normal sm:text-[28px] sm:leading-[34px]">תוכניות</h2>
-        <Button type="button" className="h-11 shrink-0 rounded-xl px-3 sm:px-4" onClick={() => beginProgram()} disabled={Boolean(selecting)}>
+        <Button type="button" className="h-11 shrink-0 rounded-xl px-3 sm:px-4" onClick={() => beginProgram()}>
           תוכנית חדשה
         </Button>
       </div>
@@ -514,40 +583,27 @@ export function ProgramsBoard() {
           </select>
         </label>
         {tenants ? (
-          <Button type="button" variant="ghost" className="h-11 rounded-xl px-3" onClick={() => setBoard(null)}>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-11 rounded-xl px-3"
+            onClick={() => {
+              setBoard(null);
+              setPlan(null);
+              setDraft(null);
+              setFormError(null);
+            }}
+          >
             לקוח אחר
           </Button>
         ) : null}
       </div>
       <p className="text-[13px] leading-5 text-muted-foreground sm:text-sm">
-        <span className="sm:hidden">+ מוסיף שעון ליום. נרות והבדלה לידיעה.</span>
+        <span className="sm:hidden">+ מוסיף שעון ליום. תוכנית חדשה מוסיפה כמה תאריכים.</span>
         <span className="hidden sm:inline">
-          לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. בחזרה אפשר כל יום, או ימים בשבוע, ולשמור את זה כתוכנית. בתצוגת 24 שעות רואים בכל שקע מתי הוא דולק. נרות והבדלה מוצגים לידיעה.
+          לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. «תוכנית חדשה» בונה כמה תאריכים, ובכל תאריך כמה שעונים. בחזרה אפשר כל יום, או ימים בשבוע. בתצוגת 24 שעות רואים בכל שקע מתי הוא דולק. נרות והבדלה מוצגים לידיעה.
         </span>
       </p>
-
-      {selecting ? (
-        <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-primary/40 bg-primary/5 p-3">
-          <p className="w-full text-sm">בחרו ימים בלוח. נבחרו {selecting.days.length}.</p>
-          <Label className="min-w-48 flex-1 flex-col items-stretch gap-1">
-            שם התוכנית
-            <Input
-              value={selecting.name}
-              maxLength={40}
-              onChange={(event) => {
-                const name = event.target.value;
-                setSelecting((current) => (current ? { ...current, name } : current));
-              }}
-            />
-          </Label>
-          <Button type="button" disabled={pending === "program"} onClick={() => void saveProgram()}>
-            שמירה
-          </Button>
-          <Button type="button" variant="outline" onClick={() => setSelecting(null)}>
-            ביטול
-          </Button>
-        </div>
-      ) : null}
 
       {view === "hours" ? (
         <HourBoard board={board} day={cursor || israelDate()} onOpenClock={openClock} onOpenProgram={openRepeat} />
@@ -564,7 +620,6 @@ export function ProgramsBoard() {
             </div>
           ))}
           {board.month.days.map((day) => {
-            const chosen = selecting?.days.includes(day.date) ?? false;
             const clocks = clocksByDay.get(day.date) ?? [];
             return (
               <div
@@ -574,12 +629,7 @@ export function ProgramsBoard() {
                   "flex min-h-0 flex-col gap-px overflow-hidden p-0.5 text-[10px] leading-[1.15] sm:min-h-32 sm:gap-0.5 sm:p-1.5 sm:text-[11px] sm:leading-tight",
                   dayWash(day.weekday),
                   !day.inMonth && "text-muted-foreground",
-                  chosen && "ring-2 ring-primary ring-inset",
-                  selecting && "cursor-pointer",
                 )}
-                onClick={() => {
-                  if (selecting) toggleDay(day.date);
-                }}
               >
                 <div className="flex items-center justify-between gap-0.5">
                   <span className="font-semibold tabular-nums">{day.day}</span>
@@ -647,14 +697,7 @@ export function ProgramsBoard() {
                     <p className="mt-0.5 text-muted-foreground">
                       {program.enabled ? "פועלת" : "כבויה"}
                       {" · "}
-                      {program.weekdays.length ? (
-                        <>
-                          {weekdayPhrase(program.weekdays)}
-                          <SlotsLine slots={program.slots} />
-                        </>
-                      ) : (
-                        program.days.map(prettyDay).join(" · ") || "אין ימים"
-                      )}
+                      <ProgramWhen program={program} clocks={board.clocks} />
                       {program.deviceIds.length ? ` · ${deviceNames(board, program.deviceIds)}` : ""}
                     </p>
                   </div>
@@ -729,14 +772,7 @@ export function ProgramsBoard() {
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {program.enabled ? "פועלת" : "כבויה"}
                     {" · "}
-                    {program.weekdays.length ? (
-                      <>
-                        {weekdayPhrase(program.weekdays)}
-                        <SlotsLine slots={program.slots} />
-                      </>
-                    ) : (
-                      program.days.map(prettyDay).join(" · ") || "אין ימים"
-                    )}
+                    <ProgramWhen program={program} clocks={board.clocks} />
                   </p>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -769,7 +805,7 @@ export function ProgramsBoard() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">אין תוכניות. תוכנית היא כמה ימים בלוח, או חזרה לפי ימים בשבוע.</p>
+          <p className="text-sm text-muted-foreground">אין תוכניות. תוכנית היא כמה תאריכים עם שעונים, או חזרה לפי ימים בשבוע.</p>
         )}
       </div>}
 
@@ -782,7 +818,7 @@ export function ProgramsBoard() {
           }
         }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent data-clock-dialog className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           {draft ? (
             <form
               className="contents"
@@ -1099,6 +1135,180 @@ export function ProgramsBoard() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={plan !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPlan(null);
+            setFormError(null);
+          }
+        }}
+      >
+        <DialogContent data-plan-dialog className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          {plan ? (
+            <form
+              className="contents"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void savePlan();
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>{plan.id ? "עריכת תוכנית" : "תוכנית חדשה"}</DialogTitle>
+                <DialogDescription>בחרו תאריך, הגדירו עליו כמה שעונים, ואז הוסיפו עוד ימים.</DialogDescription>
+              </DialogHeader>
+              <Label className="flex-col items-stretch gap-1">
+                שם התוכנית
+                <Input
+                  value={plan.name}
+                  maxLength={40}
+                  placeholder="למשל בדיקה"
+                  aria-label="שם התוכנית"
+                  onChange={(event) => {
+                    const name = event.target.value;
+                    updatePlan((current) => ({ ...current, name }));
+                  }}
+                />
+              </Label>
+              {plan.days.map((day, dayIndex) => (
+                <section key={day.key} data-plan-day={day.date} className="space-y-2 rounded-xl border border-border p-2">
+                  <div className="flex items-end gap-2">
+                    <Label className="min-w-0 flex-1 flex-col items-stretch gap-1">
+                      תאריך
+                      <Input
+                        dir="ltr"
+                        type="date"
+                        aria-label={`תאריך ${dayIndex + 1}`}
+                        value={day.date}
+                        onChange={(event) => {
+                          const date = event.target.value;
+                          updatePlan((current) => ({
+                            ...current,
+                            days: current.days.map((item) => (item.key === day.key ? { ...item, date } : item)),
+                          }));
+                        }}
+                      />
+                    </Label>
+                    {plan.days.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="mb-0.5 h-8 px-2 text-muted-foreground"
+                        aria-label={`הסרת יום ${dayIndex + 1}`}
+                        onClick={() => updatePlan((current) => ({ ...current, days: current.days.filter((item) => item.key !== day.key) }))}
+                      >
+                        הסרה
+                      </Button>
+                    ) : null}
+                  </div>
+                  <ol className="space-y-2">
+                    {day.clocks.map((clock, index) => (
+                      <SlotRow
+                        key={clock.key}
+                        slot={{ key: clock.key, onTime: clock.onTime, offTime: clock.offTime, weekday: null }}
+                        index={index}
+                        boxed
+                        canRemove={day.clocks.length > 1}
+                        dayName={day.date ? prettyDay(day.date) : `יום ${dayIndex + 1}`}
+                        onEdit={(patch) => editPlanClock(day.key, clock.key, patch)}
+                        onRemove={() =>
+                          updatePlan((current) => ({
+                            ...current,
+                            days: current.days.map((item) =>
+                              item.key === day.key ? { ...item, clocks: item.clocks.filter((entry) => entry.key !== clock.key) } : item,
+                            ),
+                          }))
+                        }
+                      />
+                    ))}
+                  </ol>
+                  {day.clocks.length < maxDayClocks ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full rounded-xl border-dashed"
+                      aria-label={`עוד שעון ליום ${dayIndex + 1}`}
+                      onClick={() =>
+                        updatePlan((current) => ({
+                          ...current,
+                          days: current.days.map((item) =>
+                            item.key === day.key ? { ...item, clocks: [...item.clocks, blankPlanClock()] } : item,
+                          ),
+                        }))
+                      }
+                    >
+                      <Plus className="size-4" />
+                      עוד שעון
+                    </Button>
+                  ) : null}
+                </section>
+              ))}
+              {plan.days.length < maxProgramDays ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full rounded-xl border-dashed"
+                  onClick={() => updatePlan((current) => ({ ...current, days: [...current.days, blankPlanDay()] }))}
+                >
+                  <Plus className="size-4" />
+                  הוסף יום
+                </Button>
+              ) : null}
+              <fieldset className="space-y-1">
+                <legend className="text-sm font-medium">שקעים</legend>
+                {board.devices.length ? (
+                  board.devices.map((device) => (
+                    <label key={device.deviceId} className="flex min-h-11 items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4"
+                        checked={plan.deviceIds.includes(device.deviceId)}
+                        onChange={() =>
+                          updatePlan((current) => ({
+                            ...current,
+                            deviceIds: current.deviceIds.includes(device.deviceId)
+                              ? current.deviceIds.filter((id) => id !== device.deviceId)
+                              : [...current.deviceIds, device.deviceId],
+                          }))
+                        }
+                      />
+                      {device.name}
+                    </label>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">אין שקעים משויכים ללקוח.</p>
+                )}
+              </fieldset>
+              <p className="text-xs text-muted-foreground">נקודה ירוקה היא הדלקה ונקודה אדומה היא כיבוי. כיבוי מוקדם מההדלקה יתבצע למחרת.</p>
+              {formError ? (
+                <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+                  {formError}
+                </p>
+              ) : null}
+              <DialogFooter className="sticky bottom-0 z-10 bg-popover/95 py-2 backdrop-blur-sm">
+                {plan.id ? (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => {
+                      if (!plan.id || !window.confirm("למחוק את התוכנית ואת השעונים שלה?")) return;
+                      void send({ action: "program-delete", id: plan.id }, "program").then((saved) => {
+                        if (saved) setPlan(null);
+                      });
+                    }}
+                  >
+                    מחיקה
+                  </Button>
+                ) : null}
+                <Button type="submit" disabled={pending === "program"}>
+                  {pending === "program" ? "שומר…" : "שמירה"}
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -1315,9 +1525,65 @@ function deviceNames(board: Board, ids: string[]) {
 
 let slotKey = 0;
 
-function blankSlot(from?: { onTime?: string | null; offTime?: string | null }, weekday: number | null = null): DraftSlot {
+function nextKey() {
   slotKey += 1;
-  return { key: slotKey, onTime: from?.onTime ?? "", offTime: from?.offTime ?? "", weekday };
+  return slotKey;
+}
+
+function blankSlot(from?: { onTime?: string | null; offTime?: string | null }, weekday: number | null = null): DraftSlot {
+  return { key: nextKey(), onTime: from?.onTime ?? "", offTime: from?.offTime ?? "", weekday };
+}
+
+function blankPlanClock(from?: { id?: string | null; onTime?: string | null; offTime?: string | null }): PlanClock {
+  return { key: nextKey(), id: from?.id ?? null, onTime: from?.onTime ?? "", offTime: from?.offTime ?? "" };
+}
+
+function blankPlanDay(date = ""): PlanDay {
+  return { key: nextKey(), date, clocks: [blankPlanClock()] };
+}
+
+function planFrom(program: Program, clocks: Clock[], devices: Board["devices"]): Plan {
+  const visible = new Set(devices.map((device) => device.deviceId));
+  const owned = clocks.filter((clock) => !clock.recurring && clock.programId === program.id);
+  const dates = [...new Set([...program.days, ...owned.map((clock) => clock.day)])].sort();
+  return {
+    id: program.id,
+    name: program.name,
+    deviceIds: program.deviceIds.filter((id) => visible.has(id)),
+    days: (dates.length ? dates : [""]).map((date) => {
+      const rows = owned.filter((clock) => clock.day === date);
+      return { key: nextKey(), date, clocks: rows.length ? rows.map((clock) => blankPlanClock(clock)) : [blankPlanClock()] };
+    }),
+  };
+}
+
+function ProgramWhen({ program, clocks }: { program: Program; clocks: Clock[] }) {
+  if (program.weekdays.length) {
+    return (
+      <>
+        {weekdayPhrase(program.weekdays)}
+        <SlotsLine slots={program.slots} />
+      </>
+    );
+  }
+  const owned = clocks.filter((clock) => !clock.recurring && clock.programId === program.id);
+  const dates = [...new Set([...program.days, ...owned.map((clock) => clock.day)])].sort();
+  if (!dates.length) return "אין ימים";
+  return dates.map((date, dateIndex) => {
+    const rows = owned.filter((clock) => clock.day === date);
+    return (
+      <span key={date}>
+        {dateIndex ? " · " : null}
+        {prettyDay(date)}
+        {rows.map((clock) => (
+          <span key={clock.id}>
+            {" "}
+            <TimeBits onTime={clock.onTime} offTime={clock.offTime} />
+          </span>
+        ))}
+      </span>
+    );
+  });
 }
 
 function shapeProgram(program: Program): { slots: DraftSlot[]; split: boolean } {

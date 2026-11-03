@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { clampClock } from "@/lib/hebrew/calendar";
 import { HttpError } from "@/lib/http-error";
+import { mergeVisibleDevices } from "@/lib/programs/devices";
 import { programId, syncTenantPrograms } from "@/lib/programs/sync";
-import { maxSlots, sortSlots } from "@/lib/programs/slots";
-import type { ProgramSlot, StoredProgram } from "@/lib/programs/types";
+import { maxDayClocks, maxProgramDays, maxSlots, sortSlots } from "@/lib/programs/slots";
+import type { DayClock, ProgramSlot, StoredProgram } from "@/lib/programs/types";
 import { cleanWeekdays } from "@/lib/programs/weekdays";
 import { programsPayload } from "@/lib/programs/view";
 import { requireUser, withErrors } from "@/lib/session";
@@ -17,6 +18,7 @@ import {
   listTenants,
   visibleDeviceIds,
   saveClock,
+  saveDateProgram,
   saveDayClock,
   upsertProgram,
 } from "@/lib/store";
@@ -73,14 +75,6 @@ function clockTime(value: unknown): string | null {
   return `${match[1]}:${match[2]}`;
 }
 
-function dayList(value: unknown): string[] {
-  if (!Array.isArray(value)) throw new HttpError(400, "בחרו ימים");
-  const days = [...new Set(value.map((item) => dayString(item)))].sort();
-  if (!days.length) throw new HttpError(400, "בחרו לפחות יום אחד");
-  if (days.length > 31) throw new HttpError(400, "אפשר עד 31 ימים בתוכנית");
-  return days;
-}
-
 function dated(program: StoredProgram, days: string[]): StoredProgram {
   return { ...program, days, startDate: days[0] ?? null, endDate: days[days.length - 1] ?? null };
 }
@@ -124,7 +118,7 @@ export function POST(request: Request) {
       if (!id) throw new HttpError(400, "חסר שעון");
       await deleteDayClock(tenantId, id);
     } else if (action === "program-save") {
-      await saveProgramAction(tenantId, body);
+      await saveProgramAction(user, tenantId, body);
     } else if (action === "program-toggle") {
       const id = typeof body.id === "string" ? body.id : "";
       const current = (await listPrograms(tenantId)).find((program) => program.id === id && program.programKey.startsWith("days:"));
@@ -249,45 +243,90 @@ function slotList(body: Record<string, unknown>): ProgramSlot[] {
   return sortSlots(slots);
 }
 
-async function saveProgramAction(tenantId: string, body: Record<string, unknown>) {
+function clockKey(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const id = value.trim();
+  if (!id || id.length > 80 || !/^[\w:-]+$/.test(id)) return "";
+  return id;
+}
+
+function datePlan(body: Record<string, unknown>) {
+  if (!Array.isArray(body.days) || !body.days.length) throw new HttpError(400, "בחרו לפחות יום אחד");
+  if (body.days.length > maxProgramDays) throw new HttpError(400, `אפשר עד ${maxProgramDays} ימים בתוכנית`);
+  const seen = new Set<string>();
+  const days = body.days.map((item) => {
+    const record = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
+    const day = dayString(record.date ?? record.day);
+    if (seen.has(day)) throw new HttpError(400, "אי אפשר לבחור את אותו תאריך פעמיים");
+    seen.add(day);
+    if (!Array.isArray(record.clocks) || !record.clocks.length) {
+      throw new HttpError(400, "הוסיפו לפחות שעון אחד עם שעת הדלקה או כיבוי");
+    }
+    if (record.clocks.length > maxDayClocks) throw new HttpError(400, `אפשר עד ${maxDayClocks} שעונים ביום`);
+    const clocks = record.clocks.map((entry) => {
+      const row = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+      const onTime = clockTime(row.onTime);
+      const offTime = clockTime(row.offTime);
+      if (!onTime && !offTime) throw new HttpError(400, "בחרו שעת הדלקה או כיבוי");
+      return { id: clockKey(row.id), onTime, offTime };
+    });
+    return { day, clocks };
+  });
+  days.sort((left, right) => left.day.localeCompare(right.day));
+  return days;
+}
+
+async function saveProgramAction(user: SessionUser, tenantId: string, body: Record<string, unknown>) {
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 40) : "";
-  if (!name) throw new HttpError(400, "חסר שם לתוכנית");
-  const days = dayList(body.days);
+  if (!name) throw new HttpError(400, "תנו שם לתוכנית");
+  const plan = datePlan(body);
+  const allowed = await tenantDeviceIds(user, tenantId);
+  const chosen = deviceList(body.deviceIds, allowed);
+  if (!chosen.length) throw new HttpError(400, "בחרו לפחות שקע אחד");
   const programs = await listPrograms(tenantId);
   const requested = typeof body.id === "string" ? body.id : "";
   const current = requested ? programs.find((program) => program.id === requested && program.programKey.startsWith("days:")) : undefined;
   if (requested && !current) throw new HttpError(404, "התוכנית לא נמצאה");
-  const key = current?.programKey ?? `days:${randomUUID()}`;
-  const saved: StoredProgram = dated(
-    {
-      id: current?.id ?? programId(tenantId, key),
-      tenantId,
-      programKey: key,
-      name,
-      enabled: current?.enabled ?? true,
-      deviceIds: current?.deviceIds ?? [],
-      startDate: null,
-      endDate: null,
-      days,
-      weekdays: current?.weekdays ?? [],
-      onTime: current?.onTime ?? null,
-      offTime: current?.offTime ?? null,
-      slots: current?.slots ?? [],
-    },
-    days,
+  if (current?.weekdays.length) throw new HttpError(400, "תוכנית לפי ימים בשבוע נערכת בנפרד");
+  const owned = current ? (await listDayClocks(tenantId)).filter((clock) => clock.programId === current.id) : [];
+  const deviceIds = mergeVisibleDevices(
+    chosen,
+    [...(current?.deviceIds ?? []), ...owned.flatMap((clock) => clock.deviceIds)],
+    allowed,
   );
-  await upsertProgram(saved);
-  for (const other of programs) {
-    if (other.id === saved.id || !other.programKey.startsWith("days:")) continue;
-    const next = other.days.filter((day) => !days.includes(day));
-    if (next.length !== other.days.length) await upsertProgram(dated(other, next));
-  }
-  const chosen = new Set(days);
-  for (const clock of await listDayClocks(tenantId)) {
-    if (chosen.has(clock.day) && clock.programId !== saved.id) {
-      await saveDayClock({ ...clock, programId: saved.id });
-    } else if (!chosen.has(clock.day) && clock.programId === saved.id) {
-      await saveDayClock({ ...clock, programId: null });
-    }
-  }
+  const key = current?.programKey ?? `days:${randomUUID()}`;
+  const savedId = current?.id ?? programId(tenantId, key);
+  const days = plan.map((item) => item.day);
+  const clocks: DayClock[] = plan.flatMap((item) =>
+    item.clocks.map((clock) => ({
+      id: clock.id,
+      tenantId,
+      programId: savedId,
+      day: item.day,
+      onTime: clock.onTime,
+      offTime: clock.offTime,
+      deviceIds,
+    })),
+  );
+  await saveDateProgram(
+    dated(
+      {
+        id: savedId,
+        tenantId,
+        programKey: key,
+        name,
+        enabled: current?.enabled ?? true,
+        deviceIds,
+        startDate: null,
+        endDate: null,
+        days,
+        weekdays: [],
+        onTime: null,
+        offTime: null,
+        slots: [],
+      },
+      days,
+    ),
+    clocks,
+  );
 }

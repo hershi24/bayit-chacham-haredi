@@ -2,6 +2,8 @@ import type { ProgramSlot } from "@/lib/programs/types";
 import { cleanWeekdays } from "@/lib/programs/weekdays";
 
 export const maxSlots = 24;
+export const maxProgramDays = 31;
+export const maxDayClocks = 12;
 
 const timePattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
 

@@ -1,5 +1,5 @@
 import type { ClockSettings } from "@/lib/hebrew/calendar";
-import type { ProgramRunInput, StoredProgram } from "@/lib/programs/types";
+import type { DayClock, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { ScheduleKind } from "@/lib/schedules/types";
 import type { Role } from "@/lib/types";
 import { storageMode } from "@/lib/storage";
@@ -196,4 +196,24 @@ export async function finishProgramRun(id: string) {
 export async function failProgramRun(id: string, detail: string) {
   if (remoteOn()) return remote.failProgramRun(id, detail);
   return sqlite.failProgramRun(id, detail);
+}
+
+export async function listDayClocks(tenantId: string) {
+  if (remoteOn()) return remote.listDayClocks(tenantId);
+  return sqlite.listDayClocks(tenantId);
+}
+
+export async function saveDayClock(clock: DayClock) {
+  if (remoteOn()) return remote.saveDayClock(clock);
+  return sqlite.saveDayClock(clock);
+}
+
+export async function deleteDayClock(tenantId: string, id: string) {
+  if (remoteOn()) return remote.deleteDayClock(tenantId, id);
+  return sqlite.deleteDayClock(tenantId, id);
+}
+
+export async function listRunsFor(programId: string) {
+  if (remoteOn()) return remote.listRunsFor(programId);
+  return sqlite.listRunsFor(programId);
 }

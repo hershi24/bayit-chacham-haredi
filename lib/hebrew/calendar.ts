@@ -4,6 +4,7 @@ type CalEvent = {
   getDate(): { greg(): Date };
   basename(): string;
   render(locale: string): string;
+  getFlags(): number;
   eventTime?: Date;
 };
 
@@ -208,6 +209,102 @@ export function formatClock(iso: string): string {
     minute: "2-digit",
     hourCycle: "h23",
   }).format(date);
+}
+
+export type MonthDay = {
+  date: string;
+  inMonth: boolean;
+  day: number;
+  weekday: number;
+  hebrew: string;
+  parsha: string | null;
+  holiday: string | null;
+  candles: string | null;
+  havdalah: string | null;
+};
+
+export async function monthBoard(locationId: string, year: number, month: number): Promise<MonthDay[]> {
+  const { HebrewCalendar, HDate, flags } = await hebcal();
+  const location = await placeLocation(locationId);
+  const first = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lead = new Date(year, month - 1, 1).getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const cells = Math.ceil((lead + daysInMonth) / 7) * 7;
+  const gridStart = addDays(first, -lead);
+  const gridEnd = addDays(gridStart, cells - 1);
+  const events = HebrewCalendar.calendar({
+    start: dateOf(gridStart),
+    end: dateOf(gridEnd),
+    sedrot: true,
+    candlelighting: true,
+    il: true,
+    location,
+  });
+  const interesting =
+    flags.CHAG |
+    flags.ROSH_CHODESH |
+    flags.MINOR_FAST |
+    flags.MAJOR_FAST |
+    flags.MINOR_HOLIDAY |
+    flags.CHOL_HAMOED |
+    flags.SPECIAL_SHABBAT;
+  const parsha = new Map<string, string>();
+  const holiday = new Map<string, string>();
+  const candles = new Map<string, Date>();
+  const havdalah = new Map<string, Date>();
+  for (const event of events) {
+    rememberTime(event, "Candle lighting", candles);
+    rememberTime(event, "Havdalah", havdalah);
+    if (event.getDesc().startsWith("Parashat ")) {
+      parsha.set(hebrewDay(event), parshaName(event));
+      continue;
+    }
+    const bits = event.getFlags();
+    if ((bits & flags.MODERN_HOLIDAY) !== 0 || (bits & interesting) === 0) continue;
+    const day = hebrewDay(event);
+    if (holiday.has(day)) continue;
+    const label = plainHebrew(event.render("he"));
+    if (label) holiday.set(day, label);
+  }
+  const days: MonthDay[] = [];
+  for (let index = 0; index < cells; index += 1) {
+    const date = addDays(gridStart, index);
+    const [cellYear, cellMonth, cellDay] = date.split("-").map(Number);
+    const weekday = new Date(cellYear, cellMonth - 1, cellDay).getDay();
+    days.push({
+      date,
+      inMonth: cellYear === year && cellMonth === month,
+      day: cellDay,
+      weekday,
+      hebrew: shortHebrew(new HDate(dateOf(date)).renderGematriya(true)),
+      parsha: weekday === 6 ? (parsha.get(date) ?? null) : null,
+      holiday: holiday.get(date) ?? null,
+      candles: clockText(candles.get(date)),
+      havdalah: clockText(havdalah.get(date)),
+    });
+  }
+  return days;
+}
+
+export async function hebrewLabels(dates: string[]): Promise<Record<string, string>> {
+  const uniqueDates = [...new Set(dates)].filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date));
+  if (!uniqueDates.length) return {};
+  const { HDate } = await hebcal();
+  const labels: Record<string, string> = {};
+  for (const date of uniqueDates) labels[date] = shortHebrew(new HDate(dateOf(date)).renderGematriya(true));
+  return labels;
+}
+
+function shortHebrew(value: string): string {
+  const parts = plainHebrew(value).split(" ");
+  if (parts.length >= 3) parts.pop();
+  return parts.join(" ");
+}
+
+function clockText(date: Date | undefined): string | null {
+  if (!date) return null;
+  const text = formatClock(date.toISOString());
+  return text || null;
 }
 
 export function plainHebrew(value: string): string {

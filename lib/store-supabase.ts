@@ -7,7 +7,7 @@ import { HttpError } from "@/lib/http-error";
 import { hashPassword } from "@/lib/password";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
-import type { ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
+import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { presentDevice, type StatePatch } from "@/lib/store-sqlite";
 import type { AuditSource, AuditView, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
@@ -661,6 +661,16 @@ export async function saveClock(tenantId: string, settings: ClockSettings) {
   if (result.error) fail(result.error, "שמירת שעון השבת נכשלה. הריצו את supabase/schema.sql");
 }
 
+function jsonList(value: unknown): string[] {
+  try {
+    const parsed = JSON.parse(typeof value === "string" ? value || "[]" : "[]") as unknown;
+    if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === "string");
+  } catch {
+    return [];
+  }
+  return [];
+}
+
 function mapProgram(row: {
   id: string;
   tenant_id: string;
@@ -670,23 +680,18 @@ function mapProgram(row: {
   device_ids: string;
   start_date: string | null;
   end_date: string | null;
+  days?: string | null;
 }): StoredProgram {
-  let deviceIds: string[] = [];
-  try {
-    const parsed = JSON.parse(row.device_ids || "[]") as unknown;
-    if (Array.isArray(parsed)) deviceIds = parsed.filter((item): item is string => typeof item === "string");
-  } catch {
-    deviceIds = [];
-  }
   return {
     id: String(row.id),
     tenantId: String(row.tenant_id),
     programKey: String(row.program_key),
     name: String(row.name),
     enabled: Boolean(row.enabled),
-    deviceIds,
+    deviceIds: jsonList(row.device_ids),
     startDate: row.start_date,
     endDate: row.end_date,
+    days: jsonList(row.days),
   };
 }
 
@@ -709,6 +714,7 @@ export async function upsertProgram(program: StoredProgram) {
       device_ids: JSON.stringify(program.deviceIds),
       start_date: program.startDate,
       end_date: program.endDate,
+      days: JSON.stringify(program.days ?? []),
       created_at: new Date().toISOString(),
     },
     { onConflict: "tenant_id,program_key" },
@@ -718,11 +724,83 @@ export async function upsertProgram(program: StoredProgram) {
 
 export async function deleteProgram(tenantId: string, id: string) {
   await ready();
+  const clocks = await client().from("clocks").delete().eq("program_id", id);
+  if (clocks.error) fail(clocks.error, "מחיקת התוכנית נכשלה");
   const runs = await client().from("program_runs").delete().eq("program_id", id);
   if (runs.error) fail(runs.error, "מחיקת התוכנית נכשלה");
   const result = await client().from("programs").delete().eq("tenant_id", tenantId).eq("id", id).select("id");
   if (result.error) fail(result.error, "מחיקת התוכנית נכשלה");
   if (!result.data?.length) throw new HttpError(404, "התוכנית לא נמצאה");
+}
+
+function mapClock(row: {
+  id: string;
+  tenant_id: string;
+  program_id: string | null;
+  day: string;
+  on_time: string | null;
+  off_time: string | null;
+  device_ids: string;
+}): DayClock {
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    programId: row.program_id ? String(row.program_id) : null,
+    day: String(row.day),
+    onTime: row.on_time,
+    offTime: row.off_time,
+    deviceIds: jsonList(row.device_ids),
+  };
+}
+
+export async function listDayClocks(tenantId: string): Promise<DayClock[]> {
+  await ready();
+  const result = await client().from("clocks").select("*").eq("tenant_id", tenantId).order("day").order("on_time");
+  if (result.error) fail(result.error, "לא ניתן לקרוא שעונים. הריצו את supabase/schema.sql");
+  return (result.data ?? []).map((row) => mapClock(row as never));
+}
+
+export async function saveDayClock(clock: DayClock) {
+  await ready();
+  const existing = await client().from("clocks").select("tenant_id").eq("id", clock.id).maybeSingle();
+  if (existing.error) fail(existing.error, "שמירת השעון נכשלה");
+  if (existing.data && String(existing.data.tenant_id) !== clock.tenantId) throw new HttpError(404, "השעון לא נמצא");
+  const result = await client().from("clocks").upsert(
+    {
+      id: clock.id,
+      tenant_id: clock.tenantId,
+      program_id: clock.programId,
+      day: clock.day,
+      on_time: clock.onTime,
+      off_time: clock.offTime,
+      device_ids: JSON.stringify(clock.deviceIds),
+      created_at: new Date().toISOString(),
+    },
+    { onConflict: "id" },
+  );
+  if (result.error) fail(result.error, "שמירת השעון נכשלה. הריצו את supabase/schema.sql");
+}
+
+export async function deleteDayClock(tenantId: string, id: string) {
+  await ready();
+  const result = await client().from("clocks").delete().eq("tenant_id", tenantId).eq("id", id).select("id");
+  if (result.error) fail(result.error, "מחיקת השעון נכשלה");
+  if (!result.data?.length) throw new HttpError(404, "השעון לא נמצא");
+}
+
+export async function listRunsFor(programId: string): Promise<ProgramRun[]> {
+  await ready();
+  const result = await client()
+    .from("program_runs")
+    .select("id, program_id, device_id, action, run_at, label, attempts")
+    .eq("program_id", programId)
+    .is("done_at", null)
+    .order("run_at");
+  if (result.error) {
+    if (result.error.code === "42P01" || result.error.code === "PGRST205") return [];
+    fail(result.error, "לא ניתן לקרוא זמני תוכנית");
+  }
+  return (result.data ?? []).map(mapRun);
 }
 
 export async function replaceProgramRuns(programId: string, runs: ProgramRunInput[]) {

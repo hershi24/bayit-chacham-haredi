@@ -7,7 +7,7 @@ import { hashPassword } from "@/lib/password";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
-import type { ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
+import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type {
   AuditSource,
   AuditView,
@@ -23,6 +23,7 @@ import { isNewerIso } from "@/lib/wlte/parse";
 type Row = Record<string, SqlValue>;
 
 const globalDb = globalThis as unknown as { __pikudDb?: DatabaseSync };
+let dayClocksReady = false;
 
 function text(row: Row, key: string): string {
   const value = row[key];
@@ -51,7 +52,36 @@ function db(): DatabaseSync {
     seed(database);
     globalDb.__pikudDb = database;
   }
+  if (!dayClocksReady) {
+    ensureDayClocks(globalDb.__pikudDb);
+    dayClocksReady = true;
+  }
   return globalDb.__pikudDb;
+}
+
+function ensureDayClocks(database: DatabaseSync) {
+  const columns = database.prepare("PRAGMA table_info(programs)").all() as Array<{ name?: string }>;
+  if (!columns.some((column) => column.name === "days")) {
+    try {
+      database.exec("ALTER TABLE programs ADD COLUMN days TEXT NOT NULL DEFAULT '[]'");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!/duplicate column/i.test(message)) throw error;
+    }
+  }
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS clocks (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      program_id TEXT,
+      day TEXT NOT NULL,
+      on_time TEXT,
+      off_time TEXT,
+      device_ids TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS clocks_tenant_day_idx ON clocks (tenant_id, day);
+  `);
 }
 
 function migrate(database: DatabaseSync) {
@@ -648,23 +678,27 @@ export function saveClock(tenantId: string, settings: ClockSettings) {
     );
 }
 
-function mapProgram(row: Row): StoredProgram {
-  let deviceIds: string[] = [];
+function jsonList(row: Row, key: string): string[] {
   try {
-    const parsed = JSON.parse(text(row, "device_ids") || "[]") as unknown;
-    if (Array.isArray(parsed)) deviceIds = parsed.filter((item): item is string => typeof item === "string");
+    const parsed = JSON.parse(text(row, key) || "[]") as unknown;
+    if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === "string");
   } catch {
-    deviceIds = [];
+    return [];
   }
+  return [];
+}
+
+function mapProgram(row: Row): StoredProgram {
   return {
     id: text(row, "id"),
     tenantId: text(row, "tenant_id"),
     programKey: text(row, "program_key"),
     name: text(row, "name"),
     enabled: Number(row.enabled) === 1,
-    deviceIds,
+    deviceIds: jsonList(row, "device_ids"),
     startDate: textOrNull(row, "start_date"),
     endDate: textOrNull(row, "end_date"),
+    days: jsonList(row, "days"),
   };
 }
 
@@ -676,14 +710,15 @@ export function upsertProgram(program: StoredProgram) {
   db()
     .prepare(
       `INSERT INTO programs (
-        id, tenant_id, program_key, name, enabled, device_ids, start_date, end_date, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, tenant_id, program_key, name, enabled, device_ids, start_date, end_date, days, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(tenant_id, program_key) DO UPDATE SET
         name = excluded.name,
         enabled = excluded.enabled,
         device_ids = excluded.device_ids,
         start_date = excluded.start_date,
-        end_date = excluded.end_date`,
+        end_date = excluded.end_date,
+        days = excluded.days`,
     )
     .run(
       program.id,
@@ -694,14 +729,80 @@ export function upsertProgram(program: StoredProgram) {
       JSON.stringify(program.deviceIds),
       program.startDate,
       program.endDate,
+      JSON.stringify(program.days ?? []),
       new Date().toISOString(),
     );
 }
 
 export function deleteProgram(tenantId: string, id: string) {
-  db().prepare("DELETE FROM program_runs WHERE program_id = ?").run(id);
-  const result = db().prepare("DELETE FROM programs WHERE tenant_id = ? AND id = ?").run(tenantId, id);
+  const database = db();
+  database.prepare("DELETE FROM clocks WHERE program_id = ?").run(id);
+  database.prepare("DELETE FROM program_runs WHERE program_id = ?").run(id);
+  const result = database.prepare("DELETE FROM programs WHERE tenant_id = ? AND id = ?").run(tenantId, id);
   if (Number(result.changes) === 0) throw new HttpError(404, "התוכנית לא נמצאה");
+}
+
+function mapClock(row: Row): DayClock {
+  return {
+    id: text(row, "id"),
+    tenantId: text(row, "tenant_id"),
+    programId: textOrNull(row, "program_id"),
+    day: text(row, "day"),
+    onTime: textOrNull(row, "on_time"),
+    offTime: textOrNull(row, "off_time"),
+    deviceIds: jsonList(row, "device_ids"),
+  };
+}
+
+export function listDayClocks(tenantId: string): DayClock[] {
+  return (
+    db().prepare("SELECT * FROM clocks WHERE tenant_id = ? ORDER BY day, on_time, off_time").all(tenantId) as Row[]
+  ).map(mapClock);
+}
+
+export function saveDayClock(clock: DayClock) {
+  const database = db();
+  const existing = database.prepare("SELECT tenant_id FROM clocks WHERE id = ?").get(clock.id) as Row | undefined;
+  if (existing && text(existing, "tenant_id") !== clock.tenantId) throw new HttpError(404, "השעון לא נמצא");
+  database
+    .prepare(
+      `INSERT INTO clocks (
+        id, tenant_id, program_id, day, on_time, off_time, device_ids, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        program_id = excluded.program_id,
+        day = excluded.day,
+        on_time = excluded.on_time,
+        off_time = excluded.off_time,
+        device_ids = excluded.device_ids`,
+    )
+    .run(
+      clock.id,
+      clock.tenantId,
+      clock.programId,
+      clock.day,
+      clock.onTime,
+      clock.offTime,
+      JSON.stringify(clock.deviceIds),
+      new Date().toISOString(),
+    );
+}
+
+export function deleteDayClock(tenantId: string, id: string) {
+  const result = db().prepare("DELETE FROM clocks WHERE tenant_id = ? AND id = ?").run(tenantId, id);
+  if (Number(result.changes) === 0) throw new HttpError(404, "השעון לא נמצא");
+}
+
+export function listRunsFor(programId: string): ProgramRun[] {
+  const rows = db()
+    .prepare(
+      `SELECT id, program_id, device_id, action, run_at, label, attempts
+       FROM program_runs
+       WHERE program_id = ? AND done_at IS NULL
+       ORDER BY run_at`,
+    )
+    .all(programId) as Row[];
+  return rows.map(mapRun);
 }
 
 export function replaceProgramRuns(programId: string, runs: ProgramRunInput[]) {

@@ -126,4 +126,21 @@ alter table clock_settings enable row level security;
 alter table programs enable row level security;
 alter table program_runs enable row level security;
 
-revoke all on table tenants, users, devices, device_state, sessions, audit_log, schedules, clock_settings, programs, program_runs from anon, authenticated;
+alter table programs add column if not exists days text not null default '[]';
+
+create table if not exists clocks (
+  id text primary key,
+  tenant_id text not null references tenants (id) on delete cascade,
+  program_id text,
+  day text not null,
+  on_time text,
+  off_time text,
+  device_ids text not null default '[]',
+  created_at text not null
+);
+
+create index if not exists clocks_tenant_day_idx on clocks (tenant_id, day);
+
+alter table clocks enable row level security;
+
+revoke all on table tenants, users, devices, device_state, sessions, audit_log, schedules, clock_settings, programs, program_runs, clocks from anon, authenticated;

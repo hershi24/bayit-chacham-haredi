@@ -374,26 +374,59 @@ export function ProgramsBoard() {
     (left, right) => left.day.localeCompare(right.day) || (left.onTime ?? "").localeCompare(right.onTime ?? ""),
   );
 
+  const period = view === "hours" ? prettyDay(cursor || israelDate()) : title;
+  const views = [
+    { key: "month" as const, label: "לוח", onClick: () => setView("month") },
+    { key: "list" as const, label: "רשימה", onClick: () => setView("list") },
+    { key: "hours" as const, label: "24 שעות", onClick: showHours },
+  ];
+
   return (
-    <section className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="space-y-5">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h2 className="text-[28px] leading-[34px] font-normal">תוכניות</h2>
+        </div>
+        <Button type="button" className="h-11 rounded-xl px-4" onClick={() => beginProgram()} disabled={Boolean(selecting)}>
+          תוכנית חדשה
+        </Button>
+      </div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => (view === "hours" ? shiftDay(-1) : shiftMonth(-1))}>
+          <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => (view === "hours" ? shiftDay(-1) : shiftMonth(-1))}>
             הקודם
           </Button>
-          <h2 className="min-w-28 text-center text-xl font-semibold tracking-tight">{view === "hours" ? prettyDay(cursor || israelDate()) : title}</h2>
-          <Button type="button" variant="outline" size="sm" onClick={() => (view === "hours" ? shiftDay(1) : shiftMonth(1))}>
+          <p className="min-w-36 text-center text-[17px] font-semibold">{period}</p>
+          <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => (view === "hours" ? shiftDay(1) : shiftMonth(1))}>
             הבא
           </Button>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {tenants ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setBoard(null)}>
-              לקוח אחר
-            </Button>
-          ) : null}
+        <div className="grid grid-flow-col rounded-[14px] bg-secondary p-1" role="tablist" aria-label="תצוגת הלוח">
+          {views.map((item) => {
+            const selected = view === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                className={cn(
+                  "h-11 rounded-[10px] px-4 text-[15px]",
+                  selected ? "bg-card font-semibold text-primary" : "text-foreground",
+                )}
+                onClick={item.onClick}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-[15px]">
+          עיר
           <select
-            className={cn(fieldClass, "w-auto")}
+            className={cn(fieldClass, "h-11 w-auto rounded-xl bg-card px-3")}
             aria-label="עיר לזמני היום"
             value={board.locationId}
             onChange={(event) => void send({ action: "location", locationId: event.target.value }, "location")}
@@ -404,16 +437,12 @@ export function ProgramsBoard() {
               </option>
             ))}
           </select>
-          <Button type="button" size="sm" variant={view === "month" ? "default" : "outline"} onClick={() => setView("month")}>
-            לוח
+        </label>
+        {tenants ? (
+          <Button type="button" variant="ghost" className="h-11 rounded-xl px-3" onClick={() => setBoard(null)}>
+            לקוח אחר
           </Button>
-          <Button type="button" size="sm" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")}>
-            רשימה
-          </Button>
-          <Button type="button" size="sm" variant={view === "hours" ? "default" : "outline"} onClick={showHours}>
-            24 שעות
-          </Button>
-        </div>
+        ) : null}
       </div>
       <p className="text-sm text-muted-foreground">
         לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. בחזרה אפשר כל יום, או ימים בשבוע, ולשמור את זה כתוכנית. בתצוגת 24 שעות רואים בכל שקע מתי הוא דולק. נרות והבדלה מוצגים לידיעה.
@@ -523,20 +552,26 @@ export function ProgramsBoard() {
               {board.programs
                 .filter((program) => program.weekdays.length)
                 .map((program) => (
-                  <li key={program.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2 text-sm">
-                    <span className="font-medium">{program.name}</span>
-                    <span>{weekdayPhrase(program.weekdays)}</span>
-                    <span dir="ltr">{[program.onTime, program.offTime].filter(Boolean).join("–")}</span>
-                    <span className="text-muted-foreground">{deviceNames(board, program.deviceIds)}</span>
-                    <span className="text-muted-foreground">{program.enabled ? "פועלת" : "כבויה"}</span>
-                    <span className="ms-auto flex gap-1">
-                      <Button type="button" size="xs" variant="outline" onClick={() => openRepeat(program)}>
+                  <li key={program.id} className="grid gap-3 border-b border-border px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div className="min-w-0">
+                      <p className="font-medium">{program.name}</p>
+                      <p className="mt-0.5 text-muted-foreground">
+                        {weekdayPhrase(program.weekdays)}
+                        <span dir="ltr"> · {[program.onTime, program.offTime].filter(Boolean).join("–")}</span>
+                        {" · "}
+                        {deviceNames(board, program.deviceIds)}
+                        {" · "}
+                        {program.enabled ? "פועלת" : "כבויה"}
+                      </p>
+                    </div>
+                    <span className="flex gap-2">
+                      <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => openRepeat(program)}>
                         עריכה
                       </Button>
                       <Button
                         type="button"
-                        size="xs"
-                        variant="destructive"
+                        variant="ghost"
+                        className="h-11 rounded-xl px-3 text-destructive"
                         onClick={() => {
                           if (window.confirm("למחוק את התוכנית?")) void send({ action: "program-delete", id: program.id }, program.id);
                         }}
@@ -549,20 +584,21 @@ export function ProgramsBoard() {
               {listed.map((clock) => {
                 const program = board.programs.find((item) => item.id === clock.programId);
                 return (
-                  <li key={clock.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2 text-sm last:border-0">
-                    <span className="font-medium">{prettyDay(clock.day)}</span>
-                    <span className="text-muted-foreground">{clock.hebrew}</span>
-                    <ClockFace clock={clock} />
-                    <span className="text-muted-foreground">{deviceNames(board, clock.deviceIds)}</span>
-                    <span>{program ? program.name : "בלי תוכנית"}</span>
-                    <span className="ms-auto flex gap-1">
-                      <Button type="button" size="xs" variant="outline" onClick={() => openClock(clock)}>
+                  <li key={clock.id} className="grid gap-3 border-b border-border px-4 py-3 text-sm last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div className="min-w-0">
+                      <p className="font-medium">{prettyDay(clock.day)}</p>
+                      <p className="mt-0.5 text-muted-foreground">
+                        {clock.hebrew} · <ClockFace clock={clock} /> · {deviceNames(board, clock.deviceIds)} · {program ? program.name : "בלי תוכנית"}
+                      </p>
+                    </div>
+                    <span className="flex gap-2">
+                      <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => openClock(clock)}>
                         עריכה
                       </Button>
                       <Button
                         type="button"
-                        size="xs"
-                        variant="destructive"
+                        variant="ghost"
+                        className="h-11 rounded-xl px-3 text-destructive"
                         onClick={() => {
                           if (window.confirm("למחוק את השעון?")) void send({ action: "clock-delete", id: clock.id }, clock.id);
                         }}
@@ -581,58 +617,54 @@ export function ProgramsBoard() {
       )}
 
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-lg font-semibold">תוכניות</h3>
-          <Button type="button" size="sm" onClick={() => beginProgram()} disabled={Boolean(selecting)}>
-            תוכנית חדשה
-          </Button>
-        </div>
+        <h3 className="text-[17px] font-semibold">התוכניות השמורות</h3>
         {board.programs.length ? (
-          <div className="grid gap-2">
-            {board.programs.map((program, index) => (
-              <article key={program.id} className={cn("rounded-2xl border border-border p-3", TINTS[index % TINTS.length])}>
-                <div className="flex flex-wrap items-center gap-2">
+          <div className="grid gap-px overflow-hidden rounded-[22px] bg-border">
+            {board.programs.map((program) => (
+              <article key={program.id} className="bg-card px-4 py-3">
+                <div className="min-w-0">
                   <h4 className="font-medium">{program.name}</h4>
-                  <span className="text-xs text-muted-foreground">{program.enabled ? "פועלת" : "כבויה"}</span>
-                  <span className="ms-auto flex flex-wrap gap-1">
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant={program.enabled ? "secondary" : "default"}
-                      disabled={pending === program.id}
-                      onClick={() => void send({ action: "program-toggle", id: program.id }, program.id)}
-                    >
-                      {program.enabled ? "כיבוי" : "הפעלה"}
-                    </Button>
-                    <Button type="button" size="xs" variant="outline" onClick={() => beginProgram(program)}>
-                      עריכה
-                    </Button>
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="destructive"
-                      onClick={() => {
-                        if (window.confirm("למחוק את התוכנית ואת השעונים שלה?")) {
-                          void send({ action: "program-delete", id: program.id }, program.id);
-                        }
-                      }}
-                    >
-                      מחיקה
-                    </Button>
-                  </span>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {program.enabled ? "פועלת" : "כבויה"}
+                    {" · "}
+                    {program.weekdays.length ? (
+                      <>
+                        {weekdayPhrase(program.weekdays)}
+                        {program.onTime || program.offTime ? (
+                          <span dir="ltr"> · {[program.onTime, program.offTime].filter(Boolean).join("–")}</span>
+                        ) : null}
+                      </>
+                    ) : (
+                      program.days.map(prettyDay).join(" · ") || "אין ימים"
+                    )}
+                  </p>
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {program.weekdays.length ? (
-                    <>
-                      {weekdayPhrase(program.weekdays)}
-                      {program.onTime || program.offTime ? (
-                        <span dir="ltr"> · {[program.onTime, program.offTime].filter(Boolean).join("–")}</span>
-                      ) : null}
-                    </>
-                  ) : (
-                    program.days.map(prettyDay).join(" · ") || "אין ימים"
-                  )}
-                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 rounded-xl px-4"
+                    disabled={pending === program.id}
+                    onClick={() => void send({ action: "program-toggle", id: program.id }, program.id)}
+                  >
+                    {program.enabled ? "כיבוי" : "הפעלה"}
+                  </Button>
+                  <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => beginProgram(program)}>
+                    עריכה
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-11 rounded-xl px-3 text-destructive"
+                    onClick={() => {
+                      if (window.confirm("למחוק את התוכנית ואת השעונים שלה?")) {
+                        void send({ action: "program-delete", id: program.id }, program.id);
+                      }
+                    }}
+                  >
+                    מחיקה
+                  </Button>
+                </div>
               </article>
             ))}
           </div>

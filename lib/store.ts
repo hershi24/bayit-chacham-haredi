@@ -92,6 +92,16 @@ export async function createTenant(input: { name: string; phone: string | null }
   return sqlite.createTenant(input);
 }
 
+export async function renameTenant(id: string, name: string) {
+  if (remoteOn()) return remote.renameTenant(id, name);
+  return sqlite.renameTenant(id, name);
+}
+
+export async function createCustomer(input: { name: string; username: string; password: string; phone: string | null }) {
+  if (remoteOn()) return remote.createCustomer(input);
+  return sqlite.createCustomer(input);
+}
+
 export async function deleteTenant(id: string) {
   if (remoteOn()) return remote.deleteTenant(id);
   return sqlite.deleteTenant(id);

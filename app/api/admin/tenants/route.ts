@@ -1,7 +1,7 @@
 import { normalizePhone } from "@/lib/access";
 import { requireAdmin, requireUser, withErrors } from "@/lib/session";
-import { createTenant, listTenants } from "@/lib/store";
-import { cleanName, cleanPhone, readJson } from "@/lib/validate";
+import { createCustomer, createTenant, listTenants } from "@/lib/store";
+import { cleanName, cleanPassword, cleanPhone, cleanUsername, readJson } from "@/lib/validate";
 
 export const runtime = "nodejs";
 
@@ -17,10 +17,18 @@ export function POST(request: Request) {
     requireAdmin(await requireUser());
     const body = await readJson(request);
     const phone = cleanPhone(body.phone);
-    const tenant = await createTenant({
-      name: cleanName(body.name, "שם הלקוח"),
-      phone: phone ? normalizePhone(phone) : null,
-    });
+    const name = cleanName(body.name, "שם הלקוח");
+    const normalized = phone ? normalizePhone(phone) : null;
+    if (typeof body.username === "string" && body.username.trim() !== "") {
+      await createCustomer({
+        name,
+        username: cleanUsername(body.username),
+        password: cleanPassword(body.password),
+        phone: normalized,
+      });
+      return Response.json({ tenants: await listTenants() }, { status: 201 });
+    }
+    const tenant = await createTenant({ name, phone: normalized });
     return Response.json({ tenant }, { status: 201 });
   });
 }

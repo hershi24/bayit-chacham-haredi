@@ -142,18 +142,18 @@ export function Dashboard() {
 
   return (
     <section>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-5 flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">השקעים</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-[28px] leading-[34px] font-normal">השקעים</h2>
+          <p className="text-[15px] leading-5 text-muted-foreground">
             {devices ? `${devices.length} שקעים · ${powered} פועלים` : "טוען את מצב הממסרים"}
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => void load(true)}>
+        <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => void load(true)}>
           רענון
         </Button>
       </div>
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-[22px] bg-border md:grid-cols-4">
         <Stat label="שקעים" value={devices ? String(devices.length) : "—"} />
         <Stat label="פועלים" value={devices ? String(powered) : "—"} />
         <Stat label="שידור" value={live ? "מחובר" : "מתחבר"} />
@@ -213,10 +213,10 @@ export function Dashboard() {
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-semibold tracking-tight">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+    <div className="bg-card px-4 py-3">
+      <p className="text-[12px] leading-4 text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-[20px] leading-6 font-semibold">{value}</p>
+      {hint ? <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

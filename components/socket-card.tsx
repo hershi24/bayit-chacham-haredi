@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { AirVent, Droplets, Fan, Heater, Lightbulb, Loader2, Plug, Refrigerator, Timer, type LucideIcon } from "lucide-react";
+import { AirVent, Droplets, Fan, Heater, Lightbulb, Loader2, Plug, Power, Refrigerator, Timer, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { DEVICE_ICONS, isDeviceIcon, suggestIcon, type DeviceIconKey } from "@/lib/devices/icons";
+import "./power-switch.css";
 import { formatIsrael, planWhen } from "@/lib/time";
 import type { DeviceView, RelayAction } from "@/lib/types";
 
@@ -47,7 +48,6 @@ export function SocketCard({
 }) {
   const powered = device.relayOn === true;
   const offline = device.connectivity === "OFFLINE";
-  const unknown = device.relayOn === null;
   const link = device.connectivity === "ONLINE" ? "מחובר" : offline ? "מנותק" : "אין קשר";
   const relayLabel = powered ? "פועל" : device.relayOn === false ? "כבוי" : "לא ידוע";
   const iconKey = isDeviceIcon(device.icon) ? device.icon : suggestIcon(device.name);
@@ -103,7 +103,7 @@ export function SocketCard({
   }
 
   return (
-    <article className="flex h-full flex-col rounded-2xl border border-border bg-card p-5 shadow-sm">
+    <article className="flex h-full flex-col rounded-[22px] bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <Button
@@ -119,7 +119,7 @@ export function SocketCard({
             <Icon className="size-5" />
           </Button>
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold tracking-tight">{device.name}</h2>
+            <h2 className="truncate text-[17px] font-semibold leading-[22px]">{device.name}</h2>
             {showTenant ? <p className="mt-0.5 truncate text-sm text-muted-foreground">{device.tenantName}</p> : null}
             <p className="mt-1 font-mono text-xs text-muted-foreground" dir="ltr">
               {device.deviceId}
@@ -156,31 +156,24 @@ export function SocketCard({
       ) : null}
       {device.lastError ? <p className="mt-3 text-sm text-destructive">{device.lastError}</p> : null}
 
-      <div className="mt-auto grid grid-cols-2 gap-2 pt-5">
-        <Button
+      <div className="mt-auto flex flex-col items-center pt-5">
+        <button
           type="button"
-          size="lg"
-          variant={powered ? "default" : "outline"}
-          className={`h-11 ${powered ? "bg-online text-white hover:bg-online/90" : ""}`}
+          className="power-switch"
+          data-power=""
+          data-state={powered ? "on" : device.relayOn === false ? "off" : "unknown"}
           aria-pressed={powered}
+          aria-busy={busy !== null}
+          aria-label={powered ? `כיבוי ${device.name}` : `הפעלה ${device.name}`}
           disabled={busy !== null}
-          onClick={() => onCommand("ON")}
+          onClick={() => onCommand(powered ? "OFF" : "ON")}
         >
-          {busy === "ON" ? <Loader2 className="animate-spin" /> : null}
-          הפעלה
-        </Button>
-        <Button
-          type="button"
-          size="lg"
-          variant={!powered && !unknown ? "default" : "outline"}
-          className="h-11"
-          aria-pressed={device.relayOn === false}
-          disabled={busy !== null}
-          onClick={() => onCommand("OFF")}
-        >
-          {busy === "OFF" ? <Loader2 className="animate-spin" /> : null}
-          כיבוי
-        </Button>
+          <span className="power-switch-ring" aria-hidden="true" />
+          <span className="power-switch-face">
+            {busy !== null ? <Loader2 className="size-7 animate-spin" /> : <Power className="size-8" strokeWidth={2.25} />}
+          </span>
+        </button>
+        <p className={`mt-2 text-[13px] font-medium ${powered ? "text-online-foreground" : "text-muted-foreground"}`}>{relayLabel}</p>
       </div>
       <Button
         type="button"

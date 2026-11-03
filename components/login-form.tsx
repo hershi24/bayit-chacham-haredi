@@ -88,13 +88,13 @@ export function LoginForm() {
               />
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <Button type="submit" disabled={pending} className="h-10">
+            <Button type="submit" disabled={pending} className="h-11 rounded-xl">
               {pending ? "נכנסים" : "כניסה"}
             </Button>
           </form>
         </CardContent>
       </Card>
-      <div className="mt-4 rounded-2xl border border-border bg-card p-4 text-sm shadow-sm">
+      <div className="mt-4 rounded-[22px] bg-card p-4 text-[15px]">
         <p className="font-medium">חשבונות הדגמה</p>
         <ul className="mt-2 grid gap-1 text-muted-foreground">
           {accounts.map(([label, user, pass]) => (

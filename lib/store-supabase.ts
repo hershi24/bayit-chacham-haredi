@@ -11,7 +11,7 @@ import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib
 import type { PlanItem } from "@/lib/devices/upcoming";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { presentDevice, type StatePatch } from "@/lib/store-sqlite";
-import type { AuditSource, AuditView, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
+import type { AuditSource, AuditView, CallerNumber, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
 import { isNewerIso } from "@/lib/wlte/parse";
 
 type DbError = { message: string; code?: string };
@@ -57,6 +57,9 @@ function client(): SupabaseClient {
   }
   return globalRemote.__pikudSupabase;
 }
+
+const NUMBERS_SCHEMA = "טבלת המספרים המותרים חסרה. בסופרבייס הריצו את supabase/schema.sql";
+const GRANTS_SCHEMA = "טבלת שיוך השקעים חסרה. בסופרבייס הריצו את supabase/schema.sql";
 
 function fail(error: DbError, fallback: string): never {
   if (error.code === "42P01" || error.code === "PGRST205" || /schema cache|does not exist/i.test(error.message)) {
@@ -273,16 +276,26 @@ function sortDevices(rows: Array<DeviceView & { phone: string | null }>, byTenan
   });
 }
 
-export async function listDevices(user: { role: Role; tenantId: string | null }): Promise<DeviceView[]> {
+export async function listDevices(user: { id?: string; role: Role; tenantId: string | null }): Promise<DeviceView[]> {
   await ready();
   if (user.role !== "admin" && !user.tenantId) return [];
   const rows = await deviceRows(user.role === "admin" ? null : user.tenantId);
-  return sortDevices(rows.map(mapDevice), user.role === "admin").map(presentDevice);
+  const views = sortDevices(rows.map(mapDevice), user.role === "admin").map(presentDevice);
+  if (user.role === "admin" || !user.id) return views;
+  const granted = await grantsFor(user.id);
+  if (!granted) return views;
+  return views.filter((device) => granted.includes(device.deviceId));
 }
 
-export async function listIvrTargets(): Promise<Array<DeviceView & { phone: string | null }>> {
+export async function listIvrTargets(): Promise<Array<DeviceView & { phone: string | null; phones: string[] }>> {
   await ready();
-  return sortDevices((await deviceRows()).map(mapDevice), false);
+  const devices = sortDevices((await deviceRows()).map(mapDevice), false);
+  const numbers = await loadCallerNumbers();
+  return devices.map((device) => {
+    const listed = numbers?.get(device.tenantId)?.map((item) => item.phone) ?? [];
+    const all = listed.length ? listed : device.phone ? [device.phone] : [];
+    return { ...device, phone: all[0] ?? null, phones: all };
+  });
 }
 
 export async function getDevice(deviceId: string): Promise<(DeviceView & { phone: string | null }) | null> {
@@ -340,17 +353,91 @@ function countOf(value: unknown): number {
   return 0;
 }
 
+async function loadCallerNumbers(): Promise<Map<string, CallerNumber[]> | null> {
+  const result = await client().from("caller_numbers").select("id, tenant_id, phone, created_at").order("created_at");
+  if (result.error && missingRelation(result.error)) return null;
+  if (result.error) fail(result.error, "לא ניתן לקרוא מספרים");
+  const map = new Map<string, CallerNumber[]>();
+  for (const row of result.data ?? []) {
+    const tenantId = String(row.tenant_id);
+    const list = map.get(tenantId) ?? [];
+    list.push({ id: String(row.id), phone: String(row.phone) });
+    map.set(tenantId, list);
+  }
+  return map;
+}
+
+async function syncTenantPhone(tenantId: string) {
+  const result = await client().from("caller_numbers").select("phone").eq("tenant_id", tenantId).order("created_at").limit(1);
+  if (result.error) fail(result.error, "עדכון הטלפון הראשי נכשל");
+  const phone = result.data?.[0]?.phone ? String(result.data[0].phone) : null;
+  const saved = await client().from("tenants").update({ phone }).eq("id", tenantId);
+  if (saved.error) fail(saved.error, "עדכון הטלפון הראשי נכשל");
+}
+
+export async function listCallerNumbers(tenantId: string): Promise<CallerNumber[]> {
+  await ready();
+  const numbers = await loadCallerNumbers();
+  if (!numbers) {
+    const tenant = (await listTenants()).find((item) => item.id === tenantId);
+    return tenant?.phones ?? [];
+  }
+  return numbers.get(tenantId) ?? [];
+}
+
+export async function addCallerNumber(tenantId: string, phone: string): Promise<CallerNumber> {
+  await ready();
+  const tenant = await client().from("tenants").select("id").eq("id", tenantId).maybeSingle();
+  if (tenant.error) fail(tenant.error, "הלקוח לא נמצא");
+  if (!tenant.data) throw new HttpError(404, "הלקוח לא נמצא");
+  const taken = await client().from("caller_numbers").select("tenant_id").eq("phone", phone).maybeSingle();
+  if (taken.error && missingRelation(taken.error)) throw new HttpError(500, NUMBERS_SCHEMA);
+  if (taken.error) fail(taken.error, "לא ניתן לבדוק את המספר");
+  if (taken.data && String(taken.data.tenant_id) === tenantId) throw new HttpError(409, "המספר כבר ברשימה");
+  if (taken.data) throw new HttpError(409, "המספר כבר משויך ללקוח אחר");
+  const id = `ph_${randomUUID().slice(0, 8)}`;
+  const inserted = await client().from("caller_numbers").insert({
+    id,
+    tenant_id: tenantId,
+    phone,
+    created_at: new Date().toISOString(),
+  });
+  if (inserted.error && missingRelation(inserted.error)) throw new HttpError(500, NUMBERS_SCHEMA);
+  if (inserted.error?.code === "23505") throw new HttpError(409, "המספר כבר ברשימה");
+  if (inserted.error) fail(inserted.error, "הוספת המספר נכשלה");
+  await syncTenantPhone(tenantId);
+  return { id, phone };
+}
+
+export async function removeCallerNumber(tenantId: string, id: string) {
+  await ready();
+  if (id.startsWith("legacy:")) throw new HttpError(500, NUMBERS_SCHEMA);
+  const existing = await client().from("caller_numbers").select("tenant_id").eq("id", id).maybeSingle();
+  if (existing.error && missingRelation(existing.error)) throw new HttpError(500, NUMBERS_SCHEMA);
+  if (existing.error) fail(existing.error, "המספר לא נמצא");
+  if (!existing.data || String(existing.data.tenant_id) !== tenantId) throw new HttpError(404, "המספר לא נמצא");
+  const removed = await client().from("caller_numbers").delete().eq("id", id);
+  if (removed.error) fail(removed.error, "הסרת המספר נכשלה");
+  await syncTenantPhone(tenantId);
+}
+
 export async function listTenants(): Promise<TenantView[]> {
   await ready();
   const result = await client().from("tenants").select("id, name, phone, devices(count), users(count)").order("name");
   if (result.error) fail(result.error, "לא ניתן לקרוא לקוחות");
-  return (result.data ?? []).map((row) => ({
-    id: String(row.id),
-    name: String(row.name),
-    phone: row.phone == null || row.phone === "" ? null : String(row.phone),
-    deviceCount: countOf(row.devices),
-    userCount: countOf(row.users),
-  }));
+  const numbers = await loadCallerNumbers();
+  return (result.data ?? []).map((row) => {
+    const phone = row.phone == null || row.phone === "" ? null : String(row.phone);
+    const listed = numbers?.get(String(row.id)) ?? [];
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      phone: listed[0]?.phone ?? phone,
+      phones: listed.length ? listed : phone ? [{ id: `legacy:${String(row.id)}`, phone }] : [],
+      deviceCount: countOf(row.devices),
+      userCount: countOf(row.users),
+    };
+  });
 }
 
 export async function createTenant(input: { name: string; phone: string | null }): Promise<TenantView> {
@@ -363,6 +450,13 @@ export async function createTenant(input: { name: string; phone: string | null }
     created_at: new Date().toISOString(),
   });
   if (result.error) fail(result.error, "יצירת לקוח נכשלה");
+  if (input.phone) {
+    try {
+      await addCallerNumber(id, input.phone);
+    } catch (error) {
+      if (!(error instanceof HttpError) || error.status !== 500) throw error;
+    }
+  }
   const tenant = (await listTenants()).find((item) => item.id === id);
   if (!tenant) throw new HttpError(500, "הלקוח נשמר אבל לא נקרא בחזרה");
   return tenant;
@@ -387,14 +481,41 @@ function mapUser(row: UserRow): UserView {
     role: row.role === "admin" ? "admin" : "operator",
     tenantId: row.tenant_id,
     tenantName: one(row.tenants)?.name ?? null,
+    deviceIds: null,
   };
+}
+
+async function loadGrants(): Promise<Map<string, string[]> | null> {
+  const result = await client().from("user_devices").select("user_id, device_id");
+  if (result.error && missingRelation(result.error)) return null;
+  if (result.error) fail(result.error, "לא ניתן לקרוא שיוך שקעים");
+  const map = new Map<string, string[]>();
+  for (const row of result.data ?? []) {
+    const userId = String(row.user_id);
+    const list = map.get(userId) ?? [];
+    list.push(String(row.device_id));
+    map.set(userId, list);
+  }
+  for (const [userId, ids] of map) map.set(userId, ids.sort());
+  return map;
+}
+
+export async function grantsFor(userId: string): Promise<string[] | null> {
+  await ready();
+  const grants = await loadGrants();
+  if (!grants) return null;
+  return grants.has(userId) ? (grants.get(userId) ?? []) : null;
 }
 
 export async function listUsers(): Promise<UserView[]> {
   await ready();
   const result = await client().from("users").select("id, username, name, role, tenant_id, tenants(name)").order("role").order("name");
   if (result.error) fail(result.error, "לא ניתן לקרוא משתמשים");
-  return ((result.data ?? []) as unknown as UserRow[]).map(mapUser);
+  const grants = await loadGrants();
+  return ((result.data ?? []) as unknown as UserRow[]).map((row) => {
+    const user = mapUser(row);
+    return { ...user, deviceIds: grants?.has(user.id) ? (grants.get(user.id) ?? []) : null };
+  });
 }
 
 export async function createUser(input: {
@@ -431,6 +552,50 @@ export async function deleteUser(id: string, actorId: string) {
   const result = await client().from("users").delete().eq("id", id).select("id");
   if (result.error) fail(result.error, "מחיקת משתמש נכשלה");
   if (!result.data?.length) throw new HttpError(404, "המשתמש לא נמצא");
+}
+
+export async function updateUser(input: {
+  id: string;
+  actorId: string;
+  name: string;
+  role: Role;
+  tenantId: string | null;
+  password: string | null;
+  deviceIds: string[] | null;
+}) {
+  await ready();
+  const users = await listUsers();
+  const current = users.find((user) => user.id === input.id);
+  if (!current) throw new HttpError(404, "המשתמש לא נמצא");
+  if (input.id === input.actorId && input.role !== "admin") {
+    throw new HttpError(409, "אי אפשר להסיר את הרשאת המנהל מהמשתמש המחובר");
+  }
+  if (current.role === "admin" && input.role !== "admin" && users.filter((user) => user.role === "admin").length <= 1) {
+    throw new HttpError(409, "חייבים להישאר לפחות מנהל אחד");
+  }
+  const tenantId = input.role === "admin" ? null : input.tenantId;
+  if (input.role === "operator" && !tenantId) throw new HttpError(400, "משתמש לקוח חייב להיות משויך ללקוח");
+  if (tenantId && !(await listTenants()).some((tenant) => tenant.id === tenantId)) throw new HttpError(404, "הלקוח לא נמצא");
+  const deviceIds = input.role === "admin" ? null : input.deviceIds;
+  if (deviceIds) {
+    if (!deviceIds.length) throw new HttpError(400, "בחרו לפחות שקע אחד, או השאירו את כל השקעים");
+    const owned = new Set((await listTenantDevices(tenantId!)).map((device) => device.deviceId));
+    if (deviceIds.some((id) => !owned.has(id))) throw new HttpError(400, "אפשר לשייך רק שקעים של הלקוח");
+  }
+  const patch: Record<string, string | null> = { name: input.name, role: input.role, tenant_id: tenantId };
+  if (input.password) patch.password_hash = hashPassword(input.password);
+  const saved = await client().from("users").update(patch).eq("id", input.id);
+  if (saved.error) fail(saved.error, "עדכון המשתמש נכשל");
+  const cleared = await client().from("user_devices").delete().eq("user_id", input.id);
+  if (cleared.error && missingRelation(cleared.error)) {
+    if (deviceIds) throw new HttpError(500, GRANTS_SCHEMA);
+    return;
+  }
+  if (cleared.error) fail(cleared.error, "עדכון השקעים נכשל");
+  if (!deviceIds) return;
+  const inserted = await client().from("user_devices").insert([...new Set(deviceIds)].map((deviceId) => ({ user_id: input.id, device_id: deviceId })));
+  if (inserted.error && missingRelation(inserted.error)) throw new HttpError(500, GRANTS_SCHEMA);
+  if (inserted.error) fail(inserted.error, "עדכון השקעים נכשל");
 }
 
 export async function createDevice(input: { deviceId: string; name: string; tenantId: string }) {
@@ -613,9 +778,11 @@ export async function setDeviceIcon(deviceId: string, icon: string): Promise<Dev
   return view ? presentDevice(view) : null;
 }
 
+// True when Supabase has not been given this table yet.
 function missingRelation(error: DbError) {
   return error.code === "42P01" || error.code === "PGRST205" || /schema cache|does not exist/i.test(error.message);
 }
+
 
 export async function listUpcoming(nowIso: string, untilIso: string): Promise<PlanItem[]> {
   await ready();

@@ -11,6 +11,7 @@ import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib
 import type {
   AuditSource,
   AuditView,
+  CallerNumber,
   Connectivity,
   DeviceView,
   Role,
@@ -50,11 +51,13 @@ function db(): DatabaseSync {
     database.exec("PRAGMA busy_timeout = 3000");
     migrate(database);
     seed(database);
+    ensureAccessTables(database);
     globalDb.__pikudDb = database;
   }
   if (!dayClocksReady) {
     ensureDayClocks(globalDb.__pikudDb);
     addDeviceColumn(globalDb.__pikudDb, "icon", "icon TEXT");
+    ensureAccessTables(globalDb.__pikudDb);
     dayClocksReady = true;
   }
   return globalDb.__pikudDb;
@@ -199,6 +202,33 @@ function migrate(database: DatabaseSync) {
     );
   `);
   addDeviceColumn(database, "icon", "icon TEXT");
+  ensureAccessTables(database);
+}
+
+function ensureAccessTables(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS caller_numbers (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      phone TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS caller_numbers_tenant_idx ON caller_numbers (tenant_id);
+    CREATE TABLE IF NOT EXISTS user_devices (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+      PRIMARY KEY (user_id, device_id)
+    );
+  `);
+  const rows = database
+    .prepare("SELECT id, phone, created_at FROM tenants WHERE phone IS NOT NULL AND trim(phone) != ''")
+    .all() as Row[];
+  const insert = database.prepare(
+    "INSERT OR IGNORE INTO caller_numbers (id, tenant_id, phone, created_at) VALUES (?, ?, ?, ?)",
+  );
+  for (const row of rows) {
+    insert.run(`ph_${text(row, "id")}`, text(row, "id"), text(row, "phone"), text(row, "created_at") || new Date().toISOString());
+  }
 }
 
 function seed(database: DatabaseSync) {
@@ -282,16 +312,32 @@ export function presentDevice(device: DeviceView & { phone?: string | null }): D
   };
 }
 
-export function listDevices(user: { role: Role; tenantId: string | null }): DeviceView[] {
+export function grantsFor(userId: string): string[] | null {
+  const rows = db().prepare("SELECT device_id FROM user_devices WHERE user_id = ? ORDER BY device_id").all(userId) as Row[];
+  if (!rows.length) return null;
+  return rows.map((row) => text(row, "device_id"));
+}
+
+export function listDevices(user: { id?: string; role: Role; tenantId: string | null }): DeviceView[] {
   const rows =
     user.role === "admin"
       ? (db().prepare(`${deviceSelect()} ORDER BY t.name, d.name`).all() as Row[])
       : (db().prepare(`${deviceSelect()} WHERE d.tenant_id = ? ORDER BY d.name`).all(user.tenantId) as Row[]);
-  return rows.map((row) => presentDevice(mapDevice(row)));
+  const views = rows.map((row) => presentDevice(mapDevice(row)));
+  if (user.role === "admin" || !user.id) return views;
+  const granted = grantsFor(user.id);
+  if (!granted) return views;
+  return views.filter((device) => granted.includes(device.deviceId));
 }
 
-export function listIvrTargets(): Array<DeviceView & { phone: string | null }> {
-  return (db().prepare(`${deviceSelect()} ORDER BY d.name`).all() as Row[]).map(mapDevice);
+export function listIvrTargets(): Array<DeviceView & { phone: string | null; phones: string[] }> {
+  const phones = callerNumbersByTenant();
+  return (db().prepare(`${deviceSelect()} ORDER BY d.name`).all() as Row[]).map((row) => {
+    const device = mapDevice(row);
+    const listed = phones.get(device.tenantId)?.map((item) => item.phone) ?? [];
+    const all = listed.length ? listed : device.phone ? [device.phone] : [];
+    return { ...device, phone: all[0] ?? null, phones: all };
+  });
 }
 
 export function getDevice(deviceId: string): (DeviceView & { phone: string | null }) | null {
@@ -364,7 +410,53 @@ export function updateDeviceState(
   return view ? presentDevice(view) : null;
 }
 
+function callerNumbersByTenant(): Map<string, CallerNumber[]> {
+  const rows = db()
+    .prepare("SELECT id, tenant_id, phone FROM caller_numbers ORDER BY created_at, id")
+    .all() as Row[];
+  const map = new Map<string, CallerNumber[]>();
+  for (const row of rows) {
+    const tenantId = text(row, "tenant_id");
+    const list = map.get(tenantId) ?? [];
+    list.push({ id: text(row, "id"), phone: text(row, "phone") });
+    map.set(tenantId, list);
+  }
+  return map;
+}
+
+function syncTenantPhone(tenantId: string) {
+  const first = db()
+    .prepare("SELECT phone FROM caller_numbers WHERE tenant_id = ? ORDER BY created_at, id LIMIT 1")
+    .get(tenantId) as Row | undefined;
+  db().prepare("UPDATE tenants SET phone = ? WHERE id = ?").run(first ? text(first, "phone") : null, tenantId);
+}
+
+export function listCallerNumbers(tenantId: string): CallerNumber[] {
+  return callerNumbersByTenant().get(tenantId) ?? [];
+}
+
+export function addCallerNumber(tenantId: string, phone: string): CallerNumber {
+  if (!db().prepare("SELECT id FROM tenants WHERE id = ?").get(tenantId)) throw new HttpError(404, "הלקוח לא נמצא");
+  const taken = db().prepare("SELECT tenant_id FROM caller_numbers WHERE phone = ?").get(phone) as Row | undefined;
+  if (taken && text(taken, "tenant_id") === tenantId) throw new HttpError(409, "המספר כבר ברשימה");
+  if (taken) throw new HttpError(409, "המספר כבר משויך ללקוח אחר");
+  const id = `ph_${randomUUID().slice(0, 8)}`;
+  db()
+    .prepare("INSERT INTO caller_numbers (id, tenant_id, phone, created_at) VALUES (?, ?, ?, ?)")
+    .run(id, tenantId, phone, new Date().toISOString());
+  syncTenantPhone(tenantId);
+  return { id, phone };
+}
+
+export function removeCallerNumber(tenantId: string, id: string) {
+  const row = db().prepare("SELECT tenant_id FROM caller_numbers WHERE id = ?").get(id) as Row | undefined;
+  if (!row || text(row, "tenant_id") !== tenantId) throw new HttpError(404, "המספר לא נמצא");
+  db().prepare("DELETE FROM caller_numbers WHERE id = ?").run(id);
+  syncTenantPhone(tenantId);
+}
+
 export function listTenants(): TenantView[] {
+  const phones = callerNumbersByTenant();
   const rows = db()
     .prepare(
       `SELECT t.id, t.name, t.phone,
@@ -374,13 +466,19 @@ export function listTenants(): TenantView[] {
       ORDER BY t.name`,
     )
     .all() as Row[];
-  return rows.map((row) => ({
-    id: text(row, "id"),
-    name: text(row, "name"),
-    phone: textOrNull(row, "phone"),
-    deviceCount: Number(row.device_count ?? 0),
-    userCount: Number(row.user_count ?? 0),
-  }));
+  return rows.map((row) => {
+    const id = text(row, "id");
+    const phone = textOrNull(row, "phone");
+    const listed = phones.get(id) ?? [];
+    return {
+      id,
+      name: text(row, "name"),
+      phone: listed[0]?.phone ?? phone,
+      phones: listed.length ? listed : phone ? [{ id: `ph_${id}`, phone }] : [],
+      deviceCount: Number(row.device_count ?? 0),
+      userCount: Number(row.user_count ?? 0),
+    };
+  });
 }
 
 export function createTenant(input: { name: string; phone: string | null }): TenantView {
@@ -388,6 +486,7 @@ export function createTenant(input: { name: string; phone: string | null }): Ten
   db()
     .prepare("INSERT INTO tenants (id, name, phone, created_at) VALUES (?, ?, ?, ?)")
     .run(id, input.name, input.phone, new Date().toISOString());
+  if (input.phone) addCallerNumber(id, input.phone);
   return listTenants().find((tenant) => tenant.id === id)!;
 }
 
@@ -400,7 +499,20 @@ export function deleteTenant(id: string) {
   db().prepare("DELETE FROM tenants WHERE id = ?").run(id);
 }
 
+function grantsByUser(): Map<string, string[]> {
+  const rows = db().prepare("SELECT user_id, device_id FROM user_devices ORDER BY device_id").all() as Row[];
+  const map = new Map<string, string[]>();
+  for (const row of rows) {
+    const userId = text(row, "user_id");
+    const list = map.get(userId) ?? [];
+    list.push(text(row, "device_id"));
+    map.set(userId, list);
+  }
+  return map;
+}
+
 export function listUsers(): UserView[] {
+  const grants = grantsByUser();
   const rows = db()
     .prepare(
       `SELECT u.id, u.username, u.name, u.role, u.tenant_id, t.name AS tenant_name
@@ -409,7 +521,10 @@ export function listUsers(): UserView[] {
        ORDER BY u.role, u.name`,
     )
     .all() as Row[];
-  return rows.map(mapUser);
+  return rows.map((row) => {
+    const user = mapUser(row);
+    return { ...user, deviceIds: grants.has(user.id) ? (grants.get(user.id) ?? []) : null };
+  });
 }
 
 function mapUser(row: Row): UserView {
@@ -421,6 +536,7 @@ function mapUser(row: Row): UserView {
     role: role === "admin" ? "admin" : "operator",
     tenantId: textOrNull(row, "tenant_id"),
     tenantName: textOrNull(row, "tenant_name"),
+    deviceIds: null,
   };
 }
 
@@ -456,6 +572,51 @@ export function deleteUser(id: string, actorId: string) {
   if (id === actorId) throw new HttpError(409, "אי אפשר למחוק את המשתמש שמחובר כרגע");
   const result = db().prepare("DELETE FROM users WHERE id = ?").run(id);
   if (Number(result.changes) === 0) throw new HttpError(404, "המשתמש לא נמצא");
+}
+
+export function updateUser(input: {
+  id: string;
+  actorId: string;
+  name: string;
+  role: Role;
+  tenantId: string | null;
+  password: string | null;
+  deviceIds: string[] | null;
+}) {
+  const current = listUsers().find((user) => user.id === input.id);
+  if (!current) throw new HttpError(404, "המשתמש לא נמצא");
+  if (input.id === input.actorId && input.role !== "admin") {
+    throw new HttpError(409, "אי אפשר להסיר את הרשאת המנהל מהמשתמש המחובר");
+  }
+  if (current.role === "admin" && input.role !== "admin") {
+    const admins = listUsers().filter((user) => user.role === "admin").length;
+    if (admins <= 1) throw new HttpError(409, "חייבים להישאר לפחות מנהל אחד");
+  }
+  const tenantId = input.role === "admin" ? null : input.tenantId;
+  if (input.role === "operator" && !tenantId) throw new HttpError(400, "משתמש לקוח חייב להיות משויך ללקוח");
+  if (tenantId && !db().prepare("SELECT id FROM tenants WHERE id = ?").get(tenantId)) {
+    throw new HttpError(404, "הלקוח לא נמצא");
+  }
+  const deviceIds = input.role === "admin" ? null : input.deviceIds;
+  if (deviceIds) {
+    if (!deviceIds.length) throw new HttpError(400, "בחרו לפחות שקע אחד, או השאירו את כל השקעים");
+    const owned = new Set(
+      (db().prepare("SELECT device_id FROM devices WHERE tenant_id = ?").all(tenantId) as Row[]).map((row) => text(row, "device_id")),
+    );
+    if (deviceIds.some((id) => !owned.has(id))) throw new HttpError(400, "אפשר לשייך רק שקעים של הלקוח");
+  }
+  if (input.password) {
+    db()
+      .prepare("UPDATE users SET name = ?, role = ?, tenant_id = ?, password_hash = ? WHERE id = ?")
+      .run(input.name, input.role, tenantId, hashPassword(input.password), input.id);
+  } else {
+    db().prepare("UPDATE users SET name = ?, role = ?, tenant_id = ? WHERE id = ?").run(input.name, input.role, tenantId, input.id);
+  }
+  db().prepare("DELETE FROM user_devices WHERE user_id = ?").run(input.id);
+  if (deviceIds) {
+    const insert = db().prepare("INSERT INTO user_devices (user_id, device_id) VALUES (?, ?)");
+    for (const deviceId of [...new Set(deviceIds)]) insert.run(input.id, deviceId);
+  }
 }
 
 export function createDevice(input: { deviceId: string; name: string; tenantId: string }) {

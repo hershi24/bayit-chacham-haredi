@@ -1,9 +1,8 @@
-import { canAccessDevice } from "@/lib/access";
 import { timerInstants, timerMessage } from "@/lib/devices/timer";
 import { HttpError } from "@/lib/http-error";
 import { requireUser, withErrors } from "@/lib/session";
 import { publishDevice } from "@/lib/sse";
-import { getDevice, presentDevice, saveSchedule } from "@/lib/store";
+import { assertMayUseDevice, getDevice, presentDevice, saveSchedule } from "@/lib/store";
 import { readJson } from "@/lib/validate";
 import { getBridge } from "@/lib/wlte/bridge";
 
@@ -15,7 +14,7 @@ export function POST(request: Request, context: { params: Promise<{ deviceId: st
     const { deviceId } = await context.params;
     const device = await getDevice(deviceId);
     if (!device) throw new HttpError(404, "השקע לא נמצא");
-    if (!canAccessDevice(user, device.tenantId)) throw new HttpError(403, "אין הרשאה לשקע הזה");
+    await assertMayUseDevice(user, device);
     const body = await readJson(request);
     if (body.mode !== "now" && body.mode !== "later") {
       throw new HttpError(400, "בחרו אם להפעיל עכשיו או מאוחר יותר");

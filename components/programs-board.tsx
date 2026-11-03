@@ -15,7 +15,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/client-api";
 import type { MonthDay } from "@/lib/hebrew/calendar";
+import { dayBars, laneBars } from "@/lib/programs/timeline";
 import { weekdayOf, weekdayPhrase } from "@/lib/programs/weekdays";
+import { israelDate, shiftDate } from "@/lib/time";
 import type { TenantView } from "@/lib/types";
 import { cn } from "cn";
 
@@ -70,6 +72,9 @@ type Draft = {
 type Selection = { id: string | null; name: string; days: string[] };
 
 const WEEKDAYS = ["א", "ב", "ג", "ד", "ה", "ו", "שבת"];
+const WEEKDAY_CHIPS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "שבת"];
+const DAY_NAMES = ["יום ראשון", "יום שני", "יום שלישי", "יום רביעי", "יום חמישי", "יום שישי", "שבת"];
+const BAR_COLORS = ["#d97706", "#0284c7", "#059669", "#7c3aed", "#e11d48", "#0f766e"];
 const TINTS = ["bg-amber-500/15", "bg-sky-500/15", "bg-emerald-500/15", "bg-violet-500/15"];
 const fieldClass =
   "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -79,8 +84,10 @@ export function ProgramsBoard() {
   const [tenants, setTenants] = useState<TenantView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
-  const [view, setView] = useState<"month" | "list">("month");
+  const [view, setView] = useState<"month" | "list" | "hours">("month");
+  const [cursor, setCursor] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [selecting, setSelecting] = useState<Selection | null>(null);
 
   const load = useCallback(async (tenantId: string | null, year?: number, month?: number) => {
@@ -130,16 +137,24 @@ export function ProgramsBoard() {
       setError(null);
       return true;
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "השמירה נכשלה");
+      const message = cause instanceof Error ? cause.message : "השמירה נכשלה";
+      setFormError(message);
+      toast.error(message);
       return false;
     } finally {
       setPending(null);
     }
   }
 
+  function updateDraft(recipe: (current: Draft) => Draft) {
+    setFormError(null);
+    setDraft((current) => (current ? recipe(current) : current));
+  }
+
   function openNew(day: MonthDay) {
     if (!board) return;
     const owners = board.programs.filter((program) => program.days.includes(day.date));
+    setFormError(null);
     setDraft({
       id: null,
       day: day.date,
@@ -157,6 +172,7 @@ export function ProgramsBoard() {
 
   function openClock(clock: Clock) {
     const program = clock.recurring ? board?.programs.find((item) => item.id === clock.programId) : undefined;
+    setFormError(null);
     setDraft({
       id: program?.id ?? clock.id,
       day: clock.day,
@@ -173,6 +189,7 @@ export function ProgramsBoard() {
   }
 
   function openRepeat(program: Program) {
+    setFormError(null);
     setDraft({
       id: program.id,
       day: "",
@@ -198,8 +215,27 @@ export function ProgramsBoard() {
 
   function shiftMonth(delta: number) {
     if (!board) return;
-    const cursor = new Date(Date.UTC(board.month.year, board.month.month - 1 + delta, 1));
-    void load(board.tenantId, cursor.getUTCFullYear(), cursor.getUTCMonth() + 1);
+    const next = new Date(Date.UTC(board.month.year, board.month.month - 1 + delta, 1));
+    void load(board.tenantId, next.getUTCFullYear(), next.getUTCMonth() + 1);
+  }
+
+  function ensureMonth(day: string) {
+    if (!board) return;
+    const [year, month] = day.split("-").map(Number);
+    if (year !== board.month.year || month !== board.month.month) void load(board.tenantId, year, month);
+  }
+
+  function shiftDay(delta: number) {
+    const next = shiftDate(cursor || israelDate(), delta);
+    setCursor(next);
+    ensureMonth(next);
+  }
+
+  function showHours() {
+    const day = cursor || israelDate();
+    setCursor(day);
+    setView("hours");
+    ensureMonth(day);
   }
 
   function beginProgram(program?: Program) {
@@ -235,9 +271,18 @@ export function ProgramsBoard() {
     if (!draft) return;
     if (draft.repeat === "once") {
       if (!draft.day) {
-        toast.error("בחרו תאריך");
+        setFormError("בחרו תאריך");
         return;
       }
+      if (!draft.onTime && !draft.offTime) {
+        setFormError("בחרו שעת הדלקה או כיבוי");
+        return;
+      }
+      if (!draft.deviceIds.length) {
+        setFormError("בחרו לפחות שקע אחד");
+        return;
+      }
+      setFormError(null);
       const saved = await send(
         {
           action: "clock-save",
@@ -255,13 +300,22 @@ export function ProgramsBoard() {
     }
     const weekdays = draft.repeat === "daily" ? [0, 1, 2, 3, 4, 5, 6] : draft.weekdays;
     if (!draft.name.trim()) {
-      toast.error("תנו שם לתוכנית");
+      setFormError("תנו שם לתוכנית");
       return;
     }
     if (!weekdays.length) {
-      toast.error("בחרו לפחות יום אחד בשבוע");
+      setFormError("בחרו לפחות יום אחד בשבוע");
       return;
     }
+    if (!draft.onTime && !draft.offTime) {
+      setFormError("בחרו שעת הדלקה או כיבוי");
+      return;
+    }
+    if (!draft.deviceIds.length) {
+      setFormError("בחרו לפחות שקע אחד");
+      return;
+    }
+    setFormError(null);
     const saved = await send(
       {
         action: "repeat-save",
@@ -324,11 +378,11 @@ export function ProgramsBoard() {
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => shiftMonth(-1)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => (view === "hours" ? shiftDay(-1) : shiftMonth(-1))}>
             הקודם
           </Button>
-          <h2 className="min-w-28 text-center text-xl font-semibold tracking-tight">{title}</h2>
-          <Button type="button" variant="outline" size="sm" onClick={() => shiftMonth(1)}>
+          <h2 className="min-w-28 text-center text-xl font-semibold tracking-tight">{view === "hours" ? prettyDay(cursor || israelDate()) : title}</h2>
+          <Button type="button" variant="outline" size="sm" onClick={() => (view === "hours" ? shiftDay(1) : shiftMonth(1))}>
             הבא
           </Button>
         </div>
@@ -356,10 +410,13 @@ export function ProgramsBoard() {
           <Button type="button" size="sm" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")}>
             רשימה
           </Button>
+          <Button type="button" size="sm" variant={view === "hours" ? "default" : "outline"} onClick={showHours}>
+            24 שעות
+          </Button>
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
-        לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. בחזרה אפשר כל יום, או ימים בשבוע, ולשמור את זה כתוכנית. נרות והבדלה מוצגים לידיעה.
+        לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. בחזרה אפשר כל יום, או ימים בשבוע, ולשמור את זה כתוכנית. בתצוגת 24 שעות רואים בכל שקע מתי הוא דולק. נרות והבדלה מוצגים לידיעה.
       </p>
 
       {selecting ? (
@@ -385,7 +442,9 @@ export function ProgramsBoard() {
         </div>
       ) : null}
 
-      {view === "month" ? (
+      {view === "hours" ? (
+        <HourBoard board={board} day={cursor || israelDate()} onOpenClock={openClock} onOpenProgram={openRepeat} />
+      ) : view === "month" ? (
         <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl border border-border bg-border">
           {WEEKDAYS.map((weekday) => (
             <div key={weekday} className="bg-muted px-1 py-1.5 text-center text-xs font-medium">
@@ -582,10 +641,24 @@ export function ProgramsBoard() {
         )}
       </div>
 
-      <Dialog open={draft !== null} onOpenChange={(open) => { if (!open) setDraft(null); }}>
+      <Dialog
+        open={draft !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDraft(null);
+            setFormError(null);
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           {draft ? (
-            <>
+            <form
+              className="contents"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveClock();
+              }}
+            >
               <DialogHeader>
                 <DialogTitle>{draft.recurring || draft.id ? "עריכת שעון" : "שעון חדש"}</DialogTitle>
                 <DialogDescription>
@@ -605,14 +678,19 @@ export function ProgramsBoard() {
                     <Button
                       key={value}
                       type="button"
-                      size="xs"
+                      size="sm"
                       variant={draft.repeat === value ? "default" : "outline"}
                       onClick={() =>
-                        setDraft({
-                          ...draft,
+                        updateDraft((current) => ({
+                          ...current,
                           repeat: value,
-                          weekdays: value === "daily" ? [0, 1, 2, 3, 4, 5, 6] : draft.weekdays.length ? draft.weekdays : [draft.day ? weekdayOf(draft.day) : 0],
-                        })
+                          weekdays:
+                            value === "daily"
+                              ? [0, 1, 2, 3, 4, 5, 6]
+                              : current.weekdays.length
+                                ? current.weekdays
+                                : [current.day ? weekdayOf(current.day) : 0],
+                        }))
                       }
                     >
                       {label}
@@ -620,23 +698,26 @@ export function ProgramsBoard() {
                   ))}
                 </div>
                 {draft.repeat === "weekdays" ? (
-                  <div className="flex flex-wrap gap-1">
-                    {WEEKDAYS.map((label, index) => {
+                  <div className="grid grid-cols-7 gap-1">
+                    {WEEKDAY_CHIPS.map((label, index) => {
                       const selected = draft.weekdays.includes(index);
                       return (
                         <button
                           key={label}
                           type="button"
                           aria-pressed={selected}
+                          aria-label={DAY_NAMES[index]}
                           className={cn(
-                            "size-8 rounded-full border border-border text-sm",
-                            selected ? "bg-primary text-primary-foreground" : "bg-background",
+                            "flex h-11 items-center justify-center rounded-lg border text-sm",
+                            selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background",
                           )}
                           onClick={() =>
-                            setDraft({
-                              ...draft,
-                              weekdays: selected ? draft.weekdays.filter((day) => day !== index) : [...draft.weekdays, index].sort(),
-                            })
+                            updateDraft((current) => ({
+                              ...current,
+                              weekdays: current.weekdays.includes(index)
+                                ? current.weekdays.filter((day) => day !== index)
+                                : [...current.weekdays, index].sort((left, right) => left - right),
+                            }))
                           }
                         >
                           {label}
@@ -645,6 +726,11 @@ export function ProgramsBoard() {
                     })}
                   </div>
                 ) : null}
+                {draft.repeat === "weekdays" ? (
+                  <p className="text-xs text-muted-foreground">
+                    {draft.weekdays.length ? `נבחרו: ${weekdayPhrase(draft.weekdays)}` : "סמנו לפחות יום אחד, ואז לחצו שמירה."}
+                  </p>
+                ) : null}
                 {draft.repeat === "daily" ? (
                   <p className="text-xs text-muted-foreground">כולל שישי ושבת. בלי הימים האלה בחרו ימים בשבוע וסמנו א עד ה.</p>
                 ) : null}
@@ -652,7 +738,7 @@ export function ProgramsBoard() {
               {draft.repeat === "once" ? (
                 <Label className="flex-col items-stretch gap-1">
                   תאריך
-                  <Input dir="ltr" type="date" value={draft.day} onChange={(event) => setDraft({ ...draft, day: event.target.value })} />
+                  <Input dir="ltr" type="date" value={draft.day} onChange={(event) => updateDraft((current) => ({ ...current, day: event.target.value }))} />
                 </Label>
               ) : (
                 <Label className="flex-col items-stretch gap-1">
@@ -661,18 +747,18 @@ export function ProgramsBoard() {
                     value={draft.name}
                     maxLength={40}
                     placeholder="למשל מזגן"
-                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                    onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
                   />
                 </Label>
               )}
               <div className="grid grid-cols-2 gap-2">
                 <Label className="flex-col items-stretch gap-1">
                   הדלקה
-                  <Input dir="ltr" type="time" value={draft.onTime} onChange={(event) => setDraft({ ...draft, onTime: event.target.value })} />
+                  <Input dir="ltr" type="time" value={draft.onTime} onChange={(event) => updateDraft((current) => ({ ...current, onTime: event.target.value }))} />
                 </Label>
                 <Label className="flex-col items-stretch gap-1">
                   כיבוי
-                  <Input dir="ltr" type="time" value={draft.offTime} onChange={(event) => setDraft({ ...draft, offTime: event.target.value })} />
+                  <Input dir="ltr" type="time" value={draft.offTime} onChange={(event) => updateDraft((current) => ({ ...current, offTime: event.target.value }))} />
                 </Label>
               </div>
               <p className="text-xs text-muted-foreground">אם הכיבוי מוקדם מההדלקה, הוא יתבצע ביום שלמחרת.</p>
@@ -680,17 +766,18 @@ export function ProgramsBoard() {
                 <legend className="text-sm font-medium">שקעים</legend>
                 {board.devices.length ? (
                   board.devices.map((device) => (
-                    <label key={device.deviceId} className="flex items-center gap-2 text-sm">
+                    <label key={device.deviceId} className="flex min-h-11 items-center gap-2 text-sm">
                       <input
                         type="checkbox"
+                        className="size-4"
                         checked={draft.deviceIds.includes(device.deviceId)}
                         onChange={() =>
-                          setDraft({
-                            ...draft,
-                            deviceIds: draft.deviceIds.includes(device.deviceId)
-                              ? draft.deviceIds.filter((id) => id !== device.deviceId)
-                              : [...draft.deviceIds, device.deviceId],
-                          })
+                          updateDraft((current) => ({
+                            ...current,
+                            deviceIds: current.deviceIds.includes(device.deviceId)
+                              ? current.deviceIds.filter((id) => id !== device.deviceId)
+                              : [...current.deviceIds, device.deviceId],
+                          }))
                         }
                       />
                       {device.name}
@@ -706,7 +793,7 @@ export function ProgramsBoard() {
                 <select
                   className={fieldClass}
                   value={draft.programId}
-                  onChange={(event) => setDraft({ ...draft, programId: event.target.value })}
+                  onChange={(event) => updateDraft((current) => ({ ...current, programId: event.target.value }))}
                 >
                   <option value="">בלי תוכנית</option>
                   {board.programs.map((program) => (
@@ -717,7 +804,12 @@ export function ProgramsBoard() {
                 </select>
               </Label>
               ) : null}
-              <DialogFooter>
+              {formError ? (
+                <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+                  {formError}
+                </p>
+              ) : null}
+              <DialogFooter className="sticky bottom-0 z-10">
                 {draft.id ? (
                   <Button
                     type="button"
@@ -735,16 +827,145 @@ export function ProgramsBoard() {
                     מחיקה
                   </Button>
                 ) : null}
-                <Button type="button" disabled={pending === "clock"} onClick={() => void saveClock()}>
-                  שמירה
+                <Button type="submit" disabled={pending === "clock"}>
+                  {pending === "clock" ? "שומר…" : "שמירה"}
                 </Button>
               </DialogFooter>
-            </>
+            </form>
           ) : null}
         </DialogContent>
       </Dialog>
     </section>
   );
+}
+
+function HourBoard({
+  board,
+  day,
+  onOpenClock,
+  onOpenProgram,
+}: {
+  board: Board;
+  day: string;
+  onOpenClock: (clock: Clock) => void;
+  onOpenProgram: (program: Program) => void;
+}) {
+  const bars = laneBars(dayBars(day, board.clocks, board.programs));
+  const cell = board.month.days.find((item) => item.date === day);
+  const now = day === israelDate() ? jerusalemMinutes() : null;
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <p className="px-3 py-2 text-sm">
+        <span className="font-medium">{DAY_NAMES[weekdayOf(day)]}</span>
+        {cell?.hebrew ? <span className="text-muted-foreground"> {cell.hebrew}</span> : null}
+        {cell?.parsha ? <span className="font-medium text-primary"> {cell.parsha}</span> : null}
+        {cell?.holiday ? <span> · {cell.holiday}</span> : null}
+      </p>
+      {board.devices.length ? (
+        <div dir="ltr">
+            <div className="grid grid-cols-[5.75rem_minmax(0,1fr)] sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+              <div className="sticky start-0 z-10 border-b border-border bg-card" />
+              <div className="relative h-7 border-b border-border">
+                {Array.from({ length: 25 }, (_, hour) => (
+                  <span key={hour} className="absolute inset-y-0 border-s border-border/60" style={{ left: `${(hour / 24) * 100}%` }}>
+                    {hour % 3 === 0 ? (
+                      <span
+                        className={cn(
+                          "absolute top-1 text-[10px] text-muted-foreground",
+                          hour === 0 ? "left-1" : hour === 24 ? "right-1" : "-translate-x-1/2",
+                        )}
+                      >
+                        {String(hour).padStart(2, "0")}
+                      </span>
+                    ) : null}
+                  </span>
+                ))}
+              </div>
+              {board.devices.map((device) => {
+                const rows = bars.filter((bar) => bar.deviceId === device.deviceId);
+                const lanes = rows.reduce((max, bar) => Math.max(max, bar.lane + 1), 1);
+                return (
+                  <div key={device.deviceId} className="contents">
+                    <div className="sticky start-0 z-10 flex items-center border-b border-border bg-card px-2 py-1 text-sm" dir="rtl">
+                      <span>
+                        <span className="block leading-tight">{device.name}</span>
+                        {rows.map((bar) => (
+                          <span key={bar.key} dir="ltr" className="block text-[10px] leading-tight text-muted-foreground">
+                            {bar.title.replace(`${bar.name} `, "")}
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                    <div
+                      className="relative border-b border-border"
+                      style={{
+                        height: Math.max(44, lanes * 28 + 8),
+                        backgroundImage:
+                          "repeating-linear-gradient(to right, transparent, transparent calc(100% / 24 - 1px), var(--border) calc(100% / 24 - 1px), var(--border) calc(100% / 24))",
+                      }}
+                    >
+                      {now != null ? (
+                        <span className="absolute inset-y-0 z-10 w-0.5 bg-destructive" style={{ left: `${(now / 1440) * 100}%` }} />
+                      ) : null}
+                      {rows.map((bar) => (
+                        <button
+                          key={bar.key}
+                          type="button"
+                          title={bar.title}
+                          className={cn(
+                            "absolute z-20 overflow-hidden rounded px-1 text-start text-[11px] font-medium text-white",
+                            bar.muted && "opacity-40 line-through",
+                          )}
+                          style={{
+                            top: 4 + bar.lane * 28,
+                            height: 24,
+                            left: `${(bar.start / 1440) * 100}%`,
+                            width: `${((bar.end - bar.start) / 1440) * 100}%`,
+                            background: barColor(bar.name),
+                            minWidth: 6,
+                          }}
+                          onClick={() => {
+                            if (bar.source === "program") {
+                              const program = board.programs.find((item) => item.id === bar.sourceId);
+                              if (program) onOpenProgram(program);
+                              return;
+                            }
+                            const clock = board.clocks.find((item) => item.id === bar.sourceId);
+                            if (clock) onOpenClock(clock);
+                          }}
+                        >
+                          <span className="truncate">{bar.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+        </div>
+      ) : (
+        <p className="px-3 py-4 text-sm text-muted-foreground">אין שקעים משויכים ללקוח.</p>
+      )}
+      <p className="px-3 py-2 text-xs text-muted-foreground">כל שורה היא שקע. הפס מראה מתי הוא דולק. פס דהוי הוא תוכנית כבויה.</p>
+    </div>
+  );
+}
+
+function barColor(name: string) {
+  let hash = 0;
+  for (const char of name) hash = (hash + char.charCodeAt(0)) % BAR_COLORS.length;
+  return BAR_COLORS[hash];
+}
+
+function jerusalemMinutes(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jerusalem",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Number(map.hour) * 60 + Number(map.minute);
 }
 
 function ClockFace({ clock }: { clock: Clock }) {

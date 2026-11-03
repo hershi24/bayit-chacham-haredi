@@ -41,7 +41,7 @@ test("reads the sockets and then the action that matches the relay", () => {
   const off = decideMenu([ac, light], { device: "1" });
   assert.equal(off.type, "read");
   if (off.type !== "read") return;
-  assert.match(off.message, /כבוי כעת, להחלפת המצב הקש אחד/);
+  assert.match(off.message, /כבוי כעת, להפעלה הקש אחד/);
   assert.equal(off.message.includes("לכיבוי"), false);
   assert.equal(off.allowed, "1345");
   assert.match(off.message, /לתוכניות הקש חמש/);
@@ -49,9 +49,8 @@ test("reads the sockets and then the action that matches the relay", () => {
   const on = decideMenu([ac, light], { device: "2" });
   assert.equal(on.type, "read");
   if (on.type !== "read") return;
-  assert.match(on.message, /פועל כעת, להחלפת המצב הקש אחד/);
+  assert.match(on.message, /פועל כעת, לכיבוי הקש אחד/);
   assert.equal(on.message.includes("להפעלה"), false);
-  assert.equal(on.message.includes("לכיבוי"), false);
   assert.equal(on.allowed, "1345");
 });
 
@@ -183,7 +182,7 @@ test("the on and off keys are answered before the socket finishes switching", as
   await updateDeviceState("rct063285417", { connectivity: "OFFLINE", relayOn: false, stateUpdatedAt: now, lastError: null });
 
   const menu = await phonePress({ ApiPhone: "035551001", pikud_device: "1" });
-  assert.match(await menu.text(), /להחלפת המצב הקש אחד/);
+  assert.match(await menu.text(), /כבוי כעת, להפעלה הקש אחד/);
 
   const started = Date.now();
   const on = await phonePress({ ApiPhone: "035551001", pikud_device: "1", pikud_action: "1" });

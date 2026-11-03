@@ -271,6 +271,46 @@ test("one program holds several clocks every day", async () => {
   await deleteProgram("ten_shul", program.id);
 });
 
+test("friday and saturday clocks of one program stay on their own day", async () => {
+  const now = new Date("2026-11-06T00:00:00.000Z");
+  const program = {
+    id: programId("ten_shul", "days:weekend"),
+    tenantId: "ten_shul",
+    programKey: "days:weekend",
+    name: "סוף שבוע",
+    enabled: true,
+    deviceIds: ["rct074190118"],
+    startDate: null,
+    endDate: null,
+    days: [] as string[],
+    weekdays: [5, 6],
+    onTime: "18:30",
+    offTime: null,
+    slots: [
+      { onTime: "18:30", offTime: null, weekdays: [5] },
+      { onTime: "22:00", offTime: null, weekdays: [5] },
+      { onTime: "10:00", offTime: "12:00", weekdays: [6] },
+    ],
+  };
+  await upsertProgram(program);
+  await syncTenantPrograms("ten_shul", now);
+  const runs = await listRunsFor(program.id);
+  const friday = runs.filter((run) => israelDate(new Date(run.runAt)) === "2026-11-06").map((run) => run.runAt).sort();
+  const saturday = runs.filter((run) => israelDate(new Date(run.runAt)) === "2026-11-07").map((run) => [run.action, run.runAt]);
+  assert.deepEqual(friday, [
+    jerusalemInstant("2026-11-06", "18:30")?.toISOString(),
+    jerusalemInstant("2026-11-06", "22:00")?.toISOString(),
+  ]);
+  assert.deepEqual(
+    saturday.sort((left, right) => left[1].localeCompare(right[1])),
+    [
+      ["ON", jerusalemInstant("2026-11-07", "10:00")?.toISOString()],
+      ["OFF", jerusalemInstant("2026-11-07", "12:00")?.toISOString()],
+    ],
+  );
+  await deleteProgram("ten_shul", program.id);
+});
+
 test("the phone saves a weekday clock on the chosen socket", async () => {
   const response = await handleMenu(
     new Request("http://127.0.0.1/api/ivr/menu", {

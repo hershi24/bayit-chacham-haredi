@@ -66,6 +66,31 @@ test("only an on time runs until midnight and a repeated clock is not drawn twic
   assert.equal(bars.filter((bar) => bar.source === "program").length, 1);
 });
 
+test("clocks of one program stay on their own weekday", () => {
+  const weekend = {
+    id: "prog_weekend",
+    name: "סוף שבוע",
+    enabled: true,
+    weekdays: [5, 6],
+    onTime: "18:30",
+    offTime: "19:00",
+    slots: [
+      { onTime: "18:30", offTime: "19:00", weekdays: [5] },
+      { onTime: "10:00", offTime: "12:00", weekdays: [6] },
+    ],
+    deviceIds: ["socket-a"],
+  };
+  assert.deepEqual(
+    dayBars("2026-11-06", [], [weekend]).map((bar) => [bar.start, bar.end]),
+    [[18 * 60 + 30, 19 * 60]],
+  );
+  assert.deepEqual(
+    dayBars("2026-11-07", [], [weekend]).map((bar) => [bar.start, bar.end]),
+    [[10 * 60, 12 * 60]],
+  );
+  assert.equal(dayBars("2026-11-08", [], [weekend]).length, 0);
+});
+
 test("one program with several clocks draws one strip per on period", () => {
   const daily = {
     id: "prog_daily",

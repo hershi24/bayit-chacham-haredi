@@ -1,4 +1,5 @@
 import { hebrewLabels, monthBoard, places } from "@/lib/hebrew/calendar";
+import { weekdayOf } from "@/lib/programs/weekdays";
 import { getClock, listDayClocks, listPrograms, listTenantDevices } from "@/lib/store";
 
 export async function programsPayload(
@@ -29,23 +30,45 @@ export async function programsPayload(
       name: program.name,
       enabled: program.enabled,
       days: [...program.days].sort(),
+      weekdays: [...program.weekdays].sort((left, right) => left - right),
+      onTime: program.onTime,
+      offTime: program.offTime,
+      deviceIds: program.deviceIds,
     }))
     .sort((left, right) => left.name.localeCompare(right.name, "he"));
+  const repeated = programs.flatMap((program) =>
+    days
+      .filter((day) => program.weekdays.includes(weekdayOf(day.date)))
+      .map((day) => ({
+        id: `week:${program.id}:${day.date}`,
+        day: day.date,
+        hebrew: day.hebrew,
+        onTime: program.onTime,
+        offTime: program.offTime,
+        deviceIds: program.deviceIds,
+        programId: program.id,
+        recurring: true,
+      })),
+  );
   return {
     tenantId,
     locationId: settings.locationId,
     places: places(),
     devices: devices.map((device) => ({ deviceId: device.deviceId, name: device.name })),
     programs,
-    clocks: clocks.map((clock) => ({
-      id: clock.id,
-      day: clock.day,
-      hebrew: labels[clock.day] ?? "",
-      onTime: clock.onTime,
-      offTime: clock.offTime,
-      deviceIds: clock.deviceIds,
-      programId: clock.programId,
-    })),
+    clocks: [
+      ...clocks.map((clock) => ({
+        id: clock.id,
+        day: clock.day,
+        hebrew: labels[clock.day] ?? "",
+        onTime: clock.onTime,
+        offTime: clock.offTime,
+        deviceIds: clock.deviceIds,
+        programId: clock.programId,
+        recurring: false,
+      })),
+      ...repeated,
+    ],
     month: { year, month, days },
   };
 }

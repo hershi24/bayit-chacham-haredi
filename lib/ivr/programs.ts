@@ -1,5 +1,6 @@
 import { upcomingPrograms } from "@/lib/hebrew/calendar";
 import { syncTenantPrograms } from "@/lib/programs/sync";
+import { weekdayPhrase } from "@/lib/programs/weekdays";
 import { getClock, getDevice, listPrograms, upsertProgram } from "@/lib/store";
 
 const WORDS = ["", "אחד", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה"];
@@ -21,7 +22,11 @@ export async function answerPrograms(deviceId: string, digit: string | undefined
     const enabled = !item.enabled;
     await upsertProgram({ ...item, enabled });
     await syncTenantPrograms(device.tenantId);
-    const count = item.days.length === 1 ? "יום אחד" : `${item.days.length} ימים`;
+    const count = item.weekdays.length
+      ? weekdayPhrase(item.weekdays)
+      : item.days.length === 1
+        ? "יום אחד"
+        : `${item.days.length} ימים`;
     return { type: "say" as const, message: enabled ? `${item.name} הופעלה, ${count}` : `${item.name} כובתה` };
   }
   const intro = await parshaIntro(device.tenantId);

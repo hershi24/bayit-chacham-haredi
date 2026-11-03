@@ -127,6 +127,9 @@ alter table programs enable row level security;
 alter table program_runs enable row level security;
 
 alter table programs add column if not exists days text not null default '[]';
+alter table programs add column if not exists weekdays text not null default '[]';
+alter table programs add column if not exists on_time text;
+alter table programs add column if not exists off_time text;
 
 create table if not exists clocks (
   id text primary key,

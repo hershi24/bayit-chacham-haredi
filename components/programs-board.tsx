@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/client-api";
 import type { MonthDay } from "@/lib/hebrew/calendar";
+import { weekdayOf, weekdayPhrase } from "@/lib/programs/weekdays";
 import type { TenantView } from "@/lib/types";
 import { cn } from "cn";
 
@@ -26,6 +27,7 @@ type Clock = {
   offTime: string | null;
   deviceIds: string[];
   programId: string | null;
+  recurring: boolean;
 };
 
 type Program = {
@@ -33,6 +35,10 @@ type Program = {
   name: string;
   enabled: boolean;
   days: string[];
+  weekdays: number[];
+  onTime: string | null;
+  offTime: string | null;
+  deviceIds: string[];
 };
 
 type Board = {
@@ -55,6 +61,10 @@ type Draft = {
   offTime: string;
   deviceIds: string[];
   programId: string;
+  repeat: "once" | "daily" | "weekdays";
+  weekdays: number[];
+  name: string;
+  recurring: boolean;
 };
 
 type Selection = { id: string | null; name: string; days: string[] };
@@ -138,18 +148,43 @@ export function ProgramsBoard() {
       offTime: "",
       deviceIds: board.devices.length === 1 ? [board.devices[0].deviceId] : [],
       programId: owners.length === 1 ? owners[0].id : "",
+      repeat: "once",
+      weekdays: [day.weekday],
+      name: "",
+      recurring: false,
     });
   }
 
   function openClock(clock: Clock) {
+    const program = clock.recurring ? board?.programs.find((item) => item.id === clock.programId) : undefined;
     setDraft({
-      id: clock.id,
+      id: program?.id ?? clock.id,
       day: clock.day,
       hebrew: clock.hebrew,
       onTime: clock.onTime ?? "",
       offTime: clock.offTime ?? "",
       deviceIds: [...clock.deviceIds],
       programId: clock.programId ?? "",
+      repeat: program ? (program.weekdays.length === 7 ? "daily" : "weekdays") : "once",
+      weekdays: program ? [...program.weekdays] : [weekdayOf(clock.day)],
+      name: program?.name ?? "",
+      recurring: Boolean(program),
+    });
+  }
+
+  function openRepeat(program: Program) {
+    setDraft({
+      id: program.id,
+      day: "",
+      hebrew: "",
+      onTime: program.onTime ?? "",
+      offTime: program.offTime ?? "",
+      deviceIds: [...program.deviceIds],
+      programId: program.id,
+      repeat: program.weekdays.length === 7 ? "daily" : "weekdays",
+      weekdays: [...program.weekdays],
+      name: program.name,
+      recurring: true,
     });
   }
 
@@ -168,6 +203,10 @@ export function ProgramsBoard() {
   }
 
   function beginProgram(program?: Program) {
+    if (program?.weekdays.length) {
+      openRepeat(program);
+      return;
+    }
     setView("month");
     setSelecting(program ? { id: program.id, name: program.name, days: [...program.days] } : { id: null, name: "", days: [] });
     const first = program?.days[0];
@@ -194,15 +233,44 @@ export function ProgramsBoard() {
 
   async function saveClock() {
     if (!draft) return;
+    if (draft.repeat === "once") {
+      if (!draft.day) {
+        toast.error("בחרו תאריך");
+        return;
+      }
+      const saved = await send(
+        {
+          action: "clock-save",
+          id: draft.recurring ? null : draft.id,
+          day: draft.day,
+          onTime: draft.onTime,
+          offTime: draft.offTime,
+          deviceIds: draft.deviceIds,
+          programId: draft.programId,
+        },
+        "clock",
+      );
+      if (saved) setDraft(null);
+      return;
+    }
+    const weekdays = draft.repeat === "daily" ? [0, 1, 2, 3, 4, 5, 6] : draft.weekdays;
+    if (!draft.name.trim()) {
+      toast.error("תנו שם לתוכנית");
+      return;
+    }
+    if (!weekdays.length) {
+      toast.error("בחרו לפחות יום אחד בשבוע");
+      return;
+    }
     const saved = await send(
       {
-        action: "clock-save",
-        id: draft.id,
-        day: draft.day,
+        action: "repeat-save",
+        id: draft.recurring ? draft.id : null,
+        name: draft.name.trim(),
+        weekdays,
         onTime: draft.onTime,
         offTime: draft.offTime,
         deviceIds: draft.deviceIds,
-        programId: draft.programId,
       },
       "clock",
     );
@@ -248,7 +316,7 @@ export function ProgramsBoard() {
     year: "numeric",
     timeZone: "Asia/Jerusalem",
   }).format(new Date(Date.UTC(board.month.year, board.month.month - 1, 15)));
-  const listed = [...board.clocks].sort(
+  const listed = board.clocks.filter((clock) => !clock.recurring).sort(
     (left, right) => left.day.localeCompare(right.day) || (left.onTime ?? "").localeCompare(right.onTime ?? ""),
   );
 
@@ -291,7 +359,7 @@ export function ProgramsBoard() {
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
-        לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. נרות והבדלה מוצגים לידיעה, והם לא מפעילים שקע.
+        לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. בחזרה אפשר כל יום, או ימים בשבוע, ולשמור את זה כתוכנית. נרות והבדלה מוצגים לידיעה.
       </p>
 
       {selecting ? (
@@ -325,7 +393,9 @@ export function ProgramsBoard() {
             </div>
           ))}
           {board.month.days.map((day) => {
-            const programIndex = board.programs.findIndex((program) => program.days.includes(day.date));
+            const pickedIndex = board.programs.findIndex((item) => item.days.includes(day.date));
+            const weekIndex = board.programs.findIndex((item) => item.weekdays.includes(day.weekday));
+            const programIndex = pickedIndex >= 0 ? pickedIndex : weekIndex;
             const program = programIndex >= 0 ? board.programs[programIndex] : undefined;
             const chosen = selecting?.days.includes(day.date) ?? false;
             const clocks = clocksByDay.get(day.date) ?? [];
@@ -353,7 +423,8 @@ export function ProgramsBoard() {
                 {day.candles ? <p className="text-[10px] text-muted-foreground">נרות {day.candles}</p> : null}
                 {day.havdalah ? <p className="text-[10px] text-muted-foreground">הבדלה {day.havdalah}</p> : null}
                 {clocks.map((clock) => {
-                  const paused = Boolean(program && !program.enabled && clock.programId === program.id);
+                  const owner = board.programs.find((item) => item.id === clock.programId);
+                  const paused = Boolean(owner && !owner.enabled);
                   return (
                     <button
                       key={clock.id}
@@ -388,8 +459,34 @@ export function ProgramsBoard() {
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-card">
-          {listed.length ? (
+          {listed.length || board.programs.some((program) => program.weekdays.length) ? (
             <ul>
+              {board.programs
+                .filter((program) => program.weekdays.length)
+                .map((program) => (
+                  <li key={program.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2 text-sm">
+                    <span className="font-medium">{program.name}</span>
+                    <span>{weekdayPhrase(program.weekdays)}</span>
+                    <span dir="ltr">{[program.onTime, program.offTime].filter(Boolean).join("–")}</span>
+                    <span className="text-muted-foreground">{deviceNames(board, program.deviceIds)}</span>
+                    <span className="text-muted-foreground">{program.enabled ? "פועלת" : "כבויה"}</span>
+                    <span className="ms-auto flex gap-1">
+                      <Button type="button" size="xs" variant="outline" onClick={() => openRepeat(program)}>
+                        עריכה
+                      </Button>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="destructive"
+                        onClick={() => {
+                          if (window.confirm("למחוק את התוכנית?")) void send({ action: "program-delete", id: program.id }, program.id);
+                        }}
+                      >
+                        מחיקה
+                      </Button>
+                    </span>
+                  </li>
+                ))}
               {listed.map((clock) => {
                 const program = board.programs.find((item) => item.id === clock.programId);
                 return (
@@ -465,29 +562,109 @@ export function ProgramsBoard() {
                     </Button>
                   </span>
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">{program.days.map(prettyDay).join(" · ") || "אין ימים"}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {program.weekdays.length ? (
+                    <>
+                      {weekdayPhrase(program.weekdays)}
+                      {program.onTime || program.offTime ? (
+                        <span dir="ltr"> · {[program.onTime, program.offTime].filter(Boolean).join("–")}</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    program.days.map(prettyDay).join(" · ") || "אין ימים"
+                  )}
+                </p>
               </article>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">אין תוכניות. תוכנית היא כמה ימים שנבחרו יחד ומקבלים שם.</p>
+          <p className="text-sm text-muted-foreground">אין תוכניות. תוכנית היא כמה ימים בלוח, או חזרה לפי ימים בשבוע.</p>
         )}
       </div>
 
       <Dialog open={draft !== null} onOpenChange={(open) => { if (!open) setDraft(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           {draft ? (
             <>
               <DialogHeader>
-                <DialogTitle>{draft.id ? "עריכת שעון" : "שעון חדש"}</DialogTitle>
+                <DialogTitle>{draft.recurring || draft.id ? "עריכת שעון" : "שעון חדש"}</DialogTitle>
                 <DialogDescription>
-                  {prettyDay(draft.day)} {draft.hebrew}
+                  {draft.repeat === "once" ? `${prettyDay(draft.day)} ${draft.hebrew}` : weekdayPhrase(draft.repeat === "daily" ? [0, 1, 2, 3, 4, 5, 6] : draft.weekdays) || "בחרו ימים"}
                 </DialogDescription>
               </DialogHeader>
-              <Label className="flex-col items-stretch gap-1">
-                תאריך
-                <Input dir="ltr" type="date" value={draft.day} onChange={(event) => setDraft({ ...draft, day: event.target.value })} />
-              </Label>
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">חזרה</legend>
+                <div className="flex flex-wrap gap-1">
+                  {(
+                    [
+                      ["once", "פעם אחת"],
+                      ["daily", "כל יום"],
+                      ["weekdays", "ימים בשבוע"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      size="xs"
+                      variant={draft.repeat === value ? "default" : "outline"}
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          repeat: value,
+                          weekdays: value === "daily" ? [0, 1, 2, 3, 4, 5, 6] : draft.weekdays.length ? draft.weekdays : [draft.day ? weekdayOf(draft.day) : 0],
+                        })
+                      }
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                {draft.repeat === "weekdays" ? (
+                  <div className="flex flex-wrap gap-1">
+                    {WEEKDAYS.map((label, index) => {
+                      const selected = draft.weekdays.includes(index);
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          aria-pressed={selected}
+                          className={cn(
+                            "size-8 rounded-full border border-border text-sm",
+                            selected ? "bg-primary text-primary-foreground" : "bg-background",
+                          )}
+                          onClick={() =>
+                            setDraft({
+                              ...draft,
+                              weekdays: selected ? draft.weekdays.filter((day) => day !== index) : [...draft.weekdays, index].sort(),
+                            })
+                          }
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {draft.repeat === "daily" ? (
+                  <p className="text-xs text-muted-foreground">כולל שישי ושבת. בלי הימים האלה בחרו ימים בשבוע וסמנו א עד ה.</p>
+                ) : null}
+              </fieldset>
+              {draft.repeat === "once" ? (
+                <Label className="flex-col items-stretch gap-1">
+                  תאריך
+                  <Input dir="ltr" type="date" value={draft.day} onChange={(event) => setDraft({ ...draft, day: event.target.value })} />
+                </Label>
+              ) : (
+                <Label className="flex-col items-stretch gap-1">
+                  שם התוכנית
+                  <Input
+                    value={draft.name}
+                    maxLength={40}
+                    placeholder="למשל מזגן"
+                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                  />
+                </Label>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <Label className="flex-col items-stretch gap-1">
                   הדלקה
@@ -523,6 +700,7 @@ export function ProgramsBoard() {
                   <p className="text-sm text-muted-foreground">אין שקעים משויכים ללקוח.</p>
                 )}
               </fieldset>
+              {draft.repeat === "once" ? (
               <Label className="flex-col items-stretch gap-1">
                 תוכנית
                 <select
@@ -538,6 +716,7 @@ export function ProgramsBoard() {
                   ))}
                 </select>
               </Label>
+              ) : null}
               <DialogFooter>
                 {draft.id ? (
                   <Button
@@ -545,7 +724,10 @@ export function ProgramsBoard() {
                     variant="destructive"
                     onClick={() => {
                       if (!draft.id || !window.confirm("למחוק את השעון?")) return;
-                      void send({ action: "clock-delete", id: draft.id }, "clock").then((saved) => {
+                      void send(
+                        draft.recurring ? { action: "program-delete", id: draft.id } : { action: "clock-delete", id: draft.id },
+                        "clock",
+                      ).then((saved) => {
                         if (saved) setDraft(null);
                       });
                     }}

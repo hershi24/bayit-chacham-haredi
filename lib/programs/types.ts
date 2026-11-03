@@ -10,6 +10,9 @@ export type StoredProgram = {
   startDate: string | null;
   endDate: string | null;
   days: string[];
+  weekdays: number[];
+  onTime: string | null;
+  offTime: string | null;
 };
 
 export type DayClock = {

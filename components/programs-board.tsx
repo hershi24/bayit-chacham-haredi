@@ -392,14 +392,22 @@ export function ProgramsBoard() {
         </Button>
       </div>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => (view === "hours" ? shiftDay(-1) : shiftMonth(-1))}>
+        <div className="flex items-center rounded-[14px] bg-secondary p-1" role="group" aria-label="הזזת התאריך">
+          <button
+            type="button"
+            className="h-11 rounded-[10px] bg-card px-4 text-[15px]"
+            onClick={() => (view === "hours" ? shiftDay(-1) : shiftMonth(-1))}
+          >
             הקודם
-          </Button>
-          <p className="min-w-36 text-center text-[17px] font-semibold">{period}</p>
-          <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => (view === "hours" ? shiftDay(1) : shiftMonth(1))}>
+          </button>
+          <p className="min-w-40 px-3 text-center text-[17px] font-semibold">{period}</p>
+          <button
+            type="button"
+            className="h-11 rounded-[10px] bg-card px-4 text-[15px]"
+            onClick={() => (view === "hours" ? shiftDay(1) : shiftMonth(1))}
+          >
             הבא
-          </Button>
+          </button>
         </div>
         <div className="grid grid-flow-col rounded-[14px] bg-secondary p-1" role="tablist" aria-label="תצוגת הלוח">
           {views.map((item) => {

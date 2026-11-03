@@ -48,7 +48,7 @@ export type MenuDecision =
   | PhoneClockPlan;
 
 const DIGIT_WORD = ["", "אחד", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע"];
-const TOGGLE = "להחלפת המצב הקש אחד, לטיימר הקש שלוש, לשעון הקש ארבע, לתוכניות הקש חמש";
+const REST = "לטיימר הקש שלוש, לשעון הקש ארבע, לתוכניות הקש חמש";
 
 export function decideMenu(devices: MenuDevice[], values: MenuValues): MenuDecision {
   const listed = devices.slice(0, 9);
@@ -87,10 +87,15 @@ function deviceList(devices: MenuDevice[]): MenuDecision {
 function deviceMenu(device: MenuDevice): MenuRead {
   const name = label(device);
   const offline = device.connectivity === "OFFLINE" ? `${name} אינו מחובר כעת, ` : "";
-  const state = device.relayOn === true ? "פועל כעת" : device.relayOn === false ? "כבוי כעת" : "מצבו אינו ידוע";
+  const power =
+    device.relayOn === true
+      ? "פועל כעת, לכיבוי הקש אחד"
+      : device.relayOn === false
+        ? "כבוי כעת, להפעלה הקש אחד"
+        : "מצבו אינו ידוע, להפעלה הקש אחד";
   return {
     type: "read",
-    message: `${offline}${name} ${state}, ${TOGGLE}`,
+    message: `${offline}${name} ${power}, ${REST}`,
     field: "pikud_action",
     min: 1,
     max: 1,

@@ -47,7 +47,6 @@ export function SocketCard({
 }) {
   const powered = device.relayOn === true;
   const offline = device.connectivity === "OFFLINE";
-  const unknown = device.relayOn === null;
   const link = device.connectivity === "ONLINE" ? "מחובר" : offline ? "מנותק" : "אין קשר";
   const relayLabel = powered ? "פועל" : device.relayOn === false ? "כבוי" : "לא ידוע";
   const iconKey = isDeviceIcon(device.icon) ? device.icon : suggestIcon(device.name);
@@ -103,7 +102,7 @@ export function SocketCard({
   }
 
   return (
-    <article className="flex h-full flex-col rounded-2xl border border-border bg-card p-5 shadow-sm">
+    <article className="flex h-full flex-col rounded-[22px] bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <Button
@@ -119,7 +118,7 @@ export function SocketCard({
             <Icon className="size-5" />
           </Button>
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold tracking-tight">{device.name}</h2>
+            <h2 className="truncate text-[17px] font-semibold leading-[22px]">{device.name}</h2>
             {showTenant ? <p className="mt-0.5 truncate text-sm text-muted-foreground">{device.tenantName}</p> : null}
             <p className="mt-1 font-mono text-xs text-muted-foreground" dir="ltr">
               {device.deviceId}
@@ -160,8 +159,8 @@ export function SocketCard({
         <Button
           type="button"
           size="lg"
-          variant={powered ? "default" : "outline"}
-          className={`h-11 ${powered ? "bg-online text-white hover:bg-online/90" : ""}`}
+          variant="outline"
+          className={`h-11 rounded-xl ${powered ? "border-transparent bg-online text-white hover:bg-online/90" : ""}`}
           aria-pressed={powered}
           disabled={busy !== null}
           onClick={() => onCommand("ON")}
@@ -172,8 +171,8 @@ export function SocketCard({
         <Button
           type="button"
           size="lg"
-          variant={!powered && !unknown ? "default" : "outline"}
-          className="h-11"
+          variant="outline"
+          className={`h-11 rounded-xl ${device.relayOn === false ? "border-transparent bg-foreground text-background hover:bg-foreground/90" : ""}`}
           aria-pressed={device.relayOn === false}
           disabled={busy !== null}
           onClick={() => onCommand("OFF")}

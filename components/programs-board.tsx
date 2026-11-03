@@ -504,7 +504,7 @@ export function ProgramsBoard() {
                 <button
                   type="button"
                   aria-label={`הוספת שעון ב-${day.date}`}
-                  className="mt-auto size-6 self-start rounded-full border border-border bg-background text-sm leading-none hover:bg-muted"
+                  className="mt-auto size-8 self-start rounded-full border border-border bg-background text-sm leading-none hover:bg-muted"
                   onClick={(event) => {
                     event.stopPropagation();
                     openNew(day);

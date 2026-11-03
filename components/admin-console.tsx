@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Plus, Search, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { CallerNumbers } from "@/components/caller-numbers";
 import { Button } from "@/components/ui/button";
@@ -106,6 +107,21 @@ function socketLabel(user: UserView | null) {
   return `כניסה ל-${user.deviceIds.length} שקעים`;
 }
 
+type KindFilter = "all" | "customers" | "admins";
+type SocketFilter = "all" | "with" | "without" | "frozen";
+type PresenceFilter = "all" | "with" | "without";
+type SortKey = "name" | "sockets" | "phones";
+
+type DirectoryRow =
+  | { kind: "customer"; tenant: TenantView; people: UserView[]; sockets: DeviceView[] }
+  | { kind: "admin"; user: UserView };
+
+const KIND_ITEMS = { all: "הכל", customers: "לקוחות", admins: "מנהלים" };
+const SOCKET_ITEMS = { all: "כל השקעים", with: "יש שקעים", without: "בלי שקעים", frozen: "יש שקע מוקפא" };
+const PHONE_ITEMS = { all: "כל החיוג", with: "יש מספר", without: "בלי מספר" };
+const LOGIN_ITEMS = { all: "כל הכניסות", with: "יש כניסה לאתר", without: "בלי כניסה לאתר" };
+const SORT_ITEMS = { name: "לפי שם", sockets: "לפי מספר שקעים", phones: "לפי מספר טלפונים" };
+
 function CustomerPanel({
   actorId,
   tenants,
@@ -119,40 +135,31 @@ function CustomerPanel({
   devices: DeviceView[];
   onChange: () => Promise<void>;
 }) {
-  const [name, setName] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
-  const [role, setRole] = useState("operator");
+  const [query, setQuery] = useState("");
+  const [advanced, setAdvanced] = useState(false);
+  const [kind, setKind] = useState<KindFilter>("all");
+  const [socketFilter, setSocketFilter] = useState<SocketFilter>("all");
+  const [phoneFilter, setPhoneFilter] = useState<PresenceFilter>("all");
+  const [loginFilter, setLoginFilter] = useState<PresenceFilter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<{ tenantId: string | null; userId: string | null } | null>(null);
   const admins = users.filter((user) => user.role === "admin");
   const editUser = users.find((user) => user.id === editing?.userId) ?? null;
   const editTenant =
     tenants.find((tenant) => tenant.id === (editing?.tenantId ?? editUser?.tenantId)) ?? null;
+  const rows = directoryRows(tenants, users, devices, admins)
+    .filter((row) => matchesDirectory(row, { query, kind, socketFilter, phoneFilter, loginFilter }))
+    .toSorted((left, right) => compareRows(left, right, sortKey));
+  const activeFilters = Number(kind !== "all") + Number(socketFilter !== "all") + Number(phoneFilter !== "all") + Number(loginFilter !== "all") + Number(sortKey !== "name");
 
-  async function create(event: React.FormEvent) {
-    event.preventDefault();
-    try {
-      if (role === "admin") {
-        await api("/api/admin/users", {
-          method: "POST",
-          body: JSON.stringify({ name, username, password, role: "admin", tenantId: null }),
-        });
-      } else {
-        await api("/api/admin/tenants", {
-          method: "POST",
-          body: JSON.stringify({ name, username, password, phone }),
-        });
-      }
-      setName("");
-      setUsername("");
-      setPassword("");
-      setPhone("");
-      toast.success(role === "admin" ? "המנהל נוסף" : "הלקוח נוסף");
-      await onChange();
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "שמירה נכשלה");
-    }
+  function clearFilters() {
+    setKind("all");
+    setSocketFilter("all");
+    setPhoneFilter("all");
+    setLoginFilter("all");
+    setSortKey("name");
+    setQuery("");
   }
 
   async function removeTenant(tenant: TenantView) {
@@ -183,123 +190,94 @@ function CustomerPanel({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
-      <Card>
-        <CardHeader>
-          <CardTitle>לקוח חדש</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-3" onSubmit={(event) => void create(event)}>
-            <div className="grid gap-2">
-              <Label htmlFor="customer-name">שם</Label>
-              <Input id="customer-name" value={name} onChange={(event) => setName(event.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="customer-username">שם משתמש</Label>
-              <Input id="customer-username" dir="ltr" className="text-left" value={username} onChange={(event) => setUsername(event.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="customer-password">סיסמה</Label>
-              <Input id="customer-password" dir="ltr" className="text-left" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
-            </div>
-            <div className="grid gap-2">
-              <Label>הרשאה</Label>
-              <Select value={role} onValueChange={(value) => setRole(value ?? "operator")} items={{ operator: "לקוח", admin: "מנהל" }}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="operator">לקוח</SelectItem>
-                  <SelectItem value="admin">מנהל</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {role === "operator" ? (
-              <div className="grid gap-2">
-                <Label htmlFor="customer-phone">טלפון לחיוג</Label>
-                <Input id="customer-phone" dir="ltr" className="text-left" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="035551001" />
-              </div>
-            ) : null}
-            <Button type="submit">הוספה</Button>
-          </form>
-        </CardContent>
-      </Card>
-      <div className="grid gap-3">
-        {tenants.map((tenant) => {
-          const people = users.filter((user) => user.tenantId === tenant.id);
-          const primary = people[0] ?? null;
-          return (
-            <div key={tenant.id} className="grid gap-2 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-medium">{tenant.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {primary ? (
-                      <>
-                        <span dir="ltr" className="font-mono">{primary.username}</span>
-                        {" · "}
-                        {socketLabel(primary)}
-                      </>
-                    ) : (
-                      "אין כניסה לאתר"
-                    )}
-                  </p>
-                  {tenant.phones.length ? (
-                    <p dir="ltr" className="truncate text-left font-mono text-sm text-muted-foreground">
-                      {tenant.phones.map((item) => item.phone).join(" · ")}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">אין מספר לחיוג</p>
-                  )}
-                  <CustomerSocketsLine devices={devices.filter((device) => device.tenantId === tenant.id)} />
-                </div>
-                <span className="flex shrink-0 gap-1">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setEditing({ tenantId: tenant.id, userId: primary?.id ?? null })}>
-                    עריכה
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => void removeTenant(tenant)}>
-                    מחיקה
-                  </Button>
-                </span>
-              </div>
-              {people.slice(1).map((user) => (
-                <div key={user.id} className="flex items-center justify-between gap-3 text-sm">
-                  <span>
-                    <span dir="ltr" className="font-mono">{user.username}</span>
-                    {" · "}
-                    {socketLabel(user)}
-                  </span>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setEditing({ tenantId: tenant.id, userId: user.id })}>
-                    עריכה
-                  </Button>
-                </div>
-              ))}
-            </div>
-          );
-        })}
-        <div className="grid gap-2">
-          <p className="text-sm font-medium">מנהלים</p>
-          {admins.map((user) => (
-            <div key={user.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-              <div>
-                <p className="font-medium">{user.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  <span dir="ltr" className="font-mono">{user.username}</span>
-                  {" · מנהל"}
-                </p>
-              </div>
-              <span className="flex gap-1">
-                <Button type="button" variant="outline" size="sm" onClick={() => setEditing({ tenantId: null, userId: user.id })}>
-                  עריכה
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void removeAdmin(user)}>
-                  מחיקה
-                </Button>
-              </span>
-            </div>
-          ))}
+    <div className="grid gap-3">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h3 className="text-[22px] leading-7 font-semibold">לקוחות</h3>
+          <p className="text-sm text-muted-foreground">
+            {rows.length === tenants.length + admins.length
+              ? `${hebrewCount(tenants.length, "לקוח אחד", "לקוחות")} · ${hebrewCount(admins.length, "מנהל אחד", "מנהלים")}`
+              : `מציג ${rows.length} מתוך ${tenants.length + admins.length}`}
+          </p>
         </div>
+        <Button type="button" className="size-11 rounded-full" aria-label="לקוח חדש" onClick={() => setCreating(true)}>
+          <Plus className="size-5" />
+        </Button>
       </div>
+      <div className="flex gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="customer-search"
+            className="h-11 pr-9"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="שם, משתמש, טלפון או שקע"
+            aria-label="חיפוש לקוחות"
+          />
+        </div>
+        <Button type="button" variant={advanced ? "secondary" : "outline"} className="h-11" aria-expanded={advanced} onClick={() => setAdvanced((open) => !open)}>
+          <SlidersHorizontal />
+          חיפוש
+          {activeFilters ? <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">{activeFilters}</span> : null}
+        </Button>
+      </div>
+      {advanced ? (
+        <div className="grid gap-3 rounded-[22px] border border-border bg-card p-3 sm:grid-cols-2 lg:grid-cols-4">
+          <FilterSelect label="סוג" value={kind} items={KIND_ITEMS} onChange={(value) => setKind(value as KindFilter)} />
+          <FilterSelect label="שקעים" value={socketFilter} items={SOCKET_ITEMS} onChange={(value) => setSocketFilter(value as SocketFilter)} />
+          <FilterSelect label="חיוג" value={phoneFilter} items={PHONE_ITEMS} onChange={(value) => setPhoneFilter(value as PresenceFilter)} />
+          <FilterSelect label="כניסה לאתר" value={loginFilter} items={LOGIN_ITEMS} onChange={(value) => setLoginFilter(value as PresenceFilter)} />
+          <FilterSelect label="מיון" value={sortKey} items={SORT_ITEMS} onChange={(value) => setSortKey(value as SortKey)} />
+          {activeFilters || query ? (
+            <div className="flex items-end">
+              <Button type="button" variant="ghost" className="h-11" onClick={clearFilters}>
+                ניקוי חיפוש
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {rows.length ? (
+        <ul className="overflow-hidden rounded-[22px] border border-border bg-card">
+          <li className="hidden grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1.25fr)_auto] gap-3 border-b border-border px-4 py-2 text-xs text-muted-foreground md:grid">
+            <span>לקוח</span>
+            <span>כניסה וחיוג</span>
+            <span>שקעים</span>
+            <span className="sr-only">פעולות</span>
+          </li>
+          {rows.map((row) =>
+            row.kind === "customer" ? (
+              <CustomerDirectoryRow
+                key={row.tenant.id}
+                tenant={row.tenant}
+                people={row.people}
+                sockets={row.sockets}
+                onEdit={(userId) => setEditing({ tenantId: row.tenant.id, userId })}
+                onRemove={() => void removeTenant(row.tenant)}
+              />
+            ) : (
+              <li key={row.user.id} className="grid items-center gap-3 border-b border-border px-4 py-3 last:border-0 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1.25fr)_auto]">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{row.user.name}</p>
+                  <p className="text-sm text-muted-foreground">מנהל</p>
+                </div>
+                <p dir="ltr" className="truncate text-left font-mono text-sm text-muted-foreground">{row.user.username}</p>
+                <p className="text-sm text-muted-foreground">בלי שקעים</p>
+                <RowActions onEdit={() => setEditing({ tenantId: null, userId: row.user.id })} onRemove={() => void removeAdmin(row.user)} />
+              </li>
+            ),
+          )}
+        </ul>
+      ) : (
+        <div className="rounded-[22px] border border-border bg-card px-4 py-10 text-center">
+          <p className="font-medium">אין תוצאות לחיפוש הזה</p>
+          <Button type="button" variant="outline" className="mt-3 h-11" onClick={clearFilters}>
+            הצגת כל הרשימה
+          </Button>
+        </div>
+      )}
+      <CreateCustomerDialog open={creating} onClose={() => setCreating(false)} onCreated={onChange} />
       <CustomerEditor
         actorId={actorId}
         user={editUser}
@@ -310,6 +288,254 @@ function CustomerPanel({
         onSaved={onChange}
       />
     </div>
+  );
+}
+
+function hebrewCount(count: number, singular: string, plural: string) {
+  return count === 1 ? singular : `${count} ${plural}`;
+}
+
+function directoryRows(tenants: TenantView[], users: UserView[], devices: DeviceView[], admins: UserView[]): DirectoryRow[] {
+  return [
+    ...tenants.map((tenant) => ({
+      kind: "customer" as const,
+      tenant,
+      people: users.filter((user) => user.tenantId === tenant.id),
+      sockets: devices.filter((device) => device.tenantId === tenant.id),
+    })),
+    ...admins.map((user) => ({ kind: "admin" as const, user })),
+  ];
+}
+
+function matchesDirectory(
+  row: DirectoryRow,
+  filters: { query: string; kind: KindFilter; socketFilter: SocketFilter; phoneFilter: PresenceFilter; loginFilter: PresenceFilter },
+) {
+  if (filters.kind === "customers" && row.kind !== "customer") return false;
+  if (filters.kind === "admins" && row.kind !== "admin") return false;
+  const sockets = row.kind === "customer" ? row.sockets : [];
+  const phones = row.kind === "customer" ? row.tenant.phones : [];
+  const people = row.kind === "customer" ? row.people : [row.user];
+  if (filters.socketFilter === "with" && sockets.length === 0) return false;
+  if (filters.socketFilter === "without" && sockets.length > 0) return false;
+  if (filters.socketFilter === "frozen" && !sockets.some((device) => device.frozen)) return false;
+  if (filters.phoneFilter === "with" && phones.length === 0) return false;
+  if (filters.phoneFilter === "without" && phones.length > 0) return false;
+  if (filters.loginFilter === "with" && people.length === 0) return false;
+  if (filters.loginFilter === "without" && people.length > 0) return false;
+  const needle = filters.query.trim().toLowerCase();
+  if (!needle) return true;
+  const text = [
+    row.kind === "customer" ? row.tenant.name : row.user.name,
+    ...people.map((user) => `${user.username} ${user.name}`),
+    ...phones.map((item) => item.phone),
+    ...sockets.map((device) => `${device.name} ${device.deviceId}`),
+  ].join(" ").toLowerCase();
+  const digits = needle.replace(/\D/g, "");
+  return text.includes(needle) || (digits.length >= 3 && text.replace(/\D/g, "").includes(digits));
+}
+
+function compareRows(left: DirectoryRow, right: DirectoryRow, sortKey: SortKey) {
+  const name = (row: DirectoryRow) => (row.kind === "customer" ? row.tenant.name : row.user.name);
+  const sockets = (row: DirectoryRow) => (row.kind === "customer" ? row.sockets.length : 0);
+  const phones = (row: DirectoryRow) => (row.kind === "customer" ? row.tenant.phones.length : 0);
+  if (sortKey === "sockets" && sockets(left) !== sockets(right)) return sockets(right) - sockets(left);
+  if (sortKey === "phones" && phones(left) !== phones(right)) return phones(right) - phones(left);
+  return name(left).localeCompare(name(right), "he");
+}
+
+function FilterSelect({
+  label,
+  value,
+  items,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  items: Record<string, string>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="grid gap-1 text-sm">
+      {label}
+      <Select value={value} onValueChange={(next) => onChange(next ?? value)} items={items}>
+        <SelectTrigger className="h-11 w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {Object.entries(items).map(([itemValue, itemLabel]) => (
+            <SelectItem key={itemValue} value={itemValue}>
+              {itemLabel}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
+  );
+}
+
+function RowActions({ onEdit, onRemove }: { onEdit: () => void; onRemove: () => void }) {
+  return (
+    <span className="flex shrink-0 gap-1">
+      <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+        עריכה
+      </Button>
+      <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
+        מחיקה
+      </Button>
+    </span>
+  );
+}
+
+function CustomerDirectoryRow({
+  tenant,
+  people,
+  sockets,
+  onEdit,
+  onRemove,
+}: {
+  tenant: TenantView;
+  people: UserView[];
+  sockets: DeviceView[];
+  onEdit: (userId: string | null) => void;
+  onRemove: () => void;
+}) {
+  const primary = people[0] ?? null;
+  const frozen = sockets.filter((device) => device.frozen).length;
+  return (
+    <li className="grid items-start gap-3 border-b border-border px-4 py-3 last:border-0 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1.25fr)_auto] md:items-center">
+      <div className="min-w-0">
+        <p className="truncate font-medium">{tenant.name}</p>
+        <p className="text-sm text-muted-foreground">{primary ? socketLabel(primary) : "אין כניסה לאתר"}</p>
+      </div>
+      <div className="min-w-0 text-sm">
+        {primary ? <p dir="ltr" className="truncate text-left font-mono text-muted-foreground">{primary.username}</p> : <p className="text-muted-foreground">אין כניסה</p>}
+        {tenant.phones.length ? (
+          <p dir="ltr" className="truncate text-left font-mono text-muted-foreground">{tenant.phones.map((item) => item.phone).join(" · ")}</p>
+        ) : (
+          <p className="text-muted-foreground">אין מספר לחיוג</p>
+        )}
+        {people.slice(1).map((user) => (
+          <p key={user.id} className="mt-1 flex items-center justify-between gap-2">
+            <span dir="ltr" className="truncate font-mono text-muted-foreground">{user.username}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => onEdit(user.id)}>
+              עריכה
+            </Button>
+          </p>
+        ))}
+      </div>
+      <div className="min-w-0">
+        {sockets.length ? (
+          <ul className="grid gap-0.5 text-sm">
+            {sockets.map((device) => (
+              <li key={device.deviceId} className="truncate">
+                {device.name}
+                {device.frozen ? <span className="text-muted-foreground"> · מוקפא</span> : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">אין שקעים</p>
+        )}
+        {frozen ? <p className="mt-1 text-xs text-muted-foreground">{frozen === 1 ? "שקע אחד מוקפא" : `${frozen} שקעים מוקפאים`}</p> : null}
+      </div>
+      <RowActions onEdit={() => onEdit(primary?.id ?? null)} onRemove={onRemove} />
+    </li>
+  );
+}
+
+function CreateCustomerDialog({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => Promise<void>;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        {open ? <CreateCustomerForm key="new-customer" onClose={onClose} onCreated={onCreated} /> : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateCustomerForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [role, setRole] = useState("operator");
+  const [pending, setPending] = useState(false);
+
+  async function create(event: React.FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    try {
+      if (role === "admin") {
+        await api("/api/admin/users", {
+          method: "POST",
+          body: JSON.stringify({ name, username, password, role: "admin", tenantId: null }),
+        });
+      } else {
+        await api("/api/admin/tenants", {
+          method: "POST",
+          body: JSON.stringify({ name, username, password, phone }),
+        });
+      }
+      toast.success(role === "admin" ? "המנהל נוסף" : "הלקוח נוסף");
+      await onCreated();
+      onClose();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "שמירה נכשלה");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form className="grid gap-3" onSubmit={(event) => void create(event)}>
+      <DialogHeader>
+        <DialogTitle>{role === "admin" ? "מנהל חדש" : "לקוח חדש"}</DialogTitle>
+        <DialogDescription>שם, כניסה לאתר, ואם זה לקוח גם מספר לחיוג.</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-2">
+        <Label htmlFor="customer-name">שם</Label>
+        <Input id="customer-name" className="h-11" value={name} onChange={(event) => setName(event.target.value)} />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="customer-username">שם משתמש</Label>
+        <Input id="customer-username" className="h-11 text-left" dir="ltr" value={username} onChange={(event) => setUsername(event.target.value)} />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="customer-password">סיסמה</Label>
+        <Input id="customer-password" className="h-11 text-left" dir="ltr" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+      </div>
+      <div className="grid gap-2">
+        <Label>הרשאה</Label>
+        <Select value={role} onValueChange={(value) => setRole(value ?? "operator")} items={{ operator: "לקוח", admin: "מנהל" }}>
+          <SelectTrigger className="h-11 w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="operator">לקוח</SelectItem>
+            <SelectItem value="admin">מנהל</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {role === "operator" ? (
+        <div className="grid gap-2">
+          <Label htmlFor="customer-phone">טלפון לחיוג</Label>
+          <Input id="customer-phone" className="h-11 text-left" dir="ltr" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="0520000000" />
+        </div>
+      ) : null}
+      <DialogFooter>
+        <Button type="button" variant="outline" className="h-11" onClick={onClose}>ביטול</Button>
+        <Button type="submit" className="h-11" disabled={pending}>{pending ? "שומר…" : "הוספה"}</Button>
+      </DialogFooter>
+    </form>
   );
 }
 
@@ -613,22 +839,6 @@ function CustomerEditorForm({
         <Button type="submit" disabled={pending}>{pending ? "שומר…" : "שמירה"}</Button>
       </DialogFooter>
     </form>
-  );
-}
-
-function CustomerSocketsLine({ devices }: { devices: DeviceView[] }) {
-  if (!devices.length) return <p className="text-sm text-muted-foreground">אין שקעים</p>;
-  return (
-    <ul className="mt-1 grid gap-0.5 text-sm text-muted-foreground">
-      {devices.map((device) => (
-        <li key={device.deviceId}>
-          {device.name}
-          {device.frozen ? " (מוקפא)" : ""}
-          {" · "}
-          <span dir="ltr" className="font-mono">{device.deviceId}</span>
-        </li>
-      ))}
-    </ul>
   );
 }
 

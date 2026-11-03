@@ -158,6 +158,7 @@ html[data-theme="dark"] {
   }
   html {
     @apply font-sans;
+    overflow-x: clip;
   }
 }
 

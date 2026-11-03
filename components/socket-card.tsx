@@ -162,11 +162,11 @@ export function SocketCard({
   return (
     <article
       data-lit={lit ? "" : undefined}
-      className={`socket-card flex h-full flex-col rounded-3xl border p-5 transition-colors duration-300 ${
+      className={`socket-card flex h-full min-w-0 flex-col overflow-hidden rounded-3xl border p-4 transition-colors duration-300 sm:p-5 ${
         lit ? "border-online/30" : "border-border/70 bg-card"
       }`}
     >
-      <div className="flex items-start gap-4">
+      <div className="flex min-w-0 items-start gap-3 sm:gap-4">
         <button
           type="button"
           className={`grid size-14 shrink-0 place-items-center rounded-2xl transition-colors duration-300 ${
@@ -195,9 +195,9 @@ export function SocketCard({
         </div>
       </div>
 
-      <div className="mt-auto flex items-center justify-between gap-2 pt-4">
-        {next}
-        {timer}
+      <div className="mt-auto flex min-w-0 items-center justify-between gap-2 pt-4">
+        <div className="min-w-0 flex-1">{next}</div>
+        <div className="shrink-0">{timer}</div>
       </div>
       {device.lastError ? <p className="mt-2 text-[13px] text-destructive">{device.lastError}</p> : null}
       {frozen ? <p className="mt-2 text-[13px] text-muted-foreground">ההתקן מוקפא. פנו למנהל.</p> : null}

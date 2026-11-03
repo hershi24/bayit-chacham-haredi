@@ -48,11 +48,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         : links;
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-dvh min-w-0 flex-col overflow-x-clip">
       <header className="hig-bar sticky top-0 z-20 border-b border-border/70">
-        <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-6 px-4 md:px-8">
+        <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-3 px-4 md:gap-6 md:px-8">
           <Link href="/" aria-label="Kosher Smart Home" className="shrink-0">
-            <BrandLogo className="h-8 w-auto dark:rounded-md dark:bg-white dark:px-1" />
+            <BrandLogo className="h-8 w-auto max-w-[8.75rem] dark:rounded-md dark:bg-white dark:px-1" />
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
             {items.map((item) => {
@@ -80,26 +80,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-6 pb-28 md:px-8 md:pt-10 md:pb-14">{children}</main>
-      <nav className="hig-bar fixed inset-x-3 bottom-3 z-30 grid grid-flow-col rounded-[28px] border border-border p-1 md:hidden" style={{ marginBottom: "env(safe-area-inset-bottom)" }}>
-        {items.map((item) => {
-          const active = pathname === item.href;
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className={`flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-[22px] px-1 text-[11px] leading-[13px] ${
-                active ? "bg-secondary font-semibold text-primary" : "text-muted-foreground"
-              }`}
-            >
-              <Icon className="size-5" />
-              {item.short}
-            </Link>
-          );
-        })}
-      </nav>
+      <main className="mx-auto w-full min-w-0 max-w-5xl flex-1 px-4 pt-6 pb-32 md:px-8 md:pt-10 md:pb-14">{children}</main>
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 md:hidden" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+        <nav aria-label="ניווט" className="hig-bar pointer-events-auto grid w-full max-w-md auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden rounded-[28px] border border-border/80 p-1 shadow-[0_10px_32px_rgb(28_28_30/18%)]">
+          {items.map((item) => {
+            const active = pathname === item.href;
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={`flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-[22px] px-1 text-[11px] leading-[13px] ${
+                  active ? "bg-secondary font-semibold text-primary" : "text-muted-foreground"
+                }`}
+              >
+                <Icon className="size-5 shrink-0" />
+                <span className="max-w-full truncate">{item.short}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
     </div>
   );
 }

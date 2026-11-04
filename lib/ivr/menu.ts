@@ -124,8 +124,10 @@ export async function handleMenu(request: Request) {
     repeat: present(input.values.pikud_repeat),
     week: present(input.values.pikud_week),
     date: clockDate(input.values),
+    side: present(input.values.pikud_side),
     on: present(input.values.pikud_on),
     off: present(input.values.pikud_off),
+    more: present(input.values.pikud_more),
     sockets: present(input.values.pikud_sockets),
   });
 

@@ -1,5 +1,6 @@
 import { hebrewLabels, monthBoard, places } from "@/lib/hebrew/calendar";
 import { slotsForWeekday } from "@/lib/programs/slots";
+import { coversDay } from "@/lib/programs/span";
 import { weekdayOf } from "@/lib/programs/weekdays";
 import { getClock, listDayClocks, listPrograms, listTenantDevices } from "@/lib/store";
 
@@ -36,11 +37,19 @@ export async function programsPayload(
       offTime: program.offTime,
       slots: program.slots,
       deviceIds: program.deviceIds,
+      startDate: program.startDate,
+      endDate: program.endDate,
+      skippedDates: program.skippedDates ?? [],
     }))
     .sort((left, right) => left.name.localeCompare(right.name, "he"));
   const repeated = programs.flatMap((program) =>
     days
-      .filter((day) => program.weekdays.includes(weekdayOf(day.date)))
+      .filter(
+        (day) =>
+          program.weekdays.includes(weekdayOf(day.date)) &&
+          coversDay(day.date, program.startDate, program.endDate) &&
+          !(program.skippedDates ?? []).includes(day.date),
+      )
       .flatMap((day) =>
         slotsForWeekday(program.slots, weekdayOf(day.date)).map((slot, index) => ({
           id: `week:${program.id}:${day.date}:${index}`,
@@ -58,7 +67,7 @@ export async function programsPayload(
     tenantId,
     locationId: settings.locationId,
     places: places(),
-    devices: devices.map((device) => ({ deviceId: device.deviceId, name: device.name })),
+    devices: devices.map((device) => ({ deviceId: device.deviceId, name: device.name, icon: device.icon })),
     programs,
     clocks: [
       ...clocks.map((clock) => ({

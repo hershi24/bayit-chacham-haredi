@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AirVent, Droplets, Fan, Heater, Lightbulb, Loader2, Plug, Power, Refrigerator, Timer, type LucideIcon } from "lucide-react";
+import { Loader2, Power, Timer } from "lucide-react";
+import { DeviceGlyph, glyphFor } from "@/components/device-glyph";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -9,16 +10,6 @@ import { DEVICE_ICONS, isDeviceIcon, suggestIcon, type DeviceIconKey } from "@/l
 import "./power-switch.css";
 import { planWhen } from "@/lib/time";
 import type { DeviceView, RelayAction } from "@/lib/types";
-
-const ICONS: Record<DeviceIconKey, LucideIcon> = {
-  socket: Plug,
-  ac: AirVent,
-  fan: Fan,
-  light: Lightbulb,
-  heat: Heater,
-  boiler: Droplets,
-  fridge: Refrigerator,
-};
 
 const PRESETS = [
   { minutes: 15, label: "15 דק׳" },
@@ -52,7 +43,6 @@ export function SocketCard({
   const link = device.connectivity === "ONLINE" ? "מחובר" : offline ? "מנותק" : "אין קשר";
   const relayLabel = frozen ? "מוקפא" : powered ? "פועל" : device.relayOn === false ? "כבוי" : "לא ידוע";
   const iconKey = isDeviceIcon(device.icon) ? device.icon : suggestIcon(device.name);
-  const Icon = ICONS[iconKey];
   const iconLabel = DEVICE_ICONS.find((item) => item.key === iconKey)?.label ?? "שקע";
   const [iconOpen, setIconOpen] = useState(false);
   const [picking, setPicking] = useState<DeviceIconKey | null>(null);
@@ -178,7 +168,7 @@ export function SocketCard({
             setIconOpen(true);
           }}
         >
-          <Icon className="size-7" />
+          <DeviceGlyph name={device.name} icon={iconKey} className="size-7" />
         </button>
         <div className="min-w-0 flex-1 pt-1">
           <h2 className="truncate text-[20px] leading-6 font-semibold">{device.name}</h2>
@@ -232,7 +222,7 @@ export function SocketCard({
           ) : null}
           <div className="grid grid-cols-3 gap-2">
             {DEVICE_ICONS.map((item) => {
-              const ItemIcon = ICONS[item.key];
+              const ItemIcon = glyphFor(item.key);
               const selected = item.key === iconKey;
               return (
                 <Button

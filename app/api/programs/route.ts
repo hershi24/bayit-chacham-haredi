@@ -113,17 +113,24 @@ export function POST(request: Request) {
       await saveClockAction(user, tenantId, body);
     } else if (action === "repeat-save") {
       await saveRepeatAction(user, tenantId, body);
+      await dropLooseClock(tenantId, body);
     } else if (action === "clock-delete") {
       const id = typeof body.id === "string" ? body.id : "";
       if (!id) throw new HttpError(400, "חסר שעון");
       await deleteDayClock(tenantId, id);
     } else if (action === "program-save") {
       await saveProgramAction(user, tenantId, body);
+      await dropLooseClock(tenantId, body);
     } else if (action === "program-toggle") {
       const id = typeof body.id === "string" ? body.id : "";
       const current = (await listPrograms(tenantId)).find((program) => program.id === id && program.programKey.startsWith("days:"));
       if (!current) throw new HttpError(404, "התוכנית לא נמצאה");
       await upsertProgram({ ...current, enabled: !current.enabled });
+    } else if (action === "program-skip") {
+      const id = typeof body.id === "string" ? body.id : "";
+      const current = (await listPrograms(tenantId)).find((program) => program.id === id && program.programKey.startsWith("days:"));
+      if (!current) throw new HttpError(404, "התוכנית לא נמצאה");
+      await upsertProgram({ ...current, skippedDates: skippedList(body.skippedDates) });
     } else if (action === "program-delete") {
       const id = typeof body.id === "string" ? body.id : "";
       const current = (await listPrograms(tenantId)).find((program) => program.id === id && program.programKey.startsWith("days:"));
@@ -183,9 +190,35 @@ async function saveClockAction(user: SessionUser, tenantId: string, body: Record
   });
 }
 
+function optionalDate(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  return dayString(value);
+}
+
+function enabledFlag(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function skippedList(value: unknown) {
+  if (!Array.isArray(value)) throw new HttpError(400, "רשימת התאריכים לא תקינה");
+  const days = [...new Set(value.map((item) => dayString(item)))];
+  if (days.length > 120) throw new HttpError(400, "אפשר להשהות עד 120 תאריכים");
+  return days.sort();
+}
+
+async function dropLooseClock(tenantId: string, body: Record<string, unknown>) {
+  const id = typeof body.replaceClockId === "string" ? body.replaceClockId : "";
+  if (!id) return;
+  const clock = (await listDayClocks(tenantId)).find((item) => item.id === id);
+  if (clock && !clock.programId) await deleteDayClock(tenantId, id);
+}
+
 async function saveRepeatAction(user: SessionUser, tenantId: string, body: Record<string, unknown>) {
-  const name = typeof body.name === "string" ? body.name.trim().slice(0, 40) : "";
+  const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
   if (!name) throw new HttpError(400, "תנו שם לתוכנית");
+  const startDate = optionalDate(body.startDate);
+  const endDate = optionalDate(body.endDate);
+  if (startDate && endDate && endDate < startDate) throw new HttpError(400, "תאריך הסיום מוקדם מתאריך ההתחלה");
   const slots = slotList(body);
   const weekdays = cleanWeekdays([
     ...(Array.isArray(body.weekdays) ? body.weekdays.map((item) => Number(item)) : []),
@@ -206,15 +239,16 @@ async function saveRepeatAction(user: SessionUser, tenantId: string, body: Recor
     tenantId,
     programKey: key,
     name,
-    enabled: current?.enabled ?? true,
+    enabled: enabledFlag(body.enabled, current?.enabled ?? true),
     deviceIds,
-    startDate: current?.startDate ?? null,
-    endDate: current?.endDate ?? null,
-    days: current?.days ?? [],
+    startDate,
+    endDate,
+    days: [],
     weekdays,
     onTime: slots[0].onTime,
     offTime: slots[0].offTime,
     slots,
+    skippedDates: current?.skippedDates ?? [],
   });
   const absorb = Array.isArray(body.absorbIds) ? body.absorbIds.filter((item): item is string => typeof item === "string") : [];
   for (const id of absorb) {
@@ -223,6 +257,10 @@ async function saveRepeatAction(user: SessionUser, tenantId: string, body: Recor
     if (!other || other.days.length || !other.weekdays.length) continue;
     if (!other.weekdays.every((day) => weekdays.includes(day))) continue;
     await deleteProgram(tenantId, other.id);
+  }
+  if (current) {
+    const owned = (await listDayClocks(tenantId)).filter((clock) => clock.programId === current.id);
+    for (const clock of owned) await deleteDayClock(tenantId, clock.id);
   }
 }
 
@@ -277,7 +315,7 @@ function datePlan(body: Record<string, unknown>) {
 }
 
 async function saveProgramAction(user: SessionUser, tenantId: string, body: Record<string, unknown>) {
-  const name = typeof body.name === "string" ? body.name.trim().slice(0, 40) : "";
+  const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
   if (!name) throw new HttpError(400, "תנו שם לתוכנית");
   const plan = datePlan(body);
   const allowed = await tenantDeviceIds(user, tenantId);
@@ -287,7 +325,6 @@ async function saveProgramAction(user: SessionUser, tenantId: string, body: Reco
   const requested = typeof body.id === "string" ? body.id : "";
   const current = requested ? programs.find((program) => program.id === requested && program.programKey.startsWith("days:")) : undefined;
   if (requested && !current) throw new HttpError(404, "התוכנית לא נמצאה");
-  if (current?.weekdays.length) throw new HttpError(400, "תוכנית לפי ימים בשבוע נערכת בנפרד");
   const owned = current ? (await listDayClocks(tenantId)).filter((clock) => clock.programId === current.id) : [];
   const deviceIds = mergeVisibleDevices(
     chosen,
@@ -315,7 +352,7 @@ async function saveProgramAction(user: SessionUser, tenantId: string, body: Reco
         tenantId,
         programKey: key,
         name,
-        enabled: current?.enabled ?? true,
+        enabled: enabledFlag(body.enabled, current?.enabled ?? true),
         deviceIds,
         startDate: null,
         endDate: null,
@@ -324,6 +361,7 @@ async function saveProgramAction(user: SessionUser, tenantId: string, body: Reco
         onTime: null,
         offTime: null,
         slots: [],
+        skippedDates: current?.skippedDates ?? [],
       },
       days,
     ),

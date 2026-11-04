@@ -1001,6 +1001,7 @@ function mapProgram(row: {
   on_time?: string | null;
   off_time?: string | null;
   slots?: string | null;
+  skipped_dates?: string | null;
 }): StoredProgram {
   return {
     id: String(row.id),
@@ -1016,6 +1017,7 @@ function mapProgram(row: {
     onTime: row.on_time ?? null,
     offTime: row.off_time ?? null,
     slots: parseSlots(row.slots, row.on_time ?? null, row.off_time ?? null),
+    skippedDates: jsonList(row.skipped_dates).filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)),
   };
 }
 
@@ -1054,9 +1056,21 @@ export async function upsertProgram(program: StoredProgram) {
     created_at: new Date().toISOString(),
   };
   const slots = program.slots ?? [];
+  const skipped = program.skippedDates ?? [];
   let result = await client()
     .from("programs")
-    .upsert({ ...row, slots: JSON.stringify(slots) }, { onConflict: "tenant_id,program_key" });
+    .upsert({ ...row, slots: JSON.stringify(slots), skipped_dates: JSON.stringify(skipped) }, { onConflict: "tenant_id,program_key" });
+  if (result.error && columnMissing(result.error, "skipped_dates")) {
+    if (skipped.length) {
+      throw new HttpError(
+        500,
+        "עמודת ההשהיה חסרה. הריצו: alter table programs add column if not exists skipped_dates text not null default '[]';",
+      );
+    }
+    result = await client()
+      .from("programs")
+      .upsert({ ...row, slots: JSON.stringify(slots) }, { onConflict: "tenant_id,program_key" });
+  }
   if (result.error && slotsColumnMissing(result.error)) {
     if (slots.length > 1) {
       throw new HttpError(
@@ -1069,8 +1083,12 @@ export async function upsertProgram(program: StoredProgram) {
   if (result.error) fail(result.error, "שמירת התוכנית נכשלה. הריצו את supabase/schema.sql");
 }
 
+function columnMissing(error: DbError, name: string) {
+  return error.code === "42703" || error.code === "PGRST204" || new RegExp(name, "i").test(error.message);
+}
+
 function slotsColumnMissing(error: DbError) {
-  return error.code === "42703" || error.code === "PGRST204" || /slots/i.test(error.message);
+  return columnMissing(error, "slots");
 }
 
 export async function deleteProgram(tenantId: string, id: string) {

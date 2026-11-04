@@ -1,4 +1,5 @@
 import { slotsForWeekday } from "@/lib/programs/slots";
+import { coversDay } from "@/lib/programs/span";
 import type { DayClock, StoredProgram } from "@/lib/programs/types";
 import { weekdayOf } from "@/lib/programs/weekdays";
 import {
@@ -28,7 +29,10 @@ export async function syncTenantPrograms(tenantId: string, now = new Date()) {
     byProgram.set(clock.programId, bucket);
   }
   for (const program of programs) {
-    const owned = program.programKey.startsWith("days:") ? (byProgram.get(program.id) ?? []) : [];
+    const skipped = new Set(program.skippedDates ?? []);
+    const owned = program.programKey.startsWith("days:")
+      ? (byProgram.get(program.id) ?? []).filter((clock) => !skipped.has(clock.day))
+      : [];
     const runs =
       program.enabled && program.programKey.startsWith("days:")
         ? [...runsFor(program.name, owned, allowed, now), ...runsForWeekdays(program, allowed, now)]
@@ -61,7 +65,11 @@ function runsForWeekdays(program: StoredProgram, allowed: Set<string>, now: Date
   const clocks: DayClock[] = [];
   let day = israelDate(now);
   for (let index = 0; index < 84; index += 1) {
-    if (program.weekdays.includes(weekdayOf(day))) {
+    if (
+      program.weekdays.includes(weekdayOf(day)) &&
+      coversDay(day, program.startDate, program.endDate) &&
+      !(program.skippedDates ?? []).includes(day)
+    ) {
       for (const slot of slotsForWeekday(program.slots, weekdayOf(day))) {
         clocks.push({
           id: program.id,

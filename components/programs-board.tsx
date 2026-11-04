@@ -1,118 +1,63 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
+import { DeviceGlyph } from "@/components/device-glyph";
+import { PlanDialog, type PlannerClock, type PlannerDraft, type PlannerProgram } from "@/components/plan-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/lib/client-api";
 import type { MonthDay } from "@/lib/hebrew/calendar";
-import { maxDayClocks, maxProgramDays, maxSlots } from "@/lib/programs/slots";
-import { dayBars, laneBars } from "@/lib/programs/timeline";
+import { occurrencesOn, type Occurrence } from "@/lib/programs/occurrences";
 import { weekdayOf, weekdayPhrase } from "@/lib/programs/weekdays";
 import { israelDate, shiftDate } from "@/lib/time";
 import type { TenantView } from "@/lib/types";
 import { cn } from "cn";
 
-type Clock = {
-  id: string;
-  day: string;
-  hebrew: string;
+type Clock = PlannerClock & { hebrew: string };
+type Program = PlannerProgram & {
   onTime: string | null;
   offTime: string | null;
-  deviceIds: string[];
-  programId: string | null;
-  recurring: boolean;
 };
-
-type Program = {
-  id: string;
-  name: string;
-  enabled: boolean;
-  days: string[];
-  weekdays: number[];
-  onTime: string | null;
-  offTime: string | null;
-  slots: Slot[];
-  deviceIds: string[];
-};
-
-type Slot = { onTime: string | null; offTime: string | null; weekdays?: number[] };
-
-type DraftSlot = { key: number; onTime: string; offTime: string; weekday: number | null };
 
 type Board = {
   tenantId: string;
   locationId: string;
   places: Array<{ id: string; name: string }>;
-  devices: Array<{ deviceId: string; name: string }>;
+  devices: Array<{ deviceId: string; name: string; icon: string | null }>;
   programs: Program[];
   clocks: Clock[];
   month: { year: number; month: number; days: MonthDay[] };
 };
 
 type Picker = { tenants: TenantView[]; programs: null };
+type View = "month" | "list" | "week" | "day";
 
-type Draft = {
-  id: string | null;
-  day: string;
-  hebrew: string;
-  slots: DraftSlot[];
-  deviceIds: string[];
-  programId: string;
-  repeat: "once" | "daily" | "weekdays";
-  weekdays: number[];
-  name: string;
-  recurring: boolean;
-  split: boolean;
-  absorbIds: string[];
-};
-
-type PlanClock = { key: number; id: string | null; onTime: string; offTime: string };
-type PlanDay = { key: number; date: string; clocks: PlanClock[] };
-type Plan = { id: string | null; name: string; deviceIds: string[]; days: PlanDay[] };
-
-const WEEKDAYS = ["א", "ב", "ג", "ד", "ה", "ו", "שבת"];
-
-function dayWash(weekday: number) {
-  if (weekday === 5) return "bg-[#fbf6ee] dark:bg-[#2a261f]";
-  if (weekday === 6) return "bg-[#f2f5fb] dark:bg-[#1a2330]";
-  return "bg-[#fbfbfc] dark:bg-[#1c1c1e]";
-}
-const WEEKDAY_CHIPS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "שבת"];
-const DAY_NAMES = ["יום ראשון", "יום שני", "יום שלישי", "יום רביעי", "יום חמישי", "יום שישי", "שבת"];
-const BAR_COLORS = ["#d97706", "#0284c7", "#059669", "#7c3aed", "#e11d48", "#0f766e"];
-const fieldClass =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+const WEEKDAYS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "שבת"];
 
 export function ProgramsBoard() {
   const [board, setBoard] = useState<Board | null>(null);
   const [tenants, setTenants] = useState<TenantView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
-  const [view, setView] = useState<"month" | "list" | "hours">("month");
-  const [cursor, setCursor] = useState("");
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [view, setView] = useState<View>("month");
+  const [cursor, setCursor] = useState(() => israelDate());
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [draft, setDraft] = useState<PlannerDraft | null>(null);
+  const [pauseId, setPauseId] = useState<string | null>(null);
+  const [pauseDate, setPauseDate] = useState("");
+  const [token, setToken] = useState(0);
   const [formError, setFormError] = useState<string | null>(null);
-  const [plan, setPlan] = useState<Plan | null>(null);
 
   const load = useCallback(async (tenantId: string | null, year?: number, month?: number) => {
     const params = new URLSearchParams();
     if (tenantId) params.set("tenantId", tenantId);
     if (year) params.set("year", String(year));
     if (month) params.set("month", String(month));
-    const query = params.toString();
+    const queryString = params.toString();
     try {
-      const payload = await api<Board | Picker>(`/api/programs${query ? `?${query}` : ""}`);
+      const payload = await api<Board | Picker>(`/api/programs${queryString ? `?${queryString}` : ""}`);
       if (!payload.programs) {
         setTenants(payload.tenants);
         setBoard(null);
@@ -130,19 +75,10 @@ export function ProgramsBoard() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const clocksByDay = useMemo(() => {
-    const grouped = new Map<string, Clock[]>();
-    for (const clock of board?.clocks ?? []) {
-      const list = grouped.get(clock.day) ?? [];
-      list.push(clock);
-      grouped.set(clock.day, list);
-    }
-    return grouped;
-  }, [board]);
-
   async function send(body: Record<string, unknown>, key: string) {
-    if (!board) return false;
+    if (!board) return null;
     setPending(key);
+    setFormError(null);
     try {
       const payload = await api<Board>("/api/programs", {
         method: "POST",
@@ -150,141 +86,15 @@ export function ProgramsBoard() {
       });
       setBoard(payload);
       setError(null);
-      return true;
+      return payload;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "השמירה נכשלה";
       setFormError(message);
       toast.error(message);
-      return false;
+      return null;
     } finally {
       setPending(null);
     }
-  }
-
-  function updateDraft(recipe: (current: Draft) => Draft) {
-    setFormError(null);
-    setDraft((current) => (current ? recipe(current) : current));
-  }
-
-  function editSlot(key: number, patch: Partial<DraftSlot>) {
-    updateDraft((current) => ({
-      ...current,
-      slots: current.slots.map((slot) => (slot.key === key ? { ...slot, ...patch } : slot)),
-    }));
-  }
-
-  function openNew(day: MonthDay) {
-    if (!board) return;
-    const owners = board.programs.filter((program) => program.days.includes(day.date));
-    setFormError(null);
-    setDraft({
-      id: null,
-      day: day.date,
-      hebrew: day.hebrew,
-      slots: [blankSlot()],
-      deviceIds: board.devices.length === 1 ? [board.devices[0].deviceId] : [],
-      programId: owners.length === 1 ? owners[0].id : "",
-      repeat: "once",
-      weekdays: [day.weekday],
-      name: "",
-      recurring: false,
-      split: false,
-      absorbIds: [],
-    });
-  }
-
-  function openClock(clock: Clock) {
-    const program = clock.recurring ? board?.programs.find((item) => item.id === clock.programId) : undefined;
-    const shaped = program ? shapeProgram(program) : null;
-    setFormError(null);
-    setDraft({
-      id: program?.id ?? clock.id,
-      day: clock.day,
-      hebrew: clock.hebrew,
-      slots: shaped ? shaped.slots : [blankSlot(clock)],
-      deviceIds: [...clock.deviceIds],
-      programId: clock.programId ?? "",
-      repeat: program ? (program.weekdays.length === 7 && !shaped?.split ? "daily" : "weekdays") : "once",
-      weekdays: program ? [...program.weekdays] : [weekdayOf(clock.day)],
-      name: program?.name ?? "",
-      recurring: Boolean(program),
-      split: shaped?.split ?? false,
-      absorbIds: [],
-    });
-  }
-
-  function openRepeat(program: Program) {
-    const shaped = shapeProgram(program);
-    setFormError(null);
-    setDraft({
-      id: program.id,
-      day: "",
-      hebrew: "",
-      slots: shaped.slots,
-      deviceIds: [...program.deviceIds],
-      programId: program.id,
-      repeat: program.weekdays.length === 7 && !shaped.split ? "daily" : "weekdays",
-      weekdays: [...program.weekdays],
-      name: program.name,
-      recurring: true,
-      split: shaped.split,
-      absorbIds: [],
-    });
-  }
-
-  function soleDonor(day: number, exceptId: string | null) {
-    return board?.programs.find(
-      (program) => program.id !== exceptId && program.days.length === 0 && program.weekdays.length === 1 && program.weekdays[0] === day,
-    );
-  }
-
-  function addOwnDay(day: number) {
-    updateDraft((current) => {
-      const donor = soleDonor(day, current.id);
-      const base = current.split ? current : splitDraft(current);
-      if (base.weekdays.includes(day)) return base;
-      const imported = donor?.slots.length ? donor.slots.map((slot) => blankSlot(slot, day)) : [blankSlot(undefined, day)];
-      return {
-        ...base,
-        weekdays: [...base.weekdays, day].sort((left, right) => left - right),
-        slots: [...base.slots, ...imported],
-        absorbIds: donor ? [...new Set([...base.absorbIds, donor.id])] : base.absorbIds,
-      };
-    });
-  }
-
-  function removeOwnDay(day: number) {
-    updateDraft((current) => {
-      const donor = soleDonor(day, current.id);
-      return {
-        ...current,
-        weekdays: current.weekdays.filter((item) => item !== day),
-        slots: current.slots.filter((slot) => slot.weekday !== day),
-        absorbIds: donor ? current.absorbIds.filter((id) => id !== donor.id) : current.absorbIds,
-      };
-    });
-  }
-
-  function updatePlan(recipe: (current: Plan) => Plan) {
-    setFormError(null);
-    setPlan((current) => (current ? recipe(current) : current));
-  }
-
-  function editPlanClock(dayKey: number, clockKey: number, patch: Partial<Pick<PlanClock, "onTime" | "offTime">>) {
-    updatePlan((current) => ({
-      ...current,
-      days: current.days.map((day) =>
-        day.key === dayKey
-          ? { ...day, clocks: day.clocks.map((clock) => (clock.key === clockKey ? { ...clock, ...patch } : clock)) }
-          : day,
-      ),
-    }));
-  }
-
-  function shiftMonth(delta: number) {
-    if (!board) return;
-    const next = new Date(Date.UTC(board.month.year, board.month.month - 1 + delta, 1));
-    void load(board.tenantId, next.getUTCFullYear(), next.getUTCMonth() + 1);
   }
 
   function ensureMonth(day: string) {
@@ -293,183 +103,71 @@ export function ProgramsBoard() {
     if (year !== board.month.year || month !== board.month.month) void load(board.tenantId, year, month);
   }
 
-  function shiftDay(delta: number) {
-    const next = shiftDate(cursor || israelDate(), delta);
+  function move(delta: number) {
+    if (!board) return;
+    if (view === "month" || view === "list") {
+      const next = new Date(Date.UTC(board.month.year, board.month.month - 1 + delta, 1));
+      setCursor(`${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-01`);
+      void load(board.tenantId, next.getUTCFullYear(), next.getUTCMonth() + 1);
+      return;
+    }
+    const next = shiftDate(cursor, delta * (view === "week" ? 7 : 1));
     setCursor(next);
     ensureMonth(next);
   }
 
-  function showHours() {
-    const day = cursor || israelDate();
+  function jumpToday() {
+    const day = israelDate();
     setCursor(day);
-    setView("hours");
     ensureMonth(day);
   }
 
-  function beginProgram(program?: Program) {
+  function openDraft(partial: Pick<PlannerDraft, "mode" | "date" | "program" | "clock">) {
     if (!board) return;
-    if (program?.weekdays.length) {
-      openRepeat(program);
-      return;
-    }
+    const next = token + 1;
+    setToken(next);
     setFormError(null);
-    if (!program) {
-      setPlan({
-        id: null,
-        name: "",
-        deviceIds: board.devices.length === 1 ? [board.devices[0].deviceId] : [],
-        days: [blankPlanDay(israelDate())],
-      });
-      return;
-    }
-    const first = program.days[0];
-    if (first) {
-      const [year, month] = first.split("-").map(Number);
-      if (year !== board.month.year || month !== board.month.month) void load(board.tenantId, year, month);
-    }
-    setPlan(planFrom(program, board.clocks, board.devices));
+    setDraft({
+      ...partial,
+      token: next,
+      clocks: board.clocks,
+      devices: board.devices,
+      places: board.places,
+      locationId: board.locationId,
+    });
   }
 
-  async function savePlan() {
-    if (!plan) return;
-    const name = plan.name.trim();
-    if (!name) {
-      setFormError("תנו שם לתוכנית");
-      return;
-    }
-    if (!plan.days.length) {
-      setFormError("בחרו לפחות יום אחד");
-      return;
-    }
-    if (plan.days.length > maxProgramDays) {
-      setFormError(`אפשר עד ${maxProgramDays} ימים בתוכנית`);
-      return;
-    }
-    const seen = new Set<string>();
-    for (const day of plan.days) {
-      if (!day.date) {
-        setFormError("בחרו תאריך");
-        return;
-      }
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(day.date)) {
-        setFormError("התאריך לא תקין");
-        return;
-      }
-      if (seen.has(day.date)) {
-        setFormError("אי אפשר לבחור את אותו תאריך פעמיים");
-        return;
-      }
-      seen.add(day.date);
-      if (!day.clocks.length) {
-        setFormError("הוסיפו לפחות שעון אחד עם שעת הדלקה או כיבוי");
-        return;
-      }
-      if (day.clocks.length > maxDayClocks) {
-        setFormError(`אפשר עד ${maxDayClocks} שעונים ביום`);
-        return;
-      }
-      if (day.clocks.some((clock) => !clock.onTime && !clock.offTime)) {
-        setFormError("בחרו שעת הדלקה או כיבוי");
-        return;
-      }
-    }
-    if (!plan.deviceIds.length) {
-      setFormError("בחרו לפחות שקע אחד");
-      return;
-    }
-    setFormError(null);
-    const saved = await send(
-      {
-        action: "program-save",
-        id: plan.id,
-        name,
-        deviceIds: plan.deviceIds,
-        days: plan.days.map((day) => ({
-          date: day.date,
-          clocks: day.clocks.map((clock) => ({ id: clock.id, onTime: clock.onTime, offTime: clock.offTime })),
-        })),
-      },
-      "program",
-    );
-    if (saved) setPlan(null);
+  function openNew(date: string) {
+    openDraft({ mode: "new", date, program: null, clock: null });
   }
 
-  async function saveClock() {
-    if (!draft) return;
-    if (draft.repeat === "once") {
-      if (!draft.day) {
-        setFormError("בחרו תאריך");
-        return;
-      }
-      const [slot] = draft.slots;
-      if (!slot?.onTime && !slot?.offTime) {
-        setFormError("בחרו שעת הדלקה או כיבוי");
-        return;
-      }
-      if (!draft.deviceIds.length) {
-        setFormError("בחרו לפחות שקע אחד");
-        return;
-      }
-      setFormError(null);
-      const saved = await send(
-        {
-          action: "clock-save",
-          id: draft.recurring ? null : draft.id,
-          day: draft.day,
-          onTime: slot.onTime,
-          offTime: slot.offTime,
-          deviceIds: draft.deviceIds,
-          programId: draft.programId,
-        },
-        "clock",
-      );
-      if (saved) setDraft(null);
-      return;
-    }
-    const split = draft.split;
-    const weekdays = split
-      ? [...new Set(draft.slots.map((slot) => slot.weekday).filter((day): day is number => day != null))].sort((left, right) => left - right)
-      : draft.repeat === "daily"
-        ? [0, 1, 2, 3, 4, 5, 6]
-        : draft.weekdays;
-    if (!draft.name.trim()) {
-      setFormError("תנו שם לתוכנית");
-      return;
-    }
-    if (!weekdays.length) {
-      setFormError("בחרו לפחות יום אחד בשבוע");
-      return;
-    }
-    const slots = draft.slots
-      .filter((slot) => (slot.onTime || slot.offTime) && (!split || slot.weekday != null))
-      .map((slot) => ({ onTime: slot.onTime, offTime: slot.offTime, weekdays: split && slot.weekday != null ? [slot.weekday] : [] }));
-    if (!slots.length) {
-      setFormError("הוסיפו לפחות שעון אחד עם שעת הדלקה או כיבוי");
-      return;
-    }
-    if (!draft.deviceIds.length) {
-      setFormError("בחרו לפחות שקע אחד");
-      return;
-    }
-    setFormError(null);
-    const saved = await send(
-      {
-        action: "repeat-save",
-        id: draft.recurring ? draft.id : null,
-        name: draft.name.trim(),
-        weekdays,
-        slots,
-        absorbIds: split ? draft.absorbIds : [],
-        deviceIds: draft.deviceIds,
-      },
-      "clock",
-    );
-    if (saved) setDraft(null);
+  function openProgram(program: Program, day: string | null) {
+    openDraft({
+      mode: "program",
+      date: day || program.days[0] || program.startDate || israelDate(),
+      program,
+      clock: null,
+    });
   }
+
+  function openClock(clock: Clock) {
+    const program = clock.programId ? board?.programs.find((item) => item.id === clock.programId) : undefined;
+    if (program) {
+      openProgram(program, clock.day);
+      return;
+    }
+    openDraft({ mode: "clock", date: clock.day, program: null, clock });
+  }
+
+  const today = israelDate();
+  const nextEvents = useMemo(
+    () => (board ? upcoming(board.programs, board.clocks, filter) : []),
+    [board, filter],
+  );
 
   if (error && !board) {
     return (
-      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+      <section className="rounded-2xl border bg-card p-6">
         <p className="text-destructive">{error}</p>
         <Button className="mt-4" type="button" onClick={() => void load(null)}>
           נסו שוב
@@ -481,14 +179,14 @@ export function ProgramsBoard() {
   if (!board && tenants) {
     return (
       <section>
-        <h2 className="text-2xl font-semibold tracking-tight">לוח שנה</h2>
-        <p className="mt-1 text-sm text-muted-foreground">בחרו לקוח כדי לערוך את השעונים ואת התוכניות שלו.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">תוכניות ותזמונים</h1>
+        <p className="mt-1 text-sm text-muted-foreground">בחרו לקוח כדי לערוך את התוכניות שלו.</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {tenants.map((tenant) => (
             <button
               key={tenant.id}
               type="button"
-              className="rounded-2xl border border-border bg-card px-4 py-3 text-start shadow-sm hover:bg-muted"
+              className="rounded-2xl border bg-card px-4 py-3 text-start hover:bg-muted"
               onClick={() => void load(tenant.id)}
             >
               <span className="font-medium">{tenant.name}</span>
@@ -501,1174 +199,577 @@ export function ProgramsBoard() {
 
   if (!board) return <p className="text-sm text-muted-foreground">טוען לוח…</p>;
 
-  const title = new Intl.DateTimeFormat("he-IL", {
+  const monthTitle = new Intl.DateTimeFormat("he-IL", {
     month: "long",
     year: "numeric",
     timeZone: "Asia/Jerusalem",
   }).format(new Date(Date.UTC(board.month.year, board.month.month - 1, 15)));
-  const listed = board.clocks.filter((clock) => !clock.recurring).sort(
-    (left, right) => left.day.localeCompare(right.day) || (left.onTime ?? "").localeCompare(right.onTime ?? ""),
+  const heading = view === "day" ? longDay(cursor) : view === "week" ? weekLabel(cursor) : monthTitle;
+  const gridDays = view === "week" ? weekDays(cursor) : view === "day" ? [cursor] : board.month.days.map((day) => day.date);
+  const shownPrograms = board.programs.filter((program) => filter === "all" || program.deviceIds.includes(filter));
+  const savedCount = shownPrograms.filter((program) => program.enabled).length;
+  const monthCount = board.month.days.reduce(
+    (sum, day) => sum + (day.inMonth ? occurrencesOn(day.date, board.programs, board.clocks, filter).length : 0),
+    0,
   );
-  const programIds = new Set(board.programs.map((program) => program.id));
-  const looseClocks = listed.filter((clock) => !clock.programId || !programIds.has(clock.programId));
-
-  const period = view === "hours" ? prettyDay(cursor || israelDate()) : title;
-  const views = [
-    { key: "month" as const, label: "לוח", onClick: () => setView("month") },
-    { key: "list" as const, label: "רשימה", onClick: () => setView("list") },
-    { key: "hours" as const, label: "24 שעות", onClick: showHours },
-  ];
+  const soon = nextEvents[0];
+  const needle = query.trim().toLowerCase();
+  const loose = board.clocks.filter(
+    (clock) => !clock.recurring && !clock.programId && (filter === "all" || clock.deviceIds.includes(filter)),
+  );
+  const listedPrograms = shownPrograms.filter((program) => program.name.toLowerCase().includes(needle));
+  const listedClocks = loose.filter((clock) => "שעון".includes(needle) || clock.day.includes(needle));
+  const pausing = board.programs.find((program) => program.id === pauseId) ?? null;
 
   return (
-    <section className="min-w-0 space-y-3 sm:space-y-5">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[22px] leading-7 font-normal sm:text-[28px] sm:leading-[34px]">תוכניות</h2>
-        <Button type="button" className="h-11 shrink-0 rounded-xl px-3 sm:px-4" onClick={() => beginProgram()}>
-          תוכנית חדשה
+    <section className="min-w-0">
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-primary">ניהול אוטומציות</p>
+          <h1 className="text-[23px] font-semibold tracking-tight sm:text-[29px]">תוכניות ותזמונים</h1>
+          <p className="mt-1 text-sm text-muted-foreground">כל ההפעלות והכיבויים שלך, בלוח אחד מסודר.</p>
+        </div>
+        <Button type="button" className="h-11 shrink-0 rounded-xl px-3 sm:px-4" onClick={() => openNew(today)}>
+          ＋ תוכנית חדשה
         </Button>
       </div>
-      <div className="flex min-w-0 flex-col gap-2 sm:gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-center rounded-[14px] bg-secondary p-1" role="group" aria-label="הזזת התאריך">
-          <button
-            type="button"
-            className="h-11 shrink-0 rounded-[10px] bg-card px-3 text-[15px] sm:px-4"
-            onClick={() => (view === "hours" ? shiftDay(-1) : shiftMonth(-1))}
-          >
-            הקודם
-          </button>
-          <p className="min-w-0 flex-1 truncate px-2 text-center text-[15px] font-semibold sm:px-3 sm:text-[17px]">{period}</p>
-          <button
-            type="button"
-            className="h-11 shrink-0 rounded-[10px] bg-card px-3 text-[15px] sm:px-4"
-            onClick={() => (view === "hours" ? shiftDay(1) : shiftMonth(1))}
-          >
-            הבא
-          </button>
-        </div>
-        <div className="grid min-w-0 grid-flow-col rounded-[14px] bg-secondary p-1" role="tablist" aria-label="תצוגת הלוח">
-          {views.map((item) => {
-            const selected = view === item.key;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                className={cn(
-                  "h-11 min-w-0 rounded-[10px] px-2 text-[14px] sm:px-4 sm:text-[15px]",
-                  selected ? "bg-card font-semibold text-primary" : "text-foreground",
-                )}
-                onClick={item.onClick}
-              >
-                {item.label}
+      <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-4">
+        <Stat label="תוכניות שמורות" value={String(savedCount)} />
+        <Stat label="פעולות החודש" value={String(monthCount)} />
+        <Stat label="הפעולה הקרובה" value={soon ? `${soon.time} · ${shortDate(soon.day)}` : "אין"} small />
+      </div>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <section className="min-w-0 overflow-hidden rounded-2xl border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-3 sm:px-4">
+            <div className="flex items-center gap-1">
+              <button type="button" className="rounded-lg border px-3 py-2" aria-label="הקודם" onClick={() => move(-1)}>
+                ‹
               </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-        <label className="flex min-w-0 items-center gap-2 text-[15px]">
-          עיר
-          <select
-            className={cn(fieldClass, "h-11 w-auto max-w-[12rem] rounded-xl bg-card px-3")}
-            aria-label="עיר לזמני היום"
-            value={board.locationId}
-            onChange={(event) => void send({ action: "location", locationId: event.target.value }, "location")}
-          >
-            {board.places.map((place) => (
-              <option key={place.id} value={place.id}>
-                {place.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {tenants ? (
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-11 rounded-xl px-3"
-            onClick={() => {
-              setBoard(null);
-              setPlan(null);
-              setDraft(null);
-              setFormError(null);
-            }}
-          >
-            לקוח אחר
-          </Button>
-        ) : null}
-      </div>
-      <p className="text-[13px] leading-5 text-muted-foreground sm:text-sm">
-        <span className="sm:hidden">+ מוסיף שעון ליום. תוכנית חדשה מוסיפה כמה תאריכים.</span>
-        <span className="hidden sm:inline">
-          לחצו + כדי להוסיף שעון ליום, ואפשר לבחור כמה שקעים. «תוכנית חדשה» בונה כמה תאריכים, ובכל תאריך כמה שעונים. בחזרה אפשר כל יום, או ימים בשבוע. בתצוגת 24 שעות רואים בכל שקע מתי הוא דולק. נרות והבדלה מוצגים לידיעה.
-        </span>
-      </p>
-
-      {view === "hours" ? (
-        <HourBoard board={board} day={cursor || israelDate()} onOpenClock={openClock} onOpenProgram={openRepeat} />
-      ) : view === "month" ? (
-        <>
-        <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><WayDot way="on" />הדלקה</span>
-          <span className="inline-flex items-center gap-1"><WayDot way="off" />כיבוי</span>
-        </p>
-        <div className="grid grid-cols-7 gap-px overflow-hidden rounded-2xl border border-border bg-border">
-          {WEEKDAYS.map((weekday) => (
-            <div key={weekday} className="truncate bg-muted px-0.5 py-1 text-center text-[10px] font-medium sm:px-1 sm:py-1.5 sm:text-xs">
-              {weekday}
+              <h2 className="min-w-28 px-1 text-center text-sm font-semibold sm:min-w-40 sm:text-base">{heading}</h2>
+              <button type="button" className="rounded-lg border px-3 py-2" aria-label="הבא" onClick={() => move(1)}>
+                ›
+              </button>
+              <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={jumpToday}>
+                היום
+              </button>
             </div>
-          ))}
-          {board.month.days.map((day) => {
-            const clocks = clocksByDay.get(day.date) ?? [];
-            return (
-              <div
-                key={day.date}
-                data-date={day.date}
-                className={cn(
-                  "flex min-h-0 flex-col gap-px overflow-hidden p-0.5 text-[10px] leading-[1.15] sm:min-h-32 sm:gap-0.5 sm:p-1.5 sm:text-[11px] sm:leading-tight",
-                  dayWash(day.weekday),
-                  !day.inMonth && "text-muted-foreground",
-                )}
-              >
-                <div className="flex items-center justify-between gap-0.5">
-                  <span className="font-semibold tabular-nums">{day.day}</span>
-                  <button
-                    type="button"
-                    aria-label={`הוספת שעון ב-${day.date}`}
-                    className="size-5 shrink-0 rounded-full border border-border bg-background text-[12px] leading-none hover:bg-muted sm:size-8 sm:text-sm"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openNew(day);
-                    }}
-                  >
-                    +
-                  </button>
+            <div className="grid grid-cols-4 rounded-xl bg-secondary p-1" role="tablist" aria-label="תצוגת הלוח">
+              {(
+                [
+                  ["month", "חודש"],
+                  ["list", "רשימה"],
+                  ["week", "שבוע"],
+                  ["day", "יום"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === key}
+                  className={cn("rounded-lg px-2 py-1.5 text-xs sm:text-sm", view === key ? "bg-card font-semibold text-primary shadow-sm" : "text-muted-foreground")}
+                  onClick={() => setView(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {view === "list" ? (
+            <div className="p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <b>כל התוכניות ({listedPrograms.length + listedClocks.length})</b>
+                <input
+                  value={query}
+                  placeholder="חיפוש תוכנית..."
+                  aria-label="חיפוש תוכנית"
+                  className="h-10 w-1/2 max-w-48 rounded-xl border px-3"
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
+              {listedPrograms.length || listedClocks.length ? (
+                <div className="space-y-2">
+                  {listedPrograms.map((program) => {
+                    const device = board.devices.find((item) => program.deviceIds.includes(item.deviceId));
+                    return (
+                      <article key={program.id} className="flex flex-wrap items-center gap-3 rounded-xl border p-3">
+                        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary">
+                          <DeviceGlyph name={device?.name ?? program.name} icon={device?.icon} className="size-5" />
+                        </span>
+                        <div className={cn("min-w-0 flex-1", !program.enabled && "opacity-60")}>
+                          <b className="block truncate">{program.name}</b>
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {deviceNames(board, program.deviceIds)} · {whenLabel(program)}
+                            {program.endDate && (program.weekdays.length || program.days.length > 1) ? ` · עד ${prettyDay(program.endDate)}` : ""}
+                            {!program.enabled ? " · כבויה" : ""}
+                            {(program.skippedDates ?? []).length
+                              ? ` · מושהה ב־${(program.skippedDates ?? []).map((day) => prettyDay(day)).join(", ")}`
+                              : ""}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            className={cn(
+                              "rounded-lg px-2 py-1.5 text-xs font-bold",
+                              program.enabled ? "bg-destructive/10 text-destructive" : "bg-online-soft text-online-foreground",
+                            )}
+                            disabled={pending === program.id}
+                            aria-label={program.enabled ? "כיבוי התוכנית" : "הדלקת התוכנית"}
+                            onClick={() => void send({ action: "program-toggle", id: program.id }, program.id)}
+                          >
+                            {program.enabled ? "כיבוי" : "הדלקה"}
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-lg border px-2 py-1.5 text-xs font-bold"
+                            onClick={() => {
+                              setPauseDate("");
+                              setPauseId(program.id);
+                            }}
+                          >
+                            השהיה{(program.skippedDates ?? []).length ? ` (${program.skippedDates.length})` : ""}
+                          </button>
+                          <button type="button" className="rounded-lg border px-2 py-1.5 text-xs" onClick={() => openProgram(program, null)}>
+                            עריכה
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {listedClocks.map((clock) => {
+                    const device = board.devices.find((item) => clock.deviceIds.includes(item.deviceId));
+                    return (
+                      <article key={clock.id} className="flex items-center gap-3 rounded-xl border p-3">
+                        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary">
+                          <DeviceGlyph name={device?.name ?? "שקע"} icon={device?.icon} className="size-5" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <b>שעון</b>
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {deviceNames(board, clock.deviceIds)} · {prettyDay(clock.day)} · {clock.onTime ?? ""}{clock.offTime ? `–${clock.offTime}` : ""}
+                          </p>
+                        </div>
+                        <button type="button" className="rounded-lg border px-2 py-1.5 text-xs" onClick={() => openClock(clock)}>
+                          עריכה
+                        </button>
+                      </article>
+                    );
+                  })}
                 </div>
-                {clocks.map((clock) => {
-                  const owner = board.programs.find((item) => item.id === clock.programId);
-                  const paused = Boolean(owner && !owner.enabled);
+              ) : (
+                <p className="px-2 py-8 text-center text-sm text-muted-foreground">אין תוכניות להצגה. לחצו על «תוכנית חדשה» כדי להתחיל.</p>
+              )}
+            </div>
+          ) : (
+            <>
+              {view === "day" ? null : (
+                <div className={cn("grid gap-px bg-border", view === "week" ? "grid-cols-7" : "grid-cols-7")}>
+                  {WEEKDAYS.map((label) => (
+                    <div key={label} className="bg-muted px-1 py-2 text-center text-[11px] font-bold text-muted-foreground sm:text-xs">
+                      {label}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className={cn("grid gap-px bg-border", view === "day" ? "grid-cols-1" : "grid-cols-7")}>
+                {gridDays.map((day) => {
+                  const meta = board.month.days.find((item) => item.date === day);
+                  const inMonth = view !== "month" || meta?.inMonth !== false;
+                  const events = occurrencesOn(day, board.programs, board.clocks, filter);
+                  const cap = view === "month" ? 3 : view === "week" ? 6 : events.length;
                   return (
-                    <button
-                      key={clock.id}
-                      type="button"
+                    <div
+                      key={day}
+                      data-date={day}
                       className={cn(
-                        "flex w-full min-w-0 items-center overflow-hidden rounded bg-background/80 px-0.5 py-px text-start hover:bg-background sm:px-1 sm:py-0.5",
-                        paused && "opacity-50 line-through",
+                        "group flex min-w-0 flex-col gap-1 bg-card p-1 sm:p-1.5",
+                        view === "month" && "min-h-[5.4rem] sm:min-h-[7.8rem]",
+                        view === "week" && "min-h-40",
+                        view === "day" && "min-h-56 p-3",
+                        !inMonth && "bg-muted/50 text-muted-foreground",
+                        day === today && "bg-primary/5",
                       )}
-                      aria-label={`${owner?.name ?? "שעון"} ${clock.onTime ? `הדלקה ${clock.onTime}` : ""} ${clock.offTime ? `כיבוי ${clock.offTime}` : ""}`.trim()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openClock(clock);
-                      }}
                     >
-                      <ClockFace clock={clock} compact />
-                    </button>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className={cn("grid size-6 place-items-center rounded-full text-xs font-extrabold", day === today && "bg-primary text-primary-foreground")}>
+                          {Number(day.slice(8))}
+                        </span>
+                        <button
+                          type="button"
+                          className="grid size-6 place-items-center rounded-lg border text-muted-foreground sm:opacity-20 sm:group-hover:opacity-100"
+                          aria-label={`תוכנית חדשה ב-${day}`}
+                          onClick={() => openNew(day)}
+                        >
+                          ＋
+                        </button>
+                      </div>
+                      {events.slice(0, cap).map((event) => (
+                        <button
+                          key={event.key}
+                          type="button"
+                          className={cn(
+                            "flex w-full min-w-0 items-center gap-1 rounded-md border-s-[3px] px-1 py-1 text-start text-[10px] sm:text-[11px]",
+                            event.action === "off" ? "border-destructive bg-destructive/10 text-destructive" : "border-online bg-online-soft text-online-foreground",
+                          )}
+                          title={event.name}
+                          onClick={() => openEvent(event, board, openProgram, openClock)}
+                        >
+                          <span dir="ltr">{event.time}</span>
+                          <span className={cn("truncate", view === "day" ? "inline" : "hidden sm:inline")}>{event.name}</span>
+                        </button>
+                      ))}
+                      {events.length > cap ? (
+                        <button
+                          type="button"
+                          className="px-1 text-start text-[10px] font-bold text-primary"
+                          onClick={() => {
+                            setCursor(day);
+                            setView("day");
+                          }}
+                        >
+                          +{events.length - cap}
+                        </button>
+                      ) : null}
+                      {meta?.parsha ? <p className="hidden truncate text-[10px] font-semibold text-primary sm:block">{meta.parsha}</p> : null}
+                      {meta?.candles ? <p className="hidden truncate text-[10px] text-muted-foreground sm:block">נרות {meta.candles}</p> : null}
+                      {meta?.havdalah ? <p className="hidden truncate text-[10px] text-muted-foreground sm:block">הבדלה {meta.havdalah}</p> : null}
+                    </div>
                   );
                 })}
-                <p className="hidden truncate text-muted-foreground sm:block">{day.hebrew}</p>
-                {day.parsha ? <p className="truncate font-semibold text-primary">{day.parsha}</p> : null}
-                {day.holiday ? <p className="truncate">{day.holiday}</p> : null}
-                {day.candles ? (
-                  <p className="truncate text-muted-foreground" title={`נרות ${day.candles}`}>
-                    <span className="sm:hidden" dir="ltr">{day.candles}</span>
-                    <span className="hidden sm:inline">נרות <span dir="ltr">{day.candles}</span></span>
-                  </p>
-                ) : null}
-                {day.havdalah ? (
-                  <p className="truncate text-muted-foreground" title={`הבדלה ${day.havdalah}`}>
-                    <span className="sm:hidden" dir="ltr">{day.havdalah}</span>
-                    <span className="hidden sm:inline">הבדלה <span dir="ltr">{day.havdalah}</span></span>
-                  </p>
-                ) : null}
               </div>
-            );
-          })}
-        </div>
-        </>
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-card">
-          {board.programs.length || looseClocks.length ? (
-            <ul>
-              {board.programs.map((program) => (
-                <li key={program.id} className="grid gap-3 border-b border-border px-4 py-3 text-sm last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                  <div className="min-w-0">
-                    <p className="font-medium">{program.name}</p>
-                    <p className="mt-0.5 text-muted-foreground">
-                      {program.enabled ? "פועלת" : "כבויה"}
-                      {" · "}
-                      <ProgramWhen program={program} clocks={board.clocks} />
-                      {program.deviceIds.length ? ` · ${deviceNames(board, program.deviceIds)}` : ""}
-                    </p>
-                  </div>
-                  <span className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-11 rounded-xl px-4"
-                      disabled={pending === program.id}
-                      onClick={() => void send({ action: "program-toggle", id: program.id }, program.id)}
-                    >
-                      {program.enabled ? "כיבוי" : "הפעלה"}
-                    </Button>
-                    <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => beginProgram(program)}>
-                      עריכה
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-11 rounded-xl px-3 text-destructive"
-                      onClick={() => {
-                        if (window.confirm("למחוק את התוכנית ואת השעונים שלה?")) {
-                          void send({ action: "program-delete", id: program.id }, program.id);
-                        }
-                      }}
-                    >
-                      מחיקה
-                    </Button>
-                  </span>
-                </li>
-              ))}
-              {looseClocks.map((clock) => (
-                <li key={clock.id} className="grid gap-3 border-b border-border px-4 py-3 text-sm last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                  <div className="min-w-0">
-                    <p className="font-medium">{prettyDay(clock.day)}</p>
-                    <p className="mt-0.5 text-muted-foreground">
-                      {clock.hebrew} · <ClockFace clock={clock} /> · {deviceNames(board, clock.deviceIds)} · בלי תוכנית
-                    </p>
-                  </div>
-                  <span className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => openClock(clock)}>
-                      עריכה
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-11 rounded-xl px-3 text-destructive"
-                      onClick={() => {
-                        if (window.confirm("למחוק את השעון?")) void send({ action: "clock-delete", id: clock.id }, clock.id);
-                      }}
-                    >
-                      מחיקה
-                    </Button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-4 py-6 text-sm text-muted-foreground">אין עדיין שעונים. בלוח, לחצו + על היום.</p>
+              <p className="flex flex-wrap items-center gap-3 px-4 py-3 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-online" /> הפעלה</span>
+                <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-destructive" /> כיבוי</span>
+                <span>· לחצו על + להוספת תוכנית</span>
+              </p>
+            </>
           )}
-        </div>
-      )}
-
-      {view === "list" ? null : <div className="space-y-3">
-        <h3 className="text-[17px] font-semibold">התוכניות השמורות</h3>
-        {board.programs.length ? (
-          <div className="grid gap-px overflow-hidden rounded-[22px] bg-border">
-            {board.programs.map((program) => (
-              <article key={program.id} className="bg-card px-4 py-3">
-                <div className="min-w-0">
-                  <h4 className="font-medium">{program.name}</h4>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {program.enabled ? "פועלת" : "כבויה"}
-                    {" · "}
-                    <ProgramWhen program={program} clocks={board.clocks} />
-                  </p>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11 rounded-xl px-4"
-                    disabled={pending === program.id}
-                    onClick={() => void send({ action: "program-toggle", id: program.id }, program.id)}
-                  >
-                    {program.enabled ? "כיבוי" : "הפעלה"}
-                  </Button>
-                  <Button type="button" variant="outline" className="h-11 rounded-xl px-4" onClick={() => beginProgram(program)}>
-                    עריכה
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-11 rounded-xl px-3 text-destructive"
-                    onClick={() => {
-                      if (window.confirm("למחוק את התוכנית ואת השעונים שלה?")) {
-                        void send({ action: "program-delete", id: program.id }, program.id);
-                      }
-                    }}
-                  >
-                    מחיקה
-                  </Button>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">אין תוכניות. תוכנית היא כמה תאריכים עם שעונים, או חזרה לפי ימים בשבוע.</p>
-        )}
-      </div>}
-
-      <Dialog
-        open={draft !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDraft(null);
-            setFormError(null);
-          }
-        }}
-      >
-        <DialogContent data-clock-dialog className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          {draft ? (
-            <form
-              className="contents"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void saveClock();
-              }}
-            >
-              <DialogHeader>
-                <DialogTitle>
-                  {draft.repeat === "once"
-                    ? draft.id && !draft.recurring
-                      ? "עריכת שעון"
-                      : "שעון חדש"
-                    : draft.recurring
-                      ? "עריכת תוכנית"
-                      : "תוכנית חדשה"}
-                </DialogTitle>
-                <DialogDescription>
-                  {draft.repeat === "once" ? `${prettyDay(draft.day)} ${draft.hebrew}` : weekdayPhrase(draft.repeat === "daily" ? [0, 1, 2, 3, 4, 5, 6] : draft.weekdays) || "בחרו ימים"}
-                </DialogDescription>
-              </DialogHeader>
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">חזרה</legend>
-                <div className="flex flex-wrap gap-1">
-                  {(
-                    [
-                      ["once", "פעם אחת"],
-                      ["daily", "כל יום"],
-                      ["weekdays", "ימים בשבוע"],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <Button
-                      key={value}
-                      type="button"
-                      size="sm"
-                      variant={draft.repeat === value ? "default" : "outline"}
-                      onClick={() => {
-                        if (draft.split && value !== "weekdays" && !window.confirm("לעבור לשעונים זהים? השעונים של שאר הימים יוסרו.")) return;
-                        updateDraft((current) => {
-                          const shared = current.split
-                            ? current.slots
-                                .filter((slot) => slot.weekday === current.weekdays[0])
-                                .map((slot) => blankSlot(slot))
-                            : current.slots;
-                          return {
-                            ...current,
-                            repeat: value,
-                            split: value === "weekdays" ? current.split : false,
-                            absorbIds: value === "weekdays" ? current.absorbIds : [],
-                            slots: value === "weekdays" ? current.slots : shared.length ? shared : [blankSlot()],
-                            weekdays:
-                              value === "daily"
-                                ? [0, 1, 2, 3, 4, 5, 6]
-                                : current.weekdays.length
-                                  ? current.weekdays
-                                  : [current.day ? weekdayOf(current.day) : 0],
-                          };
-                        });
-                      }}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-                {draft.repeat === "weekdays" && !draft.split ? (
-                  <div className="grid grid-cols-7 gap-1">
-                    {WEEKDAY_CHIPS.map((label, index) => {
-                      const selected = draft.weekdays.includes(index);
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          aria-pressed={selected}
-                          aria-label={DAY_NAMES[index]}
-                          className={cn(
-                            "flex h-11 items-center justify-center rounded-lg border text-sm",
-                            selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background",
-                          )}
-                          onClick={() =>
-                            updateDraft((current) => ({
-                              ...current,
-                              weekdays: current.weekdays.includes(index)
-                                ? current.weekdays.filter((day) => day !== index)
-                                : [...current.weekdays, index].sort((left, right) => left - right),
-                            }))
-                          }
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-                {draft.repeat === "weekdays" ? (
-                  <p className="text-xs text-muted-foreground">
-                    {draft.weekdays.length ? `נבחרו: ${weekdayPhrase(draft.weekdays)}` : "סמנו לפחות יום אחד, ואז לחצו שמירה."}
-                  </p>
-                ) : null}
-                {draft.repeat === "daily" ? (
-                  <p className="text-xs text-muted-foreground">כולל שישי ושבת. בלי הימים האלה בחרו ימים בשבוע וסמנו א עד ה.</p>
-                ) : null}
-              </fieldset>
-              {draft.repeat === "once" ? (
-                <Label className="flex-col items-stretch gap-1">
-                  תאריך
-                  <Input dir="ltr" type="date" value={draft.day} onChange={(event) => updateDraft((current) => ({ ...current, day: event.target.value }))} />
-                </Label>
-              ) : (
-                <Label className="flex-col items-stretch gap-1">
-                  שם התוכנית
-                  <Input
-                    value={draft.name}
-                    maxLength={40}
-                    placeholder="למשל מזגן"
-                    onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
+        </section>
+        <aside className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+          <div className="rounded-2xl border bg-card p-5">
+            <h3 className="mb-3 text-base font-semibold">ההתקנים שלי</h3>
+            {board.devices.map((device) => {
+              const selected = filter === device.deviceId;
+              return (
+                <label
+                  key={device.deviceId}
+                  className={cn("mb-2 flex cursor-pointer items-center gap-2 rounded-xl border p-3", selected && "border-primary/40 bg-primary/5")}
+                >
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary">
+                    <DeviceGlyph name={device.name} icon={device.icon} className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <b className="block truncate text-sm">{device.name}</b>
+                    <small className="text-[11px] text-muted-foreground">{devicePlanCount(board, device.deviceId)} תוכניות</small>
+                  </span>
+                  <input
+                    type="radio"
+                    name="device-filter"
+                    className="accent-primary"
+                    checked={selected}
+                    onChange={() => setFilter(device.deviceId)}
                   />
-                </Label>
-              )}
-              <fieldset className="space-y-2">
-                {draft.repeat === "once" ? null : (
-                  <legend className="text-sm font-medium">
-                    שעונים בתוכנית
-                    <span className="ms-1 font-normal text-muted-foreground">({draft.slots.length})</span>
-                  </legend>
-                )}
-                {draft.split ? (
-                  <div className="space-y-3">
-                    {draft.weekdays.map((day) => {
-                      const rows = draft.slots.filter((slot) => slot.weekday === day);
-                      return (
-                        <section key={day} data-program-day={day} className="space-y-2 rounded-xl border border-border p-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <h3 className="text-sm font-semibold">{DAY_NAMES[day]}</h3>
-                            {draft.weekdays.length > 1 ? (
-                              <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground" onClick={() => removeOwnDay(day)}>
-                                הסרה
-                              </Button>
-                            ) : null}
-                          </div>
-                          <ol className="space-y-2">
-                            {rows.map((slot, index) => (
-                              <SlotRow
-                                key={slot.key}
-                                slot={slot}
-                                index={index}
-                                boxed={false}
-                                canRemove={rows.length > 1}
-                                dayName={dayShort(day)}
-                                onEdit={(patch) => editSlot(slot.key, patch)}
-                                onRemove={() => updateDraft((current) => ({ ...current, slots: current.slots.filter((item) => item.key !== slot.key) }))}
-                              />
-                            ))}
-                          </ol>
-                          {draft.slots.length < maxSlots ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="w-full rounded-xl border-dashed"
-                              onClick={() => updateDraft((current) => ({ ...current, slots: [...current.slots, blankSlot(undefined, day)] }))}
-                            >
-                              <Plus className="size-4" />
-                              עוד שעון
-                            </Button>
-                          ) : null}
-                        </section>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <>
-                    <ol className="space-y-2">
-                      {(draft.repeat === "once" ? draft.slots.slice(0, 1) : draft.slots).map((slot, index) => (
-                        <SlotRow
-                          key={slot.key}
-                          slot={slot}
-                          index={index}
-                          boxed={draft.repeat !== "once"}
-                          canRemove={draft.repeat !== "once" && draft.slots.length > 1}
-                          onEdit={(patch) => editSlot(slot.key, patch)}
-                          onRemove={() => updateDraft((current) => ({ ...current, slots: current.slots.filter((item) => item.key !== slot.key) }))}
-                        />
-                      ))}
-                    </ol>
-                    {draft.repeat !== "once" && draft.slots.length < maxSlots ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full rounded-xl border-dashed"
-                        onClick={() => updateDraft((current) => ({ ...current, slots: [...current.slots, blankSlot()] }))}
-                      >
-                        <Plus className="size-4" />
-                        עוד שעון
-                      </Button>
-                    ) : null}
-                  </>
-                )}
-                {draft.repeat === "weekdays" ? (
-                  <div className="flex flex-wrap gap-1">
-                    {[0, 1, 2, 3, 4, 5, 6]
-                      .filter((day) => !draft.weekdays.includes(day))
-                      .map((day) => {
-                        const donor = soleDonor(day, draft.id);
-                        return (
-                          <Button key={day} type="button" variant="outline" size="sm" onClick={() => addOwnDay(day)}>
-                            אחד עם {dayShort(day)}
-                            {donor ? ` · ${donor.name}` : ""}
-                          </Button>
-                        );
-                      })}
-                  </div>
-                ) : null}
-                {draft.absorbIds.length ? (
-                  <p className="text-xs text-muted-foreground">
-                    בשמירה יועברו לכאן ויימחקו:{" "}
-                    {draft.absorbIds
-                      .map((id) => board.programs.find((program) => program.id === id)?.name)
-                      .filter(Boolean)
-                      .join(", ")}
-                  </p>
-                ) : null}
-                {draft.split ? (
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground underline"
-                    onClick={() => {
-                      if (!window.confirm("השעונים של שאר הימים יוסרו, ויישארו השעונים של היום הראשון לכל הימים.")) return;
-                      updateDraft((current) => {
-                        const first = current.weekdays[0];
-                        const kept = current.slots.filter((slot) => slot.weekday === first).map((slot) => blankSlot(slot));
-                        return { ...current, split: false, absorbIds: [], slots: kept.length ? kept : [blankSlot()] };
-                      });
-                    }}
-                  >
-                    אותם שעונים בכל הימים
-                  </button>
-                ) : null}
-                <p className="text-xs text-muted-foreground">
-                  {draft.repeat === "once"
-                    ? "נקודה ירוקה היא הדלקה ונקודה אדומה היא כיבוי. כיבוי מוקדם מההדלקה יתבצע למחרת."
-                    : "ירוק זו הדלקה ואדום זה כיבוי. «אחד עם שבת» מוסיף את היום עם שעונים משלו. תוכנית נפרדת של היום הזה נמחקת בשמירה."}
-                </p>
-              </fieldset>
-              <fieldset className="space-y-1">
-                <legend className="text-sm font-medium">שקעים</legend>
-                {board.devices.length ? (
-                  board.devices.map((device) => (
-                    <label key={device.deviceId} className="flex min-h-11 items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="size-4"
-                        checked={draft.deviceIds.includes(device.deviceId)}
-                        onChange={() =>
-                          updateDraft((current) => ({
-                            ...current,
-                            deviceIds: current.deviceIds.includes(device.deviceId)
-                              ? current.deviceIds.filter((id) => id !== device.deviceId)
-                              : [...current.deviceIds, device.deviceId],
-                          }))
-                        }
-                      />
-                      {device.name}
-                    </label>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">אין שקעים משויכים ללקוח.</p>
-                )}
-              </fieldset>
-              {draft.repeat === "once" ? (
-              <Label className="flex-col items-stretch gap-1">
-                תוכנית
-                <select
-                  className={fieldClass}
-                  value={draft.programId}
-                  onChange={(event) => updateDraft((current) => ({ ...current, programId: event.target.value }))}
+                </label>
+              );
+            })}
+            <button type="button" className="mt-1 h-10 w-full rounded-xl border text-sm" onClick={() => setFilter("all")}>
+              הצג את כל ההתקנים
+            </button>
+          </div>
+          <div className="rounded-2xl border bg-card p-5">
+            <h3 className="mb-3 text-base font-semibold">פעולות קרובות</h3>
+            {nextEvents.length ? (
+              nextEvents.slice(0, 5).map((event) => (
+                <button
+                  key={`${event.day}-${event.key}`}
+                  type="button"
+                  className="flex w-full items-center gap-3 border-b py-2 text-start last:border-0"
+                  onClick={() => openEvent(event, board, openProgram, openClock)}
                 >
-                  <option value="">בלי תוכנית</option>
-                  {board.programs.map((program) => (
-                    <option key={program.id} value={program.id}>
-                      {program.name}
-                    </option>
-                  ))}
-                </select>
-              </Label>
-              ) : null}
-              {formError ? (
-                <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
-                  {formError}
-                </p>
-              ) : null}
-              <DialogFooter className="sticky bottom-0 z-10 bg-popover/95 py-2 backdrop-blur-sm">
-                {draft.id ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={() => {
-                      if (!draft.id || !window.confirm(draft.recurring ? "למחוק את התוכנית?" : "למחוק את השעון?")) return;
-                      void send(
-                        draft.recurring ? { action: "program-delete", id: draft.id } : { action: "clock-delete", id: draft.id },
-                        "clock",
-                      ).then((saved) => {
-                        if (saved) setDraft(null);
-                      });
-                    }}
-                  >
-                    מחיקה
-                  </Button>
-                ) : null}
-                <Button type="submit" disabled={pending === "clock"}>
-                  {pending === "clock" ? "שומר…" : "שמירה"}
-                </Button>
-              </DialogFooter>
-            </form>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={plan !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPlan(null);
-            setFormError(null);
-          }
-        }}
-      >
-        <DialogContent data-plan-dialog className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-          {plan ? (
-            <form
-              className="contents"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void savePlan();
+                  <time className="font-extrabold text-primary" dir="ltr">
+                    {event.time}
+                  </time>
+                  <span className="min-w-0">
+                    <b className="block truncate text-sm">{event.name}</b>
+                    <small className="text-muted-foreground">{longDate(event.day)}</small>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">אין פעולות קרובות</p>
+            )}
+          </div>
+          <div className="rounded-2xl bg-primary/10 p-4 text-xs leading-6 text-primary sm:col-span-2 lg:col-span-1">
+            <b>שליטה חכמה, בדרך שלך</b>
+            <br />
+            צרו תוכניות חד־פעמיות או חוזרות. התוכנית נשמרת בחשבון ומפעילה את השקעים שנבחרו.
+            <label className="mt-3 block font-bold">
+              עיר לזמני שבת
+              <select
+                className="mt-1 h-10 w-full rounded-xl border bg-card px-2 text-foreground"
+                aria-label="עיר לזמני היום"
+                value={board.locationId}
+                onChange={(event) => void send({ action: "location", locationId: event.target.value }, "location")}
+              >
+                {board.places.map((place) => (
+                  <option key={place.id} value={place.id}>
+                    {place.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {tenants ? (
+              <button
+                type="button"
+                className="mt-2 text-sm font-bold"
+                onClick={() => {
+                  setBoard(null);
+                  setDraft(null);
+                }}
+              >
+                לקוח אחר
+              </button>
+            ) : null}
+          </div>
+        </aside>
+      </div>
+      {pausing ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setPauseId(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogTitle>השהיית «{pausing.name}»</DialogTitle>
+            <DialogDescription>התוכנית נשארת שמורה. בתאריכים שתבחרו היא לא תופעל, כולל ההפעלה הקרובה.</DialogDescription>
+            <button
+              type="button"
+              className="mt-3 w-full rounded-xl border border-primary/40 bg-primary/5 px-3 py-3 text-sm font-bold text-primary"
+              disabled={pending === `skip:${pausing.id}`}
+              onClick={() => {
+                const day = nextOnDay(pausing, board);
+                if (!day) {
+                  toast.message("אין הפעלה קרובה להשהיה");
+                  return;
+                }
+                if ((pausing.skippedDates ?? []).includes(day)) {
+                  toast.message("ההפעלה הקרובה כבר מושהית");
+                  return;
+                }
+                void writeSkips(pausing, [...(pausing.skippedDates ?? []), day], send);
               }}
             >
-              <DialogHeader>
-                <DialogTitle>{plan.id ? "עריכת תוכנית" : "תוכנית חדשה"}</DialogTitle>
-                <DialogDescription>בחרו תאריך, הגדירו עליו כמה שעונים, ואז הוסיפו עוד ימים.</DialogDescription>
-              </DialogHeader>
-              <Label className="flex-col items-stretch gap-1">
-                שם התוכנית
-                <Input
-                  value={plan.name}
-                  maxLength={40}
-                  placeholder="למשל בדיקה"
-                  aria-label="שם התוכנית"
-                  onChange={(event) => {
-                    const name = event.target.value;
-                    updatePlan((current) => ({ ...current, name }));
-                  }}
+              השהה את ההפעלה הקרובה
+            </button>
+            <div className="mt-3 flex gap-2">
+              <label className="min-w-0 flex-1 text-xs font-bold">
+                תאריך להשהיה
+                <input
+                  className="mt-2 h-11 w-full rounded-xl border px-3"
+                  dir="ltr"
+                  type="date"
+                  value={pauseDate}
+                  onChange={(event) => setPauseDate(event.target.value)}
                 />
-              </Label>
-              {plan.days.map((day, dayIndex) => (
-                <section key={day.key} data-plan-day={day.date} className="space-y-2 rounded-xl border border-border p-2">
-                  <div className="flex items-end gap-2">
-                    <Label className="min-w-0 flex-1 flex-col items-stretch gap-1">
-                      תאריך
-                      <Input
-                        dir="ltr"
-                        type="date"
-                        aria-label={`תאריך ${dayIndex + 1}`}
-                        value={day.date}
-                        onChange={(event) => {
-                          const date = event.target.value;
-                          updatePlan((current) => ({
-                            ...current,
-                            days: current.days.map((item) => (item.key === day.key ? { ...item, date } : item)),
-                          }));
-                        }}
-                      />
-                    </Label>
-                    {plan.days.length > 1 ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="mb-0.5 h-8 px-2 text-muted-foreground"
-                        aria-label={`הסרת יום ${dayIndex + 1}`}
-                        onClick={() => updatePlan((current) => ({ ...current, days: current.days.filter((item) => item.key !== day.key) }))}
-                      >
-                        הסרה
-                      </Button>
-                    ) : null}
-                  </div>
-                  <ol className="space-y-2">
-                    {day.clocks.map((clock, index) => (
-                      <SlotRow
-                        key={clock.key}
-                        slot={{ key: clock.key, onTime: clock.onTime, offTime: clock.offTime, weekday: null }}
-                        index={index}
-                        boxed
-                        canRemove={day.clocks.length > 1}
-                        dayName={day.date ? prettyDay(day.date) : `יום ${dayIndex + 1}`}
-                        onEdit={(patch) => editPlanClock(day.key, clock.key, patch)}
-                        onRemove={() =>
-                          updatePlan((current) => ({
-                            ...current,
-                            days: current.days.map((item) =>
-                              item.key === day.key ? { ...item, clocks: item.clocks.filter((entry) => entry.key !== clock.key) } : item,
-                            ),
-                          }))
-                        }
-                      />
-                    ))}
-                  </ol>
-                  {day.clocks.length < maxDayClocks ? (
-                    <Button
+              </label>
+              <button
+                type="button"
+                className="mt-6 h-11 shrink-0 rounded-xl bg-primary px-3 text-sm font-bold text-primary-foreground"
+                disabled={pending === `skip:${pausing.id}`}
+                onClick={() => {
+                  if (!/^\d{4}-\d{2}-\d{2}$/.test(pauseDate)) {
+                    toast.error("יש לבחור תאריך");
+                    return;
+                  }
+                  void writeSkips(pausing, [...(pausing.skippedDates ?? []), pauseDate], send);
+                }}
+              >
+                הוספה
+              </button>
+            </div>
+            {(pausing.skippedDates ?? []).length ? (
+              <ul className="mt-3 space-y-2">
+                {(pausing.skippedDates ?? []).map((day) => (
+                  <li key={day} className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm">
+                    <span>{prettyDay(day)}</span>
+                    <button
                       type="button"
-                      variant="outline"
-                      className="w-full rounded-xl border-dashed"
-                      aria-label={`עוד שעון ליום ${dayIndex + 1}`}
-                      onClick={() =>
-                        updatePlan((current) => ({
-                          ...current,
-                          days: current.days.map((item) =>
-                            item.key === day.key ? { ...item, clocks: [...item.clocks, blankPlanClock()] } : item,
-                          ),
-                        }))
-                      }
+                      className="text-xs font-bold text-destructive"
+                      disabled={pending === `skip:${pausing.id}`}
+                      onClick={() => void writeSkips(pausing, (pausing.skippedDates ?? []).filter((item) => item !== day), send)}
                     >
-                      <Plus className="size-4" />
-                      עוד שעון
-                    </Button>
-                  ) : null}
-                </section>
-              ))}
-              {plan.days.length < maxProgramDays ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full rounded-xl border-dashed"
-                  onClick={() => updatePlan((current) => ({ ...current, days: [...current.days, blankPlanDay()] }))}
-                >
-                  <Plus className="size-4" />
-                  הוסף יום
-                </Button>
-              ) : null}
-              <fieldset className="space-y-1">
-                <legend className="text-sm font-medium">שקעים</legend>
-                {board.devices.length ? (
-                  board.devices.map((device) => (
-                    <label key={device.deviceId} className="flex min-h-11 items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="size-4"
-                        checked={plan.deviceIds.includes(device.deviceId)}
-                        onChange={() =>
-                          updatePlan((current) => ({
-                            ...current,
-                            deviceIds: current.deviceIds.includes(device.deviceId)
-                              ? current.deviceIds.filter((id) => id !== device.deviceId)
-                              : [...current.deviceIds, device.deviceId],
-                          }))
-                        }
-                      />
-                      {device.name}
-                    </label>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">אין שקעים משויכים ללקוח.</p>
-                )}
-              </fieldset>
-              <p className="text-xs text-muted-foreground">נקודה ירוקה היא הדלקה ונקודה אדומה היא כיבוי. כיבוי מוקדם מההדלקה יתבצע למחרת.</p>
-              {formError ? (
-                <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
-                  {formError}
-                </p>
-              ) : null}
-              <DialogFooter className="sticky bottom-0 z-10 bg-popover/95 py-2 backdrop-blur-sm">
-                {plan.id ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={() => {
-                      if (!plan.id || !window.confirm("למחוק את התוכנית ואת השעונים שלה?")) return;
-                      void send({ action: "program-delete", id: plan.id }, "program").then((saved) => {
-                        if (saved) setPlan(null);
-                      });
-                    }}
-                  >
-                    מחיקה
-                  </Button>
-                ) : null}
-                <Button type="submit" disabled={pending === "program"}>
-                  {pending === "program" ? "שומר…" : "שמירה"}
-                </Button>
-              </DialogFooter>
-            </form>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+                      הסרה
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-muted-foreground">אין תאריכים מושהים.</p>
+            )}
+          </DialogContent>
+        </Dialog>
+      ) : null}
+      {draft ? (
+        <PlanDialog
+          key={draft.token}
+          draft={draft}
+          programs={board.programs}
+          clocks={board.clocks}
+          pending={pending === "plan"}
+          serverError={formError}
+          onClose={() => setDraft(null)}
+          onSave={async (body) => {
+            const before = new Set(board.programs.map((item) => item.id));
+            const payload = await send(body, "plan");
+            if (!payload) return null;
+            toast.success("התוכנית נשמרה");
+            const id = (typeof body.id === "string" && body.id) || payload.programs.find((item) => !before.has(item.id))?.id || null;
+            return { id };
+          }}
+          onDelete={() => {
+            const body =
+              draft.mode === "clock" && draft.clock
+                ? { action: "clock-delete", id: draft.clock.id }
+                : draft.program
+                  ? { action: "program-delete", id: draft.program.id }
+                  : null;
+            if (!body) return;
+            void send(body, "plan").then((payload) => {
+              if (!payload) return;
+              setDraft(null);
+              toast.success(draft.mode === "clock" ? "השעון נמחק" : "התוכנית נמחקה");
+            });
+          }}
+        />
+      ) : null}
     </section>
   );
 }
 
-function HourBoard({
-  board,
-  day,
-  onOpenClock,
-  onOpenProgram,
-}: {
-  board: Board;
-  day: string;
-  onOpenClock: (clock: Clock) => void;
-  onOpenProgram: (program: Program) => void;
-}) {
-  const bars = laneBars(dayBars(day, board.clocks, board.programs));
-  const cell = board.month.days.find((item) => item.date === day);
-  const now = day === israelDate() ? jerusalemMinutes() : null;
+function Stat({ label, value, small = false }: { label: string; value: string; small?: boolean }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
-      <p className="px-3 py-2 text-sm">
-        <span className="font-medium">{DAY_NAMES[weekdayOf(day)]}</span>
-        {cell?.hebrew ? <span className="text-muted-foreground"> {cell.hebrew}</span> : null}
-        {cell?.parsha ? <span className="font-medium text-primary"> {cell.parsha}</span> : null}
-        {cell?.holiday ? <span> · {cell.holiday}</span> : null}
-      </p>
-      {board.devices.length ? (
-        <div dir="ltr">
-            <div className="grid grid-cols-[5.75rem_minmax(0,1fr)] sm:grid-cols-[7.5rem_minmax(0,1fr)]">
-              <div className="sticky start-0 z-10 border-b border-border bg-card" />
-              <div className="relative h-7 border-b border-border">
-                {Array.from({ length: 25 }, (_, hour) => (
-                  <span key={hour} className="absolute inset-y-0 border-s border-border/60" style={{ left: `${(hour / 24) * 100}%` }}>
-                    {hour % 3 === 0 ? (
-                      <span
-                        className={cn(
-                          "absolute top-1 text-[10px] text-muted-foreground",
-                          hour === 0 ? "left-1" : hour === 24 ? "right-1" : "-translate-x-1/2",
-                        )}
-                      >
-                        {String(hour).padStart(2, "0")}
-                      </span>
-                    ) : null}
-                  </span>
-                ))}
-              </div>
-              {board.devices.map((device) => {
-                const rows = bars.filter((bar) => bar.deviceId === device.deviceId);
-                const lanes = rows.reduce((max, bar) => Math.max(max, bar.lane + 1), 1);
-                return (
-                  <div key={device.deviceId} className="contents">
-                    <div className="sticky start-0 z-10 flex items-center border-b border-border bg-card px-2 py-1 text-sm" dir="rtl">
-                      <span>
-                        <span className="block leading-tight">{device.name}</span>
-                        {rows.map((bar) => (
-                          <span key={bar.key} dir="ltr" className="block text-[10px] leading-tight text-muted-foreground">
-                            {bar.title.replace(`${bar.name} `, "")}
-                          </span>
-                        ))}
-                      </span>
-                    </div>
-                    <div
-                      className="relative border-b border-border"
-                      style={{
-                        height: Math.max(44, lanes * 28 + 8),
-                        backgroundImage:
-                          "repeating-linear-gradient(to right, transparent, transparent calc(100% / 24 - 1px), var(--border) calc(100% / 24 - 1px), var(--border) calc(100% / 24))",
-                      }}
-                    >
-                      {now != null ? (
-                        <span className="absolute inset-y-0 z-10 w-0.5 bg-destructive" style={{ left: `${(now / 1440) * 100}%` }} />
-                      ) : null}
-                      {rows.map((bar) => (
-                        <button
-                          key={bar.key}
-                          type="button"
-                          title={bar.title}
-                          className={cn(
-                            "absolute z-20 overflow-hidden rounded px-1 text-start text-[11px] font-medium text-white",
-                            bar.muted && "opacity-40 line-through",
-                          )}
-                          style={{
-                            top: 4 + bar.lane * 28,
-                            height: 24,
-                            left: `${(bar.start / 1440) * 100}%`,
-                            width: `${((bar.end - bar.start) / 1440) * 100}%`,
-                            background: barColor(bar.name),
-                            minWidth: 6,
-                          }}
-                          onClick={() => {
-                            if (bar.source === "program") {
-                              const program = board.programs.find((item) => item.id === bar.sourceId);
-                              if (program) onOpenProgram(program);
-                              return;
-                            }
-                            const clock = board.clocks.find((item) => item.id === bar.sourceId);
-                            if (clock) onOpenClock(clock);
-                          }}
-                        >
-                          <span className="truncate">{bar.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-        </div>
-      ) : (
-        <p className="px-3 py-4 text-sm text-muted-foreground">אין שקעים משויכים ללקוח.</p>
-      )}
-      <p className="px-3 py-2 text-xs text-muted-foreground">כל שורה היא שקע. הפס מראה מתי הוא דולק. פס דהוי הוא תוכנית כבויה.</p>
+    <div className="rounded-2xl border bg-card px-3 py-3 sm:px-5 sm:py-4">
+      <span className="block text-[10px] text-muted-foreground sm:text-xs">{label}</span>
+      <strong className={cn("mt-1 block truncate font-semibold", small ? "text-sm sm:text-lg" : "text-xl sm:text-[26px]")}>{value}</strong>
     </div>
   );
 }
 
-function barColor(name: string) {
-  let hash = 0;
-  for (const char of name) hash = (hash + char.charCodeAt(0)) % BAR_COLORS.length;
-  return BAR_COLORS[hash];
+function openEvent(
+  event: Occurrence,
+  board: Board,
+  openProgram: (program: Program, day: string | null) => void,
+  openClock: (clock: Clock) => void,
+) {
+  if (event.programId) {
+    const program = board.programs.find((item) => item.id === event.programId);
+    if (program) openProgram(program, event.sourceDay);
+    return;
+  }
+  const clock = board.clocks.find((item) => item.id === event.clockId);
+  if (clock) openClock(clock);
 }
 
-function jerusalemMinutes(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
+function upcoming(programs: Program[], clocks: Clock[], filter: string) {
+  const today = israelDate();
+  const clock = jerusalemTime();
+  const rows: Array<Occurrence & { day: string }> = [];
+  for (let index = 0; index < 60 && rows.length < 5; index += 1) {
+    const day = shiftDate(today, index);
+    for (const event of occurrencesOn(day, programs, clocks, filter)) {
+      if (index === 0 && event.time <= clock) continue;
+      rows.push({ ...event, day });
+      if (rows.length >= 5) break;
+    }
+  }
+  return rows;
+}
+
+function jerusalemTime(date = new Date()) {
+  return new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Jerusalem",
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
-  }).formatToParts(date);
-  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return Number(map.hour) * 60 + Number(map.minute);
+  }).format(date);
 }
 
-function SlotRow({
-  slot,
-  index,
-  boxed,
-  canRemove,
-  dayName,
-  onEdit,
-  onRemove,
-}: {
-  slot: DraftSlot;
-  index: number;
-  boxed: boolean;
-  canRemove: boolean;
-  dayName?: string;
-  onEdit: (patch: Partial<DraftSlot>) => void;
-  onRemove: () => void;
-}) {
-  const where = dayName ? `${dayName}, ` : "";
-  return (
-    <li
-      data-program-slot
-      className={cn(
-        "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2",
-        boxed && "rounded-xl border border-border bg-muted/30 p-2",
-      )}
-    >
-      <Label className="flex-col items-stretch gap-1">
-        <span className="inline-flex items-center gap-1">
-          הדלקה <WayDot way="on" />
-        </span>
-        <Input
-          dir="ltr"
-          type="time"
-          aria-label={`הדלקה, ${where}שעון ${index + 1}`}
-          value={slot.onTime}
-          onChange={(event) => onEdit({ onTime: event.target.value })}
-        />
-      </Label>
-      <Label className="flex-col items-stretch gap-1">
-        <span className="inline-flex items-center gap-1">
-          כיבוי <WayDot way="off" />
-        </span>
-        <Input
-          dir="ltr"
-          type="time"
-          aria-label={`כיבוי, ${where}שעון ${index + 1}`}
-          value={slot.offTime}
-          onChange={(event) => onEdit({ offTime: event.target.value })}
-        />
-      </Label>
-      {canRemove ? (
-        <Button type="button" variant="ghost" size="icon" className="mb-0.5 text-muted-foreground" aria-label={`הסרת שעון ${index + 1}`} onClick={onRemove}>
-          <X className="size-4" />
-        </Button>
-      ) : (
-        <span className="w-8" />
-      )}
-    </li>
-  );
+function weekDays(cursor: string) {
+  const start = shiftDate(cursor, -weekdayOf(cursor));
+  return Array.from({ length: 7 }, (_, index) => shiftDate(start, index));
 }
 
-function ClockFace({ clock, compact = false }: { clock: Clock; compact?: boolean }) {
-  return (
-    <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
-      <TimeBits onTime={clock.onTime} offTime={clock.offTime} />
-      {!compact && clock.onTime && clock.offTime && clock.offTime <= clock.onTime ? <span>למחרת</span> : null}
-    </span>
-  );
+function weekLabel(cursor: string) {
+  const days = weekDays(cursor);
+  return `${prettyDay(days[0])} – ${prettyDay(days[6])}`;
+}
+
+function longDay(iso: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return iso;
+  return new Intl.DateTimeFormat("he-IL", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function longDate(iso: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return iso;
+  return new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function shortDate(iso: string) {
+  const [, month, day] = iso.split("-");
+  return `${Number(day)}.${Number(month)}`;
+}
+
+function nextOnDay(program: Program, board: Board) {
+  const today = israelDate();
+  const clock = jerusalemTime();
+  const clocks = board.clocks.filter((item) => item.programId === program.id);
+  for (let index = 0; index < 84; index += 1) {
+    const day = shiftDate(today, index);
+    for (const event of occurrencesOn(day, [program], clocks)) {
+      if (event.action !== "on" || event.programId !== program.id) continue;
+      if (index === 0 && event.time <= clock) continue;
+      return event.sourceDay;
+    }
+  }
+  return null;
+}
+
+async function writeSkips(program: Program, dates: string[], send: (body: Record<string, unknown>, key: string) => Promise<Board | null>) {
+  const skippedDates = [...new Set(dates.filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)))].sort();
+  const payload = await send({ action: "program-skip", id: program.id, skippedDates }, `skip:${program.id}`);
+  if (payload) toast.success(skippedDates.length ? "ההשהיה נשמרה" : "ההשהיה בוטלה");
 }
 
 function prettyDay(iso: string) {
   const [year, month, day] = iso.split("-");
   if (!year || !month || !day) return iso;
-  return `${day}.${month}.${year.slice(2)}`;
+  return `${Number(day)}.${Number(month)}.${year.slice(2)}`;
+}
+
+function whenLabel(program: Program) {
+  if (program.weekdays.length === 7) return "כל יום";
+  if (program.weekdays.length) return weekdayPhrase(program.weekdays);
+  if (program.days.length === 1) return prettyDay(program.days[0]);
+  if (program.days.length) return `${program.days.length} תאריכים`;
+  return "בלי ימים";
 }
 
 function deviceNames(board: Board, ids: string[]) {
-  const names = ids.map((id) => board.devices.find((device) => device.deviceId === id)?.name ?? id);
-  return names.join(", ");
+  return ids.map((id) => board.devices.find((device) => device.deviceId === id)?.name ?? id).join(", ");
 }
 
-let slotKey = 0;
-
-function nextKey() {
-  slotKey += 1;
-  return slotKey;
-}
-
-function blankSlot(from?: { onTime?: string | null; offTime?: string | null }, weekday: number | null = null): DraftSlot {
-  return { key: nextKey(), onTime: from?.onTime ?? "", offTime: from?.offTime ?? "", weekday };
-}
-
-function blankPlanClock(from?: { id?: string | null; onTime?: string | null; offTime?: string | null }): PlanClock {
-  return { key: nextKey(), id: from?.id ?? null, onTime: from?.onTime ?? "", offTime: from?.offTime ?? "" };
-}
-
-function blankPlanDay(date = ""): PlanDay {
-  return { key: nextKey(), date, clocks: [blankPlanClock()] };
-}
-
-function planFrom(program: Program, clocks: Clock[], devices: Board["devices"]): Plan {
-  const visible = new Set(devices.map((device) => device.deviceId));
-  const owned = clocks.filter((clock) => !clock.recurring && clock.programId === program.id);
-  const dates = [...new Set([...program.days, ...owned.map((clock) => clock.day)])].sort();
-  return {
-    id: program.id,
-    name: program.name,
-    deviceIds: program.deviceIds.filter((id) => visible.has(id)),
-    days: (dates.length ? dates : [""]).map((date) => {
-      const rows = owned.filter((clock) => clock.day === date);
-      return { key: nextKey(), date, clocks: rows.length ? rows.map((clock) => blankPlanClock(clock)) : [blankPlanClock()] };
-    }),
-  };
-}
-
-function ProgramWhen({ program, clocks }: { program: Program; clocks: Clock[] }) {
-  if (program.weekdays.length) {
-    return (
-      <>
-        {weekdayPhrase(program.weekdays)}
-        <SlotsLine slots={program.slots} />
-      </>
-    );
-  }
-  const owned = clocks.filter((clock) => !clock.recurring && clock.programId === program.id);
-  const dates = [...new Set([...program.days, ...owned.map((clock) => clock.day)])].sort();
-  if (!dates.length) return "אין ימים";
-  return dates.map((date, dateIndex) => {
-    const rows = owned.filter((clock) => clock.day === date);
-    return (
-      <span key={date}>
-        {dateIndex ? " · " : null}
-        {prettyDay(date)}
-        {rows.map((clock) => (
-          <span key={clock.id}>
-            {" "}
-            <TimeBits onTime={clock.onTime} offTime={clock.offTime} />
-          </span>
-        ))}
-      </span>
-    );
-  });
-}
-
-function shapeProgram(program: Program): { slots: DraftSlot[]; split: boolean } {
-  const source = program.slots.length ? program.slots : [{ onTime: program.onTime, offTime: program.offTime }];
-  const split = source.some((slot) => (slot.weekdays?.length ?? 0) > 0);
-  if (!split) return { split: false, slots: source.map((slot) => blankSlot(slot)) };
-  return {
-    split: true,
-    slots: source.flatMap((slot) => {
-      const days = slot.weekdays?.length ? slot.weekdays : program.weekdays;
-      return days.map((day) => blankSlot(slot, day));
-    }),
-  };
-}
-
-function splitDraft(current: Draft): Draft {
-  const days = current.repeat === "daily" ? [0, 1, 2, 3, 4, 5, 6] : current.weekdays;
-  const seeds = current.slots.filter((slot) => slot.onTime || slot.offTime);
-  const source = seeds.length ? seeds : current.slots.slice(0, 1);
-  return {
-    ...current,
-    split: true,
-    repeat: "weekdays",
-    weekdays: days,
-    slots: days.flatMap((day) => source.map((slot) => blankSlot(slot, day))),
-  };
-}
-
-function dayShort(day: number) {
-  return DAY_NAMES[day]?.replace("יום ", "") ?? "";
-}
-
-function WayDot({ way }: { way: "on" | "off" }) {
-  return (
-    <span
-      className={cn("inline-block size-1.5 shrink-0 rounded-full", way === "on" ? "bg-online" : "bg-destructive")}
-      aria-hidden="true"
-    />
-  );
-}
-
-function TimeBits({ onTime, offTime }: { onTime: string | null; offTime: string | null }) {
-  const clock = onTime && offTime ? `${onTime}–${offTime}` : onTime ?? offTime ?? "";
-  return (
-    <span className="inline-flex min-w-0 items-center gap-0.5" dir="ltr">
-      {onTime ? <WayDot way="on" /> : null}
-      <span className="truncate">{clock}</span>
-      {offTime ? <WayDot way="off" /> : null}
-      <span className="sr-only">{onTime ? `הדלקה ${onTime}` : ""}{offTime ? ` כיבוי ${offTime}` : ""}</span>
-    </span>
-  );
-}
-
-function SlotsLine({ slots }: { slots: Slot[] }) {
-  if (!slots.length) return null;
-  const split = slots.some((slot) => (slot.weekdays?.length ?? 0) > 0);
-  if (!split) {
-    return (
-      <>
-        {slots.map((slot, index) => (
-          <span key={index}>
-            {" · "}
-            <TimeBits onTime={slot.onTime} offTime={slot.offTime} />
-          </span>
-        ))}
-      </>
-    );
-  }
-  const days = [...new Set(slots.flatMap((slot) => slot.weekdays ?? []))].sort((left, right) => left - right);
-  return (
-    <>
-      {days.map((day) => (
-        <span key={day}>
-          {" · "}
-          {dayShort(day)}{" "}
-          {slots
-            .filter((slot) => slot.weekdays?.includes(day))
-            .map((slot, index) => (
-              <span key={index}>
-                {index ? " " : null}
-                <TimeBits onTime={slot.onTime} offTime={slot.offTime} />
-              </span>
-            ))}
-        </span>
-      ))}
-    </>
-  );
+function devicePlanCount(board: Board, deviceId: string) {
+  const programs = board.programs.filter((program) => program.deviceIds.includes(deviceId)).length;
+  const loose = board.clocks.filter((clock) => !clock.recurring && !clock.programId && clock.deviceIds.includes(deviceId)).length;
+  return programs + loose;
 }

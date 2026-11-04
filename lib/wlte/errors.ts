@@ -1,3 +1,10 @@
+const TOKEN_REJECTION_CODES = new Set(["AUTH_INVALID", "AUTH_EXPIRED", "AUTH_REQUIRED", "AUTH_SCOPE_DENIED"]);
+
+export function isTokenRejection(status?: number, code?: string): boolean {
+  if (code && TOKEN_REJECTION_CODES.has(code)) return true;
+  return status === 401 || status === 403;
+}
+
 const MESSAGES: Record<string, string> = {
   AUTH_INVALID: "פרטי ה-API אינם תקינים",
   AUTH_EXPIRED: "פג תוקף האסימון",

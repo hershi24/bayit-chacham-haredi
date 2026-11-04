@@ -10,7 +10,7 @@ import {
   type CommandSnapshot,
   type DeviceSnapshot,
 } from "@/lib/wlte/parse";
-import { runIdempotent, type AttemptResult } from "@/lib/wlte/retry";
+import { createIdempotencyKey, runIdempotent, type AttemptResult } from "@/lib/wlte/retry";
 import type { TokenManager } from "@/lib/wlte/token-manager";
 
 function retryAfterSeconds(headers: Headers): number | undefined {
@@ -49,6 +49,7 @@ export function createLiveGateway(config: AppConfig, tokens: TokenManager) {
     const response = await fetch(new URL(path, config.baseUrl), {
       ...init,
       headers,
+      cache: "no-store",
       signal: AbortSignal.timeout(15_000),
     });
     const body = await readBody(response);
@@ -61,10 +62,14 @@ export function createLiveGateway(config: AppConfig, tokens: TokenManager) {
   }
 
   async function send(path: string, init: RequestInit, idempotencyKey?: string): Promise<unknown> {
+    let key = idempotencyKey;
     const result = await runIdempotent(
-      () => call(path, init, idempotencyKey),
+      () => call(path, init, key),
       async () => {
         await tokens.get(true);
+        // A rejected login is not a stored relay command. Reusing its key can replay the
+        // auth failure and skip the socket, which is why the next phone call was the one that worked.
+        if (key) key = createIdempotencyKey();
       },
     );
     if (result.networkError) throw new WlteError(result.code ?? "GATEWAY_UNAVAILABLE", 503);
@@ -119,6 +124,7 @@ export async function requestAccessToken(config: AppConfig) {
       clientId: config.clientId,
       clientSecret: config.clientSecret,
     }),
+    cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });
   const body = await readBody(response);

@@ -247,8 +247,8 @@ function readDate(prefix: string): MenuRead {
     field: "pikud_date",
     min: 8,
     max: 8,
-    // No, same playback field as the menu reads, so Yemot does not speak the buffer as a number.
-    // Number would also drop a leading zero. Min and max of eight still capture 03112026.
+    // playback No stays silent. Number would speak the buffer as a number and drop a leading zero.
+    // Capture is min and max, both 8, so 03112026 still arrives. confirm is already no.
     mode: "No",
     seconds: 8,
     allowEmpty: true,

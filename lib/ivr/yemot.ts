@@ -17,6 +17,10 @@ export function yemotRead(input: {
   seconds?: number;
   allowEmpty?: boolean;
 }): string {
+  // Keypress list: field, reuse, max, min, seconds, playback, then confirm last.
+  // max and min are the capture length. playback is how Yemot speaks the buffer:
+  // No is silent, Number speaks a number and drops a leading zero.
+  // The final no is confirm, which only skips "לאישור הקישו אחת".
   const playback =
     input.mode === "Number" || input.mode === "Time" || input.mode === "Digits" || input.mode === "Date" ? input.mode : "No";
   const capture = [

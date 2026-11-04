@@ -70,9 +70,22 @@ function assertMenuOptions(message: string) {
   }
 }
 
+function readSlots(body: string): string[] {
+  const line = body.trim().split("\n").find((item) => item.startsWith("read=")) ?? body.trim();
+  return line.slice(line.lastIndexOf("=") + 1).split(",");
+}
+
 function playbackAt(body: string): string {
-  const capture = body.trim().slice(body.trim().lastIndexOf("=") + 1);
-  return capture.split(",")[5] ?? "";
+  return readSlots(body)[5] ?? "";
+}
+
+function assertKeypress(body: string, expected: { field: string; max: string; min: string; playback: string }) {
+  const slots = readSlots(body);
+  assert.equal(slots[0], expected.field);
+  assert.equal(slots[2], expected.max);
+  assert.equal(slots[3], expected.min);
+  assert.equal(slots[5], expected.playback);
+  assert.equal(slots[14], "no");
 }
 
 test("timer turns on for the requested minutes and the clock accepts four digits", () => {
@@ -213,9 +226,7 @@ test("timer turns on for the requested minutes and the clock accepts four digits
     assert.equal(askDate.allowEmpty, true);
     const menu = decideMenu([ac], { device: "1" });
     if (menu.type === "read") assert.equal(playbackAt(yemotRead(askDate)), playbackAt(yemotRead(menu)));
-    assert.equal(playbackAt(yemotRead(askDate)), "No");
-    assert.notEqual(playbackAt(yemotRead(askDate)), "Number");
-    assert.notEqual(playbackAt(yemotRead(askDate)), "Digits");
+    assertKeypress(yemotRead(askDate), { field: "pikud_date", max: "8", min: "8", playback: "No" });
     assert.equal(
       askDate.message,
       "הקש שמונה ספרות, שתיים ליום, שתיים לחודש, וארבע ספרות לשנה. לשלושה בנובמבר אלפיים עשרים ושש הקש אפס שלוש אחד אחד שתיים אפס שתיים שש",
@@ -227,8 +238,7 @@ test("timer turns on for the requested minutes and the clock accepts four digits
     assert.equal(askTime.field, "pikud_on");
     assert.equal(askTime.min, 4);
     assert.equal(askTime.max, 4);
-    assert.equal(playbackAt(yemotRead(askTime)), "No");
-    assert.notEqual(playbackAt(yemotRead(askTime)), "Number");
+    assertKeypress(yemotRead(askTime), { field: "pikud_on", max: "4", min: "4", playback: "No" });
   }
   const badDay = decideMenu([ac], { device: "1", action: "4", repeat: "2", date: "31022026" });
   assert.equal(badDay.type, "read");
@@ -306,9 +316,9 @@ test("a caller can correct a full date and an empty date asks again", async () =
   const askText = await ask.text();
   assert.match(askText, /אפס שלוש אחד אחד שתיים אפס שתיים שש/);
   assert.match(askText, /pikud_date,no,8,8,8,No,yes,,/);
+  assertKeypress(askText, { field: "pikud_date", max: "8", min: "8", playback: "No" });
   assert.equal(askText.includes(",Number,"), false);
   assert.equal(askText.includes(",Digits,"), false);
-  assert.equal(playbackAt(askText), "No");
   assert.equal(askText.includes("go_to_folder=hangup"), false);
 
   const impossible = await phonePress({ ...entered, pikud_date: "31022026" });
@@ -372,9 +382,8 @@ test("a one-time clock speaks the date and saves the chosen on or off time", asy
   const onAsk = await phonePress({ ...base, pikud_side: "1" });
   const onAskText = await onAsk.text();
   assert.match(onAskText, /pikud_on,no,4,4,/);
-  assert.equal(playbackAt(onAskText), "No");
+  assertKeypress(onAskText, { field: "pikud_on", max: "4", min: "4", playback: "No" });
   assert.equal(playbackAt(onAskText), playbackAt(heardText));
-  assert.notEqual(playbackAt(onAskText), "Number");
   assert.match(onAskText, /לשעת הדלקה הקש ארבע ספרות/);
   assert.equal(onAskText.includes("תשע תשע תשע תשע"), false);
   assert.equal(onAskText.includes("9999"), false);
@@ -407,8 +416,7 @@ test("a one-time clock speaks the date and saves the chosen on or off time", asy
   const offAsk = await phonePress({ ...base, pikud_side: "2" });
   const offAskText = await offAsk.text();
   assert.match(offAskText, /pikud_off,no,4,4,/);
-  assert.equal(playbackAt(offAskText), "No");
-  assert.notEqual(playbackAt(offAskText), "Number");
+  assertKeypress(offAskText, { field: "pikud_off", max: "4", min: "4", playback: "No" });
   assert.match(offAskText, /לשעת כיבוי הקש ארבע ספרות/);
   assert.equal(offAskText.includes("תשע תשע תשע תשע"), false);
 

@@ -1,4 +1,5 @@
 import type { Connectivity } from "@/lib/types";
+import { israelDate } from "@/lib/time";
 
 export type MenuDevice = {
   deviceId: string;
@@ -51,7 +52,6 @@ export type MenuDecision =
   | PhoneClockPlan;
 
 const DIGIT_WORD = ["", "אחד", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע"];
-const REST = "לטיימר הקש שלוש, לשעון הקש ארבע, לתוכניות הקש חמש";
 
 export function decideMenu(devices: MenuDevice[], values: MenuValues): MenuDecision {
   const listed = devices.slice(0, 9);
@@ -66,7 +66,10 @@ export function decideMenu(devices: MenuDevice[], values: MenuValues): MenuDecis
 
   if (!values.action) return deviceMenu(device);
 
-  if (values.action === "1") return { type: "turn", device, action: device.relayOn === true ? "OFF" : "ON" };
+  if (values.action === "1" || values.action === "2") {
+    const turnOn = device.relayOn === true ? values.action === "2" : values.action === "1";
+    return { type: "turn", device, action: turnOn ? "ON" : "OFF" };
+  }
   if (values.action === "3") return timerFlow(device, values.minutes);
   if (values.action === "4") return clockFlow(device, listed, values);
 
@@ -90,19 +93,17 @@ function deviceList(devices: MenuDevice[]): MenuDecision {
 function deviceMenu(device: MenuDevice): MenuRead {
   const name = label(device);
   const offline = device.connectivity === "OFFLINE" ? `${name} אינו מחובר כעת, ` : "";
-  const power =
-    device.relayOn === true
-      ? "פועל כעת, לכיבוי הקש אחד"
-      : device.relayOn === false
-        ? "כבוי כעת, להפעלה הקש אחד"
-        : "מצבו אינו ידוע, להפעלה הקש אחד";
+  const onNow = device.relayOn === true;
+  const state = onNow ? "פועל כעת" : device.relayOn === false ? "כבוי כעת" : "מצבו אינו ידוע";
+  const first = onNow ? "לכיבוי הקש אחד" : "להפעלה הקש אחד";
+  const second = onNow ? "להפעלה הקש שתיים" : "לכיבוי הקש שתיים";
   return {
     type: "read",
-    message: `${offline}${name} ${power}, ${REST}`,
+    message: `${offline}${name} ${state}, ${first}, ${second}, לטיימר הקש שלוש, לשעון הקש ארבע, לתוכניות הקש חמש`,
     field: "pikud_action",
     min: 1,
     max: 1,
-    allowed: "1345",
+    allowed: "12345",
     mode: "No",
   };
 }
@@ -134,33 +135,37 @@ function timerFlow(device: MenuDevice, minutesValue: string | undefined): MenuDe
 
 function clockFlow(device: MenuDevice, devices: MenuDevice[], values: MenuValues): MenuDecision {
   const repeat = values.repeat;
-  if (!repeat || !["1", "2", "3", "4"].includes(repeat)) return readRepeat(repeat ? "הבחירה לא קיימת, " : "");
+  if (!repeat || !["1", "2", "3", "4", "5"].includes(repeat)) return readRepeat(repeat ? "הבחירה לא קיימת, " : "");
 
   let weekdays: number[] = [];
-  if (repeat === "2") weekdays = [0, 1, 2, 3, 4, 5, 6];
-  else if (repeat === "3") weekdays = [0, 1, 2, 3, 4];
-  else if (repeat === "4") {
+  if (repeat === "3") weekdays = [0, 1, 2, 3, 4, 5, 6];
+  else if (repeat === "4") weekdays = [0, 1, 2, 3, 4];
+  else if (repeat === "5") {
     const parsed = values.week ? parseWeek(values.week) : null;
     if (!parsed) return readWeek(values.week ? "הימים לא תקינים, " : "");
     weekdays = parsed;
   }
 
   let day: string | null = null;
+  let heard = "";
   if (repeat === "1") {
+    day = israelDate();
+    heard = `שעון להיום, ${spokenDateWords(day)}, `;
+  } else if (repeat === "2") {
     if (!values.date) return readDate(values.date === "" ? "לא הוקש תאריך, " : "");
     const parsed = parsePhoneDate(values.date);
     if (!parsed.iso) return readDate(`${parsed.reason}, `);
     day = parsed.iso;
+    heard = `${spokenCapturedDate(day)}, `;
   }
 
-  const heard = day ? `${spokenCapturedDate(day)}, ` : "";
   const side = values.side;
   if (side !== "1" && side !== "2") return readSide(side ? "הבחירה לא קיימת, " : heard);
 
   if (side === "1") {
     const on = clockTime(values.on, readOn);
     if (typeof on !== "string") return on;
-    if (values.more !== "1" && values.more !== "2") return readContinue("off", values.more ? "הבחירה לא קיימת, " : "");
+    if (values.more !== "1" && values.more !== "2") return readContinue("off", values.more ? "הבחירה לא קיימת, " : heardOn(on));
     if (values.more === "2") return commitClock(device, devices, values, day, weekdays, on, null);
     const off = clockTime(values.off, readOff);
     if (typeof off !== "string") return off;
@@ -169,11 +174,19 @@ function clockFlow(device: MenuDevice, devices: MenuDevice[], values: MenuValues
 
   const off = clockTime(values.off, readOff);
   if (typeof off !== "string") return off;
-  if (values.more !== "1" && values.more !== "2") return readContinue("on", values.more ? "הבחירה לא קיימת, " : "");
+  if (values.more !== "1" && values.more !== "2") return readContinue("on", values.more ? "הבחירה לא קיימת, " : heardOff(off));
   if (values.more === "2") return commitClock(device, devices, values, day, weekdays, null, off);
   const on = clockTime(values.on, readOn);
   if (typeof on !== "string") return on;
   return commitClock(device, devices, values, day, weekdays, on, off);
+}
+
+function heardOn(clock: string): string {
+  return `נקלטה שעת הדלקה ${spokenClockTime(clock)}, `;
+}
+
+function heardOff(clock: string): string {
+  return `נקלטה שעת כיבוי ${spokenClockTime(clock)}, `;
 }
 
 function commitClock(
@@ -205,11 +218,11 @@ function commitClock(
 function readRepeat(prefix: string): MenuRead {
   return {
     type: "read",
-    message: `${prefix}לשעון חד פעמי הקש אחד, לכל יום הקש שתיים, לכל יום חוץ משישי ושבת הקש שלוש, לבחירת ימים הקש ארבע`,
+    message: `${prefix}לשעון להיום הקש אחד, לתאריך מסוים הקש שתיים, לכל יום הקש שלוש, לכל יום חוץ משישי ושבת הקש ארבע, לבחירת ימים הקש חמש`,
     field: "pikud_repeat",
     min: 1,
     max: 1,
-    allowed: "1234",
+    allowed: "12345",
     mode: "No",
   };
 }
@@ -234,8 +247,9 @@ function readDate(prefix: string): MenuRead {
     field: "pikud_date",
     min: 8,
     max: 8,
-    // Number drops a leading zero, so 03112026 never reaches eight digits and Yemot speaks an error.
-    mode: "Digits",
+    // No, same playback field as the menu reads, so Yemot does not speak the buffer as a number.
+    // Number would also drop a leading zero. Min and max of eight still capture 03112026.
+    mode: "No",
     seconds: 8,
     allowEmpty: true,
   };
@@ -276,7 +290,7 @@ function readOn(prefix: string): MenuRead {
     field: "pikud_on",
     min: 4,
     max: 4,
-    mode: "Number",
+    mode: "No",
   };
 }
 
@@ -287,7 +301,7 @@ function readOff(prefix: string): MenuRead {
     field: "pikud_off",
     min: 4,
     max: 4,
-    mode: "Number",
+    mode: "No",
   };
 }
 
@@ -356,10 +370,42 @@ const WEEKDAYS = ["יום ראשון", "יום שני", "יום שלישי", "י
 const MASCULINE = ["", "אחד", "שניים", "שלושה", "ארבעה", "חמישה", "שישה", "שבעה", "שמונה", "תשעה"];
 const FEMININE = ["", "אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע"];
 
-function spokenCapturedDate(iso: string): string {
+export function spokenDateWords(iso: string): string {
   const [year, month, day] = iso.split("-").map(Number);
   const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-  return `נקלט ${spokenCount(day, "m")} ${MONTH_IN[month]} ${spokenYear(year)}, ${WEEKDAYS[weekday]}`;
+  return `${spokenCount(day, "m")} ${MONTH_IN[month]} ${spokenYear(year)}, ${WEEKDAYS[weekday]}`;
+}
+
+function spokenCapturedDate(iso: string): string {
+  return `נקלט ${spokenDateWords(iso)}`;
+}
+
+export function spokenClockTime(value: string): string {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return value;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const words = spokenHour(hour);
+  const part = clockPart(hour);
+  if (minute === 0) return `${words} ${part}`;
+  if (minute === 30) return `${words} וחצי ${part}`;
+  if (minute === 15) return `${words} ורבע ${part}`;
+  return `${words} ו${spokenCount(minute, "f")} ${part}`;
+}
+
+function spokenHour(hour: number): string {
+  const hour12 = hour % 12;
+  if (hour12 === 0) return "שתים עשרה";
+  if (hour12 === 10) return "עשר";
+  if (hour12 === 11) return "אחת עשרה";
+  return FEMININE[hour12] ?? "";
+}
+
+function clockPart(hour: number): string {
+  if (hour >= 5 && hour < 12) return "בבוקר";
+  if (hour >= 12 && hour < 17) return "בצהריים";
+  if (hour >= 17 && hour < 21) return "בערב";
+  return "בלילה";
 }
 
 function spokenYear(year: number): string {

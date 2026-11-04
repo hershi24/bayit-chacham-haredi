@@ -15,7 +15,10 @@ export type CachedToken = IssuedToken & {
 export class TokenManager {
   private current: CachedToken | null = null;
   private pending: Promise<CachedToken> | null = null;
+  private pendingGeneration = 0;
+  private generation = 0;
   private lastError: string | null = null;
+  private chain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly fetchToken: () => Promise<IssuedToken>,
@@ -23,11 +26,27 @@ export class TokenManager {
   ) {}
 
   async get(force = false): Promise<CachedToken> {
+    const run = this.chain.then(() => this.read(force));
+    this.chain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async read(force: boolean): Promise<CachedToken> {
+    if (force) {
+      this.generation += 1;
+      this.current = null;
+      this.pending = null;
+    }
     if (!force && this.current && !tokenNeedsRefresh(this.current, this.now())) {
       return this.current;
     }
-    if (!this.pending) {
-      this.pending = this.issue();
+    const generation = this.generation;
+    if (!this.pending || this.pendingGeneration !== generation) {
+      this.pendingGeneration = generation;
+      this.pending = this.issue(generation);
     }
     return this.pending;
   }
@@ -50,7 +69,7 @@ export class TokenManager {
     };
   }
 
-  private async issue(): Promise<CachedToken> {
+  private async issue(generation: number): Promise<CachedToken> {
     try {
       const issued = await this.fetchToken();
       const issuedAt = this.now();
@@ -61,14 +80,20 @@ export class TokenManager {
         issuedAt,
         expiresAt: issuedAt + expiresIn * 1000,
       };
+      if (generation !== this.generation) {
+        if (this.current) return this.current;
+        throw new Error("האסימון שנדחה לא ישמש שוב");
+      }
       this.current = token;
       this.lastError = null;
       return token;
     } catch (error) {
-      this.lastError = error instanceof Error ? error.message : "הנפקת האסימון נכשלה";
+      if (generation === this.generation) {
+        this.lastError = error instanceof Error ? error.message : "הנפקת האסימון נכשלה";
+      }
       throw error;
     } finally {
-      this.pending = null;
+      if (this.pendingGeneration === generation) this.pending = null;
     }
   }
 }

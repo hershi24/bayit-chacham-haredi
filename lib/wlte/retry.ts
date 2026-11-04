@@ -1,3 +1,5 @@
+import { isTokenRejection } from "@/lib/wlte/errors";
+
 export type RetryDecision = "return" | "retry-same-key" | "refresh-then-retry";
 
 export function retryDecision(input: {
@@ -7,11 +9,12 @@ export function retryDecision(input: {
   refreshed: boolean;
   retries: number;
 }): RetryDecision {
-  if (!input.networkError && input.status !== undefined && input.status < 400) {
+  const tokenRejected = isTokenRejection(input.status, input.code);
+  if (!input.networkError && input.status !== undefined && input.status < 400 && !tokenRejected) {
     return "return";
   }
-  if (input.status === 401 && !input.refreshed) return "refresh-then-retry";
-  if (input.status === 401 && input.refreshed) return "return";
+  if (tokenRejected && !input.refreshed) return "refresh-then-retry";
+  if (tokenRejected && input.refreshed) return "return";
 
   const retryable =
     input.networkError ||

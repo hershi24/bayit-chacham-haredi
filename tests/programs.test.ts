@@ -231,6 +231,30 @@ test("a weekday program runs every chosen day and skips Friday and Saturday", as
   await deleteProgram("ten_shul", program.id);
 });
 
+test("a weekday program stays inside its start and end dates", async () => {
+  const now = new Date("2026-12-01T06:00:00.000Z");
+  const program = {
+    id: programId("ten_shul", "days:span"),
+    tenantId: "ten_shul",
+    programKey: "days:span",
+    name: "טווח",
+    enabled: true,
+    deviceIds: ["rct074190118"],
+    startDate: "2026-12-02",
+    endDate: "2026-12-03",
+    days: [] as string[],
+    weekdays: [0, 1, 2, 3, 4],
+    onTime: "10:00",
+    offTime: "12:00",
+    slots: [{ onTime: "10:00", offTime: "12:00" }],
+  };
+  await upsertProgram(program);
+  await syncTenantPrograms("ten_shul", now);
+  const days = [...new Set((await listRunsFor(program.id)).filter((run) => run.action === "ON").map((run) => israelDate(new Date(run.runAt))))].sort();
+  assert.deepEqual(days, ["2026-12-02", "2026-12-03"]);
+  await deleteProgram("ten_shul", program.id);
+});
+
 test("one program holds several clocks every day", async () => {
   const now = new Date("2026-11-01T08:00:00.000Z");
   const program = {
@@ -354,6 +378,13 @@ test("one date program with two dates schedules every clock and a pause clears t
         ["OFF", jerusalemInstant("2026-11-10", "17:00")?.toISOString(), "rct074190118"],
         ["ON", jerusalemInstant("2026-11-12", "09:00")?.toISOString(), "rct074190118"],
       ],
+    );
+
+    await upsertProgram({ ...program, skippedDates: ["2026-11-10"] });
+    await syncTenantPrograms("ten_shul", now);
+    assert.deepEqual(
+      (await listRunsFor(id)).map((run) => run.runAt),
+      [jerusalemInstant("2026-11-12", "09:00")?.toISOString()],
     );
 
     await upsertProgram({ ...program, enabled: false });

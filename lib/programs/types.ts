@@ -14,6 +14,7 @@ export type StoredProgram = {
   onTime: string | null;
   offTime: string | null;
   slots: ProgramSlot[];
+  skippedDates?: string[];
 };
 
 export type ProgramSlot = {

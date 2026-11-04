@@ -95,6 +95,7 @@ function ensureDayClocks(database: DatabaseSync) {
   addColumn(database, "on_time", "on_time TEXT");
   addColumn(database, "off_time", "off_time TEXT");
   addColumn(database, "slots", "slots TEXT NOT NULL DEFAULT '[]'");
+  addColumn(database, "skipped_dates", "skipped_dates TEXT NOT NULL DEFAULT '[]'");
   database.exec(`
     CREATE TABLE IF NOT EXISTS clocks (
       id TEXT PRIMARY KEY,
@@ -984,6 +985,7 @@ function mapProgram(row: Row): StoredProgram {
     onTime: textOrNull(row, "on_time"),
     offTime: textOrNull(row, "off_time"),
     slots: parseSlots(row.slots, textOrNull(row, "on_time"), textOrNull(row, "off_time")),
+    skippedDates: jsonList(row, "skipped_dates").filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)),
   };
 }
 
@@ -995,8 +997,8 @@ export function upsertProgram(program: StoredProgram) {
   db()
     .prepare(
       `INSERT INTO programs (
-        id, tenant_id, program_key, name, enabled, device_ids, start_date, end_date, days, weekdays, on_time, off_time, slots, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, tenant_id, program_key, name, enabled, device_ids, start_date, end_date, days, weekdays, on_time, off_time, slots, skipped_dates, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(tenant_id, program_key) DO UPDATE SET
         name = excluded.name,
         enabled = excluded.enabled,
@@ -1007,7 +1009,8 @@ export function upsertProgram(program: StoredProgram) {
         weekdays = excluded.weekdays,
         on_time = excluded.on_time,
         off_time = excluded.off_time,
-        slots = excluded.slots`,
+        slots = excluded.slots,
+        skipped_dates = excluded.skipped_dates`,
     )
     .run(
       program.id,
@@ -1023,6 +1026,7 @@ export function upsertProgram(program: StoredProgram) {
       program.onTime,
       program.offTime,
       JSON.stringify(program.slots ?? []),
+      JSON.stringify(program.skippedDates ?? []),
       new Date().toISOString(),
     );
 }

@@ -391,7 +391,7 @@ test("the phone saves a weekday clock on the chosen socket", async () => {
         ApiPhone: "035551002",
         pikud_device: "1",
         pikud_action: "4",
-        pikud_repeat: "3",
+        pikud_repeat: "4",
         pikud_side: "1",
         pikud_on: "1000",
         pikud_more: "1",
@@ -401,8 +401,8 @@ test("the phone saves a weekday clock on the chosen socket", async () => {
   );
   const text = await response.text();
   assert.match(text, /נשמרה תוכנית שקע תאורה כל יום חוץ משישי ושבת/);
-  assert.match(text, /הדלקה 10:00/);
-  assert.match(text, /כיבוי 12:00/);
+  assert.match(text, /הדלקה עשר בבוקר/);
+  assert.match(text, /כיבוי שתים עשרה בצהריים/);
   assert.match(text, /go_to_folder=hangup/);
   const program = (await listPrograms("ten_shul")).find((item) => item.name === "שקע תאורה כל יום חוץ משישי ושבת");
   assert.ok(program);

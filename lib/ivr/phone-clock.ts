@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PhoneClockPlan } from "@/lib/ivr/flow";
+import { spokenClockTime, spokenDateWords, type PhoneClockPlan } from "@/lib/ivr/flow";
 import { programId, syncTenantPrograms } from "@/lib/programs/sync";
 import { weekdayPhrase } from "@/lib/programs/weekdays";
 import { getDevice, listPrograms, saveDayClock, upsertProgram } from "@/lib/store";
@@ -21,7 +21,7 @@ export async function savePhoneClock(plan: PhoneClockPlan): Promise<string> {
       deviceIds,
     });
     await syncTenantPrograms(tenantId);
-    return `נשמר שעון ל${spokenDevices(plan)}, בתאריך ${spokenDate(plan.day)}, ${times}`;
+    return `נשמר שעון ל${spokenDevices(plan)}, בתאריך ${spokenDateWords(plan.day)}, ${times}`;
   }
 
   const name = programName(plan).slice(0, 40);
@@ -56,15 +56,10 @@ function spokenDevices(plan: PhoneClockPlan): string {
   return plan.devices.map((device) => device.name.trim() || device.deviceId).join(" ו");
 }
 
-function spokenDate(iso: string): string {
-  const [year, month, day] = iso.split("-");
-  return `${day} ${month} ${year}`;
-}
-
 function spokenTimes(onTime: string | null, offTime: string | null): string {
   const parts = [];
-  if (onTime) parts.push(`הדלקה ${onTime}`);
-  if (offTime) parts.push(`כיבוי ${offTime}`);
+  if (onTime) parts.push(`הדלקה ${spokenClockTime(onTime)}`);
+  if (offTime) parts.push(`כיבוי ${spokenClockTime(offTime)}`);
   if (onTime && offTime && offTime <= onTime) parts.push("הכיבוי למחרת");
   return parts.join(", ");
 }

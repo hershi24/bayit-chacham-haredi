@@ -291,6 +291,7 @@ export function ProgramsBoard() {
                 <div className="space-y-2">
                   {listedPrograms.map((program) => {
                     const device = board.devices.find((item) => program.deviceIds.includes(item.deviceId));
+                    const skipped = program.skippedDates ?? [];
                     return (
                       <article key={program.id} className="flex flex-wrap items-center gap-3 rounded-xl border p-3">
                         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary">
@@ -302,9 +303,7 @@ export function ProgramsBoard() {
                             {deviceNames(board, program.deviceIds)} · {whenLabel(program)}
                             {program.endDate && (program.weekdays.length || program.days.length > 1) ? ` · עד ${prettyDay(program.endDate)}` : ""}
                             {!program.enabled ? " · כבויה" : ""}
-                            {(program.skippedDates ?? []).length
-                              ? ` · מושהה ב־${(program.skippedDates ?? []).map((day) => prettyDay(day)).join(", ")}`
-                              : ""}
+                            {skipped.length ? ` · מושהה ב־${skipped.map((day) => prettyDay(day)).join(", ")}` : ""}
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1">
@@ -328,7 +327,7 @@ export function ProgramsBoard() {
                               setPauseId(program.id);
                             }}
                           >
-                            השהיה{(program.skippedDates ?? []).length ? ` (${program.skippedDates.length})` : ""}
+                            השהיה{skipped.length ? ` (${skipped.length})` : ""}
                           </button>
                           <button type="button" className="rounded-lg border px-2 py-1.5 text-xs" onClick={() => openProgram(program, null)}>
                             עריכה

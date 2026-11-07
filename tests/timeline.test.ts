@@ -46,6 +46,22 @@ test("a switched-off program stays on the bar but muted", () => {
   assert.equal(bars[0]?.muted, true);
 });
 
+test("a skipped date hides the weekday program and its owned clock", () => {
+  const skipped = { ...ac, skippedDates: ["2026-12-06"] };
+  assert.equal(dayBars("2026-12-06", [], [skipped]).length, 0);
+  const clock = {
+    id: "clk_owned",
+    day: "2026-12-06",
+    onTime: "10:00",
+    offTime: "12:00",
+    deviceIds: ["rct074190118"],
+    programId: "prog_ac",
+    recurring: false,
+  };
+  assert.equal(dayBars("2026-12-06", [clock], [skipped]).length, 0);
+  assert.equal(dayBars("2026-12-07", [], [skipped]).length, 1);
+});
+
 test("only an on time runs until midnight and a repeated clock is not drawn twice", () => {
   const once = {
     id: "clk_on",

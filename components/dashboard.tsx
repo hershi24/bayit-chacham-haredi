@@ -164,21 +164,32 @@ export function Dashboard() {
     .slice(0, 5);
   const recent = (audit ?? []).filter((entry) => entry.deviceName).slice(0, 5);
 
+  const deviceGrid =
+    count <= 1
+      ? "mx-auto grid w-full max-w-xl min-w-0 gap-4"
+      : count === 2
+        ? "mx-auto grid w-full max-w-3xl min-w-0 gap-4 sm:grid-cols-2"
+        : count === 3
+          ? "mx-auto grid w-full max-w-5xl min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          : "mx-auto grid w-full max-w-5xl min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3";
+
   return (
     <section className="w-full min-w-0">
       <div className="mb-6 flex items-center justify-between gap-3">
         <p className="min-w-0 truncate text-[13px] text-muted-foreground">{todayLabel()}</p>
-        <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-full px-3 text-[13px] text-muted-foreground" onClick={() => void load(true)}>
+        <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-xl px-3 text-[13px] text-muted-foreground" onClick={() => void load(true)}>
           <RefreshCw className="size-3.5" />
           רענון
           <span className={`size-1.5 rounded-full ${live ? "bg-online" : "bg-muted-foreground/50"}`} aria-label={live ? "מחובר" : "מתחבר"} />
         </Button>
       </div>
-      <h1 className="text-[26px] leading-8 font-semibold tracking-tight text-balance">
-        {greeting()}
-        {name ? `, ${name}` : ""}
-      </h1>
-      <p className="mt-1 text-[15px] text-muted-foreground">{devices ? boardLine(connected, running) : "טוען את מצב השקעים"}</p>
+      <div className="mx-auto max-w-3xl text-center sm:text-start">
+        <h1 className="text-[28px] leading-9 font-semibold tracking-tight text-balance sm:text-[32px]">
+          {greeting()}
+          {name ? `, ${name}` : ""}
+        </h1>
+        <p className="mt-1 text-[15px] text-muted-foreground">{devices ? boardLine(connected, running) : "טוען את מצב השקעים"}</p>
+      </div>
       {status?.lastError ? <p className="mt-4 text-sm text-destructive">{status.lastError}</p> : null}
       {status?.token.missingScopes.length ? (
         <p className="mt-4 text-sm text-destructive">
@@ -195,16 +206,16 @@ export function Dashboard() {
       ) : null}
 
       <div className="mt-8 min-w-0">
-        <h2 className="mb-3 text-[13px] font-medium text-muted-foreground">השקעים</h2>
-        {devices === null && !error ? <div className="h-28 animate-pulse rounded-2xl bg-muted" /> : null}
+        <h2 className="mb-4 text-center text-[13px] font-medium tracking-[0.08em] text-muted-foreground uppercase">השקעים</h2>
+        {devices === null && !error ? <div className="mx-auto h-28 max-w-xl animate-pulse rounded-2xl bg-muted" /> : null}
         {devices && devices.length === 0 ? (
-          <div className="rounded-2xl border border-border/60 bg-card p-6">
+          <div className="mx-auto max-w-xl rounded-2xl border border-border/60 bg-card p-6 text-center">
             <h3 className="font-medium">אין שקעים משויכים לחשבון הזה</h3>
             <p className="mt-1 text-sm text-muted-foreground">מנהל המערכת יכול לשייך שקע ללקוח מתוך מסך הניהול.</p>
           </div>
         ) : null}
         {devices && devices.length > 0 ? (
-          <div className={count === 1 ? "grid min-w-0 gap-3" : "grid min-w-0 gap-3 md:grid-cols-2"}>
+          <div className={deviceGrid}>
             {devices.map((device) => (
               <SocketCard
                 key={device.deviceId}
@@ -222,7 +233,7 @@ export function Dashboard() {
         ) : null}
       </div>
 
-      <div className="mt-8 min-w-0">
+      <div className="mx-auto mt-10 max-w-3xl min-w-0">
         <h2 className="mb-3 text-[13px] font-medium text-muted-foreground">בהמשך</h2>
         {upcoming.length === 0 ? (
           <p className="rounded-2xl border border-border/60 bg-card px-4 py-3 text-[14px] text-muted-foreground">אין פעולות מתוכננות.</p>
@@ -241,7 +252,7 @@ export function Dashboard() {
         )}
       </div>
 
-      <div className="mt-8 min-w-0">
+      <div className="mx-auto mt-8 max-w-3xl min-w-0">
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <h2 className="text-[13px] font-medium text-muted-foreground">פעילות אחרונה</h2>
           <Link href="/audit" className="shrink-0 text-[12px] text-primary hover:underline">

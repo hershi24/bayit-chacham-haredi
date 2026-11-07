@@ -66,12 +66,9 @@ export function decideMenu(devices: MenuDevice[], values: MenuValues): MenuDecis
 
   if (!values.action) return deviceMenu(device);
 
-  if (values.action === "1" || values.action === "2") {
-    const turnOn = device.relayOn === true ? values.action === "2" : values.action === "1";
-    return { type: "turn", device, action: turnOn ? "ON" : "OFF" };
-  }
-  if (values.action === "3") return timerFlow(device, values.minutes);
-  if (values.action === "4") return clockFlow(device, listed, values);
+  if (values.action === "1") return { type: "turn", device, action: device.relayOn === true ? "OFF" : "ON" };
+  if (values.action === "2") return timerFlow(device, values.minutes);
+  if (values.action === "3") return clockFlow(device, listed, values);
 
   return { ...deviceMenu(device), message: `הבחירה לא קיימת, ${deviceMenu(device).message}` };
 }
@@ -96,14 +93,13 @@ function deviceMenu(device: MenuDevice): MenuRead {
   const onNow = device.relayOn === true;
   const state = onNow ? "פועל כעת" : device.relayOn === false ? "כבוי כעת" : "מצבו אינו ידוע";
   const first = onNow ? "לכיבוי הקש אחד" : "להפעלה הקש אחד";
-  const second = onNow ? "להפעלה הקש שתיים" : "לכיבוי הקש שתיים";
   return {
     type: "read",
-    message: `${offline}${name} ${state}, ${first}, ${second}, לטיימר הקש שלוש, לשעון הקש ארבע, לתוכניות הקש חמש`,
+    message: `${offline}${name} ${state}, ${first}, לטיימר הקש שתיים, לשעון הקש שלוש, לתוכניות הקש ארבע`,
     field: "pikud_action",
     min: 1,
     max: 1,
-    allowed: "12345",
+    allowed: "1234",
     mode: "No",
   };
 }

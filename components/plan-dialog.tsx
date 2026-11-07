@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import type { OccurrenceClock, OccurrenceProgram } from "@/lib/programs/occurrences";
 import { maxDayClocks, maxProgramDays, maxSlots, slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
-import { weekdayOf } from "@/lib/programs/weekdays";
+import { weekdayOf, weekdayPhrase } from "@/lib/programs/weekdays";
 import { israelDate, shiftDate } from "@/lib/time";
 import { cn } from "cn";
 
@@ -39,7 +39,15 @@ export type PlannerDraft = {
 
 type Frequency = "once" | "weekly" | "daily";
 type ScheduleKind = "times" | "duration" | "sun";
-type Range = { key: number; on: string; off: string; date: string; clockId: string | null; originalDate: string | null };
+type Range = {
+  key: number;
+  on: string;
+  off: string;
+  date: string;
+  clockId: string | null;
+  originalDate: string | null;
+  weekdays?: number[];
+};
 
 type FormState = {
   programId: string | null;
@@ -103,8 +111,15 @@ function knownIds(ids: string[], devices: PlannerDevice[]) {
   return ids.filter((id) => allowed.has(id));
 }
 
-function clockRange(on: string, off: string, date: string, clockId: string | null = null, originalDate: string | null = null): Range {
-  return { key: rangeId(), on, off, date, clockId, originalDate };
+function clockRange(
+  on: string,
+  off: string,
+  date: string,
+  clockId: string | null = null,
+  originalDate: string | null = null,
+  weekdays?: number[],
+): Range {
+  return { key: rangeId(), on, off, date, clockId, originalDate, weekdays };
 }
 
 function isIso(value: string) {
@@ -129,15 +144,14 @@ function rangesFromProgram(draft: PlannerDraft, program: PlannerProgram): Range[
     return rows.length ? rows : [clockRange("08:00", "09:00", origin)];
   }
   if (program.weekdays.length) {
-    const rows: Range[] = [];
-    for (const slot of program.slots) {
-      const days = slot.weekdays?.length ? slot.weekdays : program.weekdays;
-      for (const weekday of days) {
-        rows.push(clockRange(slot.onTime ?? "", slot.offTime ?? "", dateForWeekday(weekday, origin)));
-      }
-    }
-    const filled = rows.filter((range) => range.on || range.off);
-    return filled.length ? filled : [clockRange("", "", origin)];
+    const rows = program.slots
+      .filter((slot) => slot.onTime || slot.offTime)
+      .map((slot) => {
+        const days = slot.weekdays?.length ? slot.weekdays : program.weekdays;
+        const weekday = days[0] ?? weekdayOf(origin);
+        return clockRange(slot.onTime ?? "", slot.offTime ?? "", dateForWeekday(weekday, origin), null, null, days);
+      });
+    return rows.length ? rows : [clockRange("", "", origin, null, null, program.weekdays)];
   }
   const owned = draft.clocks.filter((clock) => !clock.recurring && clock.programId === program.id);
   const rows = owned.map((clock) => clockRange(clock.onTime ?? "", clock.offTime ?? "", clock.day, clock.id, clock.day));
@@ -205,17 +219,19 @@ function clockShift(time: string, minutes: number) {
   };
 }
 
-function activeRanges(form: FormState) {
+function activeRanges(form: FormState): Range[] {
   if (form.schedule === "duration") {
     const shifted = clockShift(form.durationStart, Number(form.durationMinutes));
-    return [{ on: form.durationStart, off: shifted.time, date: form.startDate, clockId: null, originalDate: null }];
+    return [{ key: 0, on: form.durationStart, off: shifted.time, date: form.startDate, clockId: null, originalDate: null }];
   }
   return form.ranges.map((range) => ({
+    key: range.key,
     on: range.on,
     off: range.off,
     date: range.date,
     clockId: range.clockId,
     originalDate: range.originalDate,
+    weekdays: range.weekdays,
   }));
 }
 
@@ -236,17 +252,30 @@ function cleanTime(value: string) {
 
 function summaryText(form: FormState, places: PlannerPlace[]) {
   const name = form.name.trim() || "תוכנית ללא שם";
+  const start = seriesStart(
+    form,
+    form.ranges.map((range) => range.date),
+  );
   const until = form.frequency !== "once" && form.endDate ? ` עד ${form.endDate}` : "";
+  const weeklyDays = form.ranges.flatMap((range) =>
+    range.weekdays?.length ? range.weekdays : isIso(range.date) ? [weekdayOf(range.date)] : [],
+  );
   const when =
     form.frequency === "once"
       ? "חד־פעמית לפי תאריך כל שעון"
       : form.frequency === "daily"
-        ? `בכל יום${until}`
-        : `חזרה שבועית לפי תאריך כל שעון${until}`;
+        ? `מ־${start || "תאריך שלא נבחר"} · כל יום${until}`
+        : `מ־${start || "תאריך שלא נבחר"} · כל שבוע ${weekdayPhrase(weeklyDays) || "לפי תאריך השעון"}${until}`;
   const city = places.find((place) => place.id === form.city)?.name ?? "";
   const how =
     form.schedule === "times"
-      ? form.ranges.map((range) => `${range.on || "--:--"}–${range.off || "--:--"} (${range.date || "תאריך חסר"})`).join(" | ")
+      ? form.ranges
+          .map((range) =>
+            form.frequency === "once"
+              ? `${range.on || "--:--"}–${range.off || "--:--"} (${range.date || "תאריך חסר"})`
+              : `${range.on || "--:--"}–${range.off || "--:--"}`,
+          )
+          .join(" | ")
       : form.schedule === "duration"
         ? `הדלקה ב־${form.durationStart || "--:--"} למשך ${form.durationMinutes || 0} דקות`
         : `${SUN_LABELS[form.sunEvent]} (${form.sunOffset || "0"} דקות)${city ? `, ${city}` : ""}`;
@@ -325,7 +354,12 @@ function draftRanges(form: FormState, day: string) {
   );
   if (!coversDay(day, start || null, form.endDate || null)) return [];
   if (form.frequency === "daily") return chosen.map((range) => ({ on: range.on, off: range.off }));
-  return chosen.filter((range) => weekdayOf(range.date) === weekdayOf(day)).map((range) => ({ on: range.on, off: range.off }));
+  return chosen
+    .filter((range) => {
+      const days = range.weekdays?.length ? range.weekdays : isIso(range.date) ? [weekdayOf(range.date)] : [];
+      return days.includes(weekdayOf(day));
+    })
+    .map((range) => ({ on: range.on, off: range.off }));
 }
 
 function storedRanges(program: PlannerProgram, clocks: PlannerClock[], day: string) {
@@ -401,12 +435,13 @@ function buildBody(form: FormState) {
       seen.add(key);
       return [{ onTime, offTime, weekdays: [] as number[] }];
     }
-    return [{ onTime, offTime, weekdays: isIso(range.date) ? [weekdayOf(range.date)] : [] }];
+    const days = range.weekdays?.length ? range.weekdays : isIso(range.date) ? [weekdayOf(range.date)] : [];
+    return [{ onTime, offTime, weekdays: days }];
   });
   const weekdays =
     form.frequency === "daily"
       ? [0, 1, 2, 3, 4, 5, 6]
-      : [...new Set(ranges.flatMap((range) => (isIso(range.date) ? [weekdayOf(range.date)] : [])))].sort((left, right) => left - right);
+      : [...new Set(slots.flatMap((slot) => slot.weekdays))].sort((left, right) => left - right);
   return {
     action: "repeat-save",
     id: form.programId,
@@ -626,29 +661,44 @@ export function PlanDialog({
                             הסרה ×
                           </button>
                         </div>
-                        <label className="mb-3 block text-xs font-bold">
-                          תאריך השעון — לחיצה פותחת לוח שנה
-                          <input
-                            className={cn(control, "mt-2")}
-                            dir="ltr"
-                            type="date"
-                            required
-                            value={range.date}
-                            aria-label={`תאריך, שעון ${index + 1}`}
-                            onChange={(event) =>
-                              patch(
-                                (current) => ({
-                                  ...current,
-                                  ranges: current.ranges.map((item) => (item.key === range.key ? { ...item, date: event.target.value } : item)),
-                                }),
-                                true,
-                              )
-                            }
-                          />
-                          <span className="mt-1 block text-[11px] font-medium text-muted-foreground">
-                            אפשר לבחור תאריך אחר לכל שעון באותה תוכנית. במצב שבועי, השעון יחזור בכל שבוע ביום המתאים לתאריך שבחרת.
-                          </span>
-                        </label>
+                        {form.frequency === "daily" ? (
+                          <p className="mb-3 text-[11px] font-medium text-muted-foreground">מ־{form.startDate || "התאריך למעלה"} · כל יום</p>
+                        ) : (
+                          <label className="mb-3 block text-xs font-bold">
+                            {form.frequency === "weekly" ? "תאריך הפעלה ראשון" : "תאריך השעון — לחיצה פותחת לוח שנה"}
+                            <input
+                              className={cn(control, "mt-2")}
+                              dir="ltr"
+                              type="date"
+                              required
+                              value={range.date}
+                              aria-label={`תאריך, שעון ${index + 1}`}
+                              onChange={(event) =>
+                                patch(
+                                  (current) => ({
+                                    ...current,
+                                    ranges: current.ranges.map((item) => {
+                                      if (item.key !== range.key) return item;
+                                      const date = event.target.value;
+                                      const keep = item.weekdays && item.weekdays.length > 1;
+                                      return {
+                                        ...item,
+                                        date,
+                                        weekdays: keep ? item.weekdays : isIso(date) ? [weekdayOf(date)] : item.weekdays,
+                                      };
+                                    }),
+                                  }),
+                                  true,
+                                )
+                              }
+                            />
+                            <span className="mt-1 block text-[11px] font-medium text-muted-foreground">
+                              {form.frequency === "weekly"
+                                ? `יחזור כל שבוע ${weekdayPhrase(range.weekdays?.length ? range.weekdays : isIso(range.date) ? [weekdayOf(range.date)] : []) || "ביום שנבחר"}`
+                                : "אפשר לבחור תאריך אחר לכל שעון באותה תוכנית."}
+                            </span>
+                          </label>
+                        )}
                         <div className="grid gap-3 sm:grid-cols-2">
                           <label className="text-xs font-bold">
                             <span className="mb-1 flex items-center gap-1">

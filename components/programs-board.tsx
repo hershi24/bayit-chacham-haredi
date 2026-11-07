@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DayTimeline } from "@/components/day-timeline";
 import { DeviceGlyph } from "@/components/device-glyph";
 import { PlanDialog, type PlannerClock, type PlannerDraft, type PlannerProgram } from "@/components/plan-dialog";
+import { PlanViewDialog } from "@/components/plan-view";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/lib/client-api";
 import type { MonthDay } from "@/lib/hebrew/calendar";
 import { occurrencesOn, type Occurrence } from "@/lib/programs/occurrences";
-import { weekdayOf, weekdayPhrase } from "@/lib/programs/weekdays";
+import { repeatCaption, weekdayOf } from "@/lib/programs/weekdays";
 import { israelDate, shiftDate } from "@/lib/time";
 import type { TenantView } from "@/lib/types";
 import { cn } from "cn";
@@ -45,6 +47,7 @@ export function ProgramsBoard() {
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<PlannerDraft | null>(null);
+  const [inspect, setInspect] = useState<{ program: Program | null; clock: Clock | null } | null>(null);
   const [pauseId, setPauseId] = useState<string | null>(null);
   const [pauseDate, setPauseDate] = useState("");
   const [token, setToken] = useState(0);
@@ -159,6 +162,15 @@ export function ProgramsBoard() {
     openDraft({ mode: "clock", date: clock.day, program: null, clock });
   }
 
+  function showProgram(program: Program) {
+    setInspect({ program, clock: null });
+  }
+
+  function showClock(clock: Clock) {
+    const program = clock.programId ? board?.programs.find((item) => item.id === clock.programId) : undefined;
+    setInspect(program ? { program, clock: null } : { program: null, clock });
+  }
+
   const today = israelDate();
   const nextEvents = useMemo(
     () => (board ? upcoming(board.programs, board.clocks, filter) : []),
@@ -204,7 +216,13 @@ export function ProgramsBoard() {
     year: "numeric",
     timeZone: "Asia/Jerusalem",
   }).format(new Date(Date.UTC(board.month.year, board.month.month - 1, 15)));
-  const heading = view === "day" ? longDay(cursor) : view === "week" ? weekLabel(cursor) : monthTitle;
+  const dayMeta = board.month.days.find((item) => item.date === cursor);
+  const heading =
+    view === "day"
+      ? `${longDay(cursor)}${dayMeta?.hebrew ? ` · ${dayMeta.hebrew}` : ""}`
+      : view === "week"
+        ? weekLabel(cursor)
+        : monthTitle;
   const gridDays = view === "week" ? weekDays(cursor) : view === "day" ? [cursor] : board.month.days.map((day) => day.date);
   const shownPrograms = board.programs.filter((program) => filter === "all" || program.deviceIds.includes(filter));
   const savedCount = shownPrograms.filter((program) => program.enabled).length;
@@ -220,6 +238,12 @@ export function ProgramsBoard() {
   const listedPrograms = shownPrograms.filter((program) => program.name.toLowerCase().includes(needle));
   const listedClocks = loose.filter((clock) => "שעון".includes(needle) || clock.day.includes(needle));
   const pausing = board.programs.find((program) => program.id === pauseId) ?? null;
+  const inspecting = inspect
+    ? {
+        program: inspect.program ? (board.programs.find((item) => item.id === inspect.program?.id) ?? inspect.program) : null,
+        clock: inspect.clock,
+      }
+    : null;
 
   return (
     <section className="min-w-0">
@@ -301,24 +325,32 @@ export function ProgramsBoard() {
                           <b className="block truncate">{program.name}</b>
                           <p className="truncate text-[11px] text-muted-foreground">
                             {deviceNames(board, program.deviceIds)} · {whenLabel(program)}
-                            {program.endDate && (program.weekdays.length || program.days.length > 1) ? ` · עד ${prettyDay(program.endDate)}` : ""}
                             {!program.enabled ? " · כבויה" : ""}
                             {skipped.length ? ` · מושהה ב־${skipped.map((day) => prettyDay(day)).join(", ")}` : ""}
                           </p>
                         </div>
-                        <div className="flex flex-wrap gap-1">
-                          <button
-                            type="button"
-                            className={cn(
-                              "rounded-lg px-2 py-1.5 text-xs font-bold",
-                              program.enabled ? "bg-destructive/10 text-destructive" : "bg-online-soft text-online-foreground",
-                            )}
-                            disabled={pending === program.id}
-                            aria-label={program.enabled ? "כיבוי התוכנית" : "הדלקת התוכנית"}
-                            onClick={() => void send({ action: "program-toggle", id: program.id }, program.id)}
-                          >
-                            {program.enabled ? "כיבוי" : "הדלקה"}
-                          </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="inline-flex items-center gap-2 text-xs font-bold">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={program.enabled}
+                              aria-label={program.enabled ? "כיבוי התוכנית" : "הדלקת התוכנית"}
+                              disabled={pending === program.id}
+                              className={cn(
+                                "relative h-6 w-11 rounded-full transition",
+                                program.enabled ? "bg-online" : "bg-border",
+                              )}
+                              onClick={() => void send({ action: "program-toggle", id: program.id }, program.id)}
+                            >
+                              <span
+                                className={cn(
+                                  "absolute top-0.5 size-5 rounded-full bg-white shadow transition",
+                                  program.enabled ? "start-5" : "start-0.5",
+                                )}
+                              />
+                            </button>
+                          </label>
                           <button
                             type="button"
                             className="rounded-lg border px-2 py-1.5 text-xs font-bold"
@@ -328,6 +360,9 @@ export function ProgramsBoard() {
                             }}
                           >
                             השהיה{skipped.length ? ` (${skipped.length})` : ""}
+                          </button>
+                          <button type="button" className="rounded-lg border px-2 py-1.5 text-xs" onClick={() => showProgram(program)}>
+                            פרטים
                           </button>
                           <button type="button" className="rounded-lg border px-2 py-1.5 text-xs" onClick={() => openProgram(program, null)}>
                             עריכה
@@ -349,9 +384,14 @@ export function ProgramsBoard() {
                             {deviceNames(board, clock.deviceIds)} · {prettyDay(clock.day)} · {clock.onTime ?? ""}{clock.offTime ? `–${clock.offTime}` : ""}
                           </p>
                         </div>
-                        <button type="button" className="rounded-lg border px-2 py-1.5 text-xs" onClick={() => openClock(clock)}>
-                          עריכה
-                        </button>
+                        <div className="flex flex-wrap gap-1">
+                          <button type="button" className="rounded-lg border px-2 py-1.5 text-xs" onClick={() => showClock(clock)}>
+                            פרטים
+                          </button>
+                          <button type="button" className="rounded-lg border px-2 py-1.5 text-xs" onClick={() => openClock(clock)}>
+                            עריכה
+                          </button>
+                        </div>
                       </article>
                     );
                   })}
@@ -360,23 +400,67 @@ export function ProgramsBoard() {
                 <p className="px-2 py-8 text-center text-sm text-muted-foreground">אין תוכניות להצגה. לחצו על «תוכנית חדשה» כדי להתחיל.</p>
               )}
             </div>
+          ) : view === "day" ? (
+            <div className="p-3 sm:p-4">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold tracking-[0.12em] text-muted-foreground uppercase">{shortDayName(cursor)}</p>
+                  <h3 className="text-xl font-black tracking-tight sm:text-2xl">
+                    {longDay(cursor)}
+                    {dayMeta?.hebrew ? <span className="ms-2 text-sm font-bold text-muted-foreground sm:text-base">{dayMeta.hebrew}</span> : null}
+                  </h3>
+                  {dayMeta?.parsha || dayMeta?.candles || dayMeta?.havdalah ? (
+                    <p className="mt-1 truncate text-sm font-semibold text-muted-foreground">
+                      {[
+                        dayMeta.parsha ? `פרשת ${dayMeta.parsha}` : null,
+                        dayMeta.candles ? `כניסת שבת ${dayMeta.candles}` : null,
+                        dayMeta.havdalah ? `יציאת שבת ${dayMeta.havdalah}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="grid size-10 place-items-center rounded-xl bg-foreground text-lg font-black text-background"
+                  aria-label="תוכנית חדשה ליום"
+                  onClick={() => openNew(cursor)}
+                >
+                  ＋
+                </button>
+              </div>
+              <DayTimeline
+                day={cursor}
+                programs={shownPrograms}
+                clocks={board.clocks}
+                filter={filter}
+                onOpen={(source, id) => {
+                  if (source === "program") {
+                    const program = board.programs.find((item) => item.id === id);
+                    if (program) showProgram(program);
+                    return;
+                  }
+                  const clock = board.clocks.find((item) => item.id === id);
+                  if (clock) showClock(clock);
+                }}
+              />
+            </div>
           ) : (
             <>
-              {view === "day" ? null : (
-                <div className={cn("grid gap-px bg-border", view === "week" ? "grid-cols-7" : "grid-cols-7")}>
-                  {WEEKDAYS.map((label) => (
-                    <div key={label} className="bg-muted px-1 py-2 text-center text-[11px] font-bold text-muted-foreground sm:text-xs">
-                      {label}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className={cn("grid gap-px bg-border", view === "day" ? "grid-cols-1" : "grid-cols-7")}>
+              <div className="grid grid-cols-7 gap-px bg-border">
+                {WEEKDAYS.map((label) => (
+                  <div key={label} className="bg-muted px-1 py-2 text-center text-[11px] font-bold text-muted-foreground sm:text-xs">
+                    {label}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-px bg-border">
                 {gridDays.map((day) => {
                   const meta = board.month.days.find((item) => item.date === day);
                   const inMonth = view !== "month" || meta?.inMonth !== false;
                   const events = occurrencesOn(day, board.programs, board.clocks, filter);
-                  const cap = view === "month" ? 3 : view === "week" ? 6 : events.length;
+                  const cap = view === "month" ? 3 : 6;
                   return (
                     <div
                       key={day}
@@ -385,18 +469,31 @@ export function ProgramsBoard() {
                         "group flex min-w-0 flex-col gap-1 bg-card p-1 sm:p-1.5",
                         view === "month" && "min-h-[5.4rem] sm:min-h-[7.8rem]",
                         view === "week" && "min-h-40",
-                        view === "day" && "min-h-56 p-3",
                         !inMonth && "bg-muted/50 text-muted-foreground",
                         day === today && "bg-primary/5",
                       )}
                     >
                       <div className="flex items-center justify-between gap-1">
-                        <span className={cn("grid size-6 place-items-center rounded-full text-xs font-extrabold", day === today && "bg-primary text-primary-foreground")}>
-                          {Number(day.slice(8))}
-                        </span>
                         <button
                           type="button"
-                          className="grid size-6 place-items-center rounded-lg border text-muted-foreground sm:opacity-20 sm:group-hover:opacity-100"
+                          className="min-w-0 text-start"
+                          onClick={() => {
+                            setCursor(day);
+                            setView("day");
+                          }}
+                        >
+                          <span className={cn("grid size-6 place-items-center rounded-full text-xs font-extrabold", day === today && "bg-primary text-primary-foreground")}>
+                            {Number(day.slice(8))}
+                          </span>
+                          {meta?.hebrew ? (
+                            <span className="mt-0.5 block truncate text-[9px] font-semibold leading-none text-muted-foreground sm:text-[10px]">
+                              {meta.hebrew}
+                            </span>
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          className="grid size-6 place-items-center rounded-md bg-foreground text-[13px] font-black text-background shadow-sm"
                           aria-label={`תוכנית חדשה ב-${day}`}
                           onClick={() => openNew(day)}
                         >
@@ -412,10 +509,10 @@ export function ProgramsBoard() {
                             event.action === "off" ? "border-destructive bg-destructive/10 text-destructive" : "border-online bg-online-soft text-online-foreground",
                           )}
                           title={event.name}
-                          onClick={() => openEvent(event, board, openProgram, openClock)}
+                          onClick={() => openEvent(event, board, showProgram, showClock)}
                         >
                           <span dir="ltr">{event.time}</span>
-                          <span className={cn("truncate", view === "day" ? "inline" : "hidden sm:inline")}>{event.name}</span>
+                          <span className="hidden truncate sm:inline">{event.name}</span>
                         </button>
                       ))}
                       {events.length > cap ? (
@@ -430,9 +527,17 @@ export function ProgramsBoard() {
                           +{events.length - cap}
                         </button>
                       ) : null}
-                      {meta?.parsha ? <p className="hidden truncate text-[10px] font-semibold text-primary sm:block">{meta.parsha}</p> : null}
-                      {meta?.candles ? <p className="hidden truncate text-[10px] text-muted-foreground sm:block">נרות {meta.candles}</p> : null}
-                      {meta?.havdalah ? <p className="hidden truncate text-[10px] text-muted-foreground sm:block">הבדלה {meta.havdalah}</p> : null}
+                      {meta?.parsha || meta?.candles || meta?.havdalah ? (
+                        <p className="hidden truncate text-[10px] font-semibold text-muted-foreground sm:block">
+                          {[
+                            meta.parsha ? meta.parsha : null,
+                            meta.candles ? `כניסה ${meta.candles}` : null,
+                            meta.havdalah ? `יציאה ${meta.havdalah}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -440,7 +545,7 @@ export function ProgramsBoard() {
               <p className="flex flex-wrap items-center gap-3 px-4 py-3 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-online" /> הפעלה</span>
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-destructive" /> כיבוי</span>
-                <span>· לחצו על + להוספת תוכנית</span>
+                <span>· לחצו על שעון לפתיחת פרטים · על + להוספה</span>
               </p>
             </>
           )}
@@ -484,7 +589,7 @@ export function ProgramsBoard() {
                   key={`${event.day}-${event.key}`}
                   type="button"
                   className="flex w-full items-center gap-3 border-b py-2 text-start last:border-0"
-                  onClick={() => openEvent(event, board, openProgram, openClock)}
+                  onClick={() => openEvent(event, board, showProgram, showClock)}
                 >
                   <time className="font-extrabold text-primary" dir="ltr">
                     {event.time}
@@ -518,6 +623,7 @@ export function ProgramsBoard() {
                 ))}
               </select>
             </label>
+            <p className="mt-2 text-[11px] leading-5 opacity-90">זמני כניסת ויציאת שבת מחושבים לפי Hebcal לעיר שנבחרה.</p>
             {tenants ? (
               <button
                 type="button"
@@ -643,6 +749,37 @@ export function ProgramsBoard() {
           }}
         />
       ) : null}
+      {inspecting ? (
+        <PlanViewDialog
+          program={inspecting.program}
+          clock={inspecting.clock}
+          clocks={board.clocks}
+          devices={board.devices}
+          pending={Boolean(pending && inspecting.program && pending === inspecting.program.id)}
+          onClose={() => setInspect(null)}
+          onEdit={() => {
+            const program = inspecting.program;
+            const clock = inspecting.clock;
+            setInspect(null);
+            if (program) openProgram(program, null);
+            else if (clock) openClock(clock);
+          }}
+          onToggle={
+            inspecting.program
+              ? () => void send({ action: "program-toggle", id: inspecting.program!.id }, inspecting.program!.id)
+              : undefined
+          }
+          onPause={
+            inspecting.program
+              ? () => {
+                  setPauseDate("");
+                  setPauseId(inspecting.program!.id);
+                  setInspect(null);
+                }
+              : undefined
+          }
+        />
+      ) : null}
     </section>
   );
 }
@@ -659,16 +796,16 @@ function Stat({ label, value, small = false }: { label: string; value: string; s
 function openEvent(
   event: Occurrence,
   board: Board,
-  openProgram: (program: Program, day: string | null) => void,
-  openClock: (clock: Clock) => void,
+  showProgram: (program: Program) => void,
+  showClock: (clock: Clock) => void,
 ) {
   if (event.programId) {
     const program = board.programs.find((item) => item.id === event.programId);
-    if (program) openProgram(program, event.sourceDay);
+    if (program) showProgram(program);
     return;
   }
   const clock = board.clocks.find((item) => item.id === event.clockId);
-  if (clock) openClock(clock);
+  if (clock) showClock(clock);
 }
 
 function upcoming(programs: Program[], clocks: Clock[], filter: string) {
@@ -756,11 +893,18 @@ function prettyDay(iso: string) {
 }
 
 function whenLabel(program: Program) {
-  if (program.weekdays.length === 7) return "כל יום";
-  if (program.weekdays.length) return weekdayPhrase(program.weekdays);
-  if (program.days.length === 1) return prettyDay(program.days[0]);
-  if (program.days.length) return `${program.days.length} תאריכים`;
-  return "בלי ימים";
+  return repeatCaption({
+    weekdays: program.weekdays,
+    startDate: program.startDate,
+    endDate: program.endDate,
+    days: program.days,
+  });
+}
+
+function shortDayName(iso: string) {
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return iso;
+  return new Intl.DateTimeFormat("he-IL", { weekday: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
 function deviceNames(board: Board, ids: string[]) {

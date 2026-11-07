@@ -84,7 +84,7 @@ test("the phone toggles a named program", async () => {
     new Request("http://127.0.0.1/api/ivr/menu", {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
-      body: new URLSearchParams({ ApiPhone: "035551001", pikud_device: "1", pikud_action: "5" }),
+      body: new URLSearchParams({ ApiPhone: "035551001", pikud_device: "1", pikud_action: "4" }),
     }),
   );
   const prompt = await menu.text();
@@ -101,7 +101,7 @@ test("the phone toggles a named program", async () => {
       body: new URLSearchParams({
         ApiPhone: "035551001",
         pikud_device: "1",
-        pikud_action: "5",
+        pikud_action: "4",
         pikud_program: "1",
       }),
     }),
@@ -421,7 +421,7 @@ test("the phone saves a weekday clock on the chosen socket", async () => {
       body: new URLSearchParams({
         ApiPhone: "035551002",
         pikud_device: "1",
-        pikud_action: "4",
+        pikud_action: "3",
         pikud_repeat: "4",
         pikud_side: "1",
         pikud_on: "1000",

@@ -51,7 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-dvh min-w-0 flex-col overflow-x-clip">
-      <header className="hig-bar sticky top-0 z-20 border-b border-border/70">
+      <header className="app-bar sticky top-0 z-20 border-b border-border/70">
         <div className={`mx-auto flex h-14 w-full items-center gap-3 px-4 md:gap-6 md:px-8 ${frame}`}>
           <Link href="/" aria-label="Kosher Smart Home" className="shrink-0">
             <BrandLogo className="h-8 w-auto max-w-[8.75rem] dark:rounded-md dark:bg-white dark:px-1" />
@@ -64,8 +64,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={`rounded-full px-3 py-1.5 text-[14px] transition-colors ${
-                    active ? "bg-foreground/[0.06] font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"
+                  className={`rounded-xl px-3 py-1.5 text-[14px] transition-colors ${
+                    active ? "bg-primary/12 font-semibold text-primary" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {item.label}
@@ -84,7 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
       <main className={`mx-auto w-full min-w-0 flex-1 px-4 pt-6 pb-32 md:px-8 md:pt-10 md:pb-14 ${frame}`}>{children}</main>
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 md:hidden" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
-        <nav aria-label="ניווט" className="hig-bar pointer-events-auto grid w-full max-w-md auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden rounded-[28px] border border-border/80 p-1 shadow-[0_10px_32px_rgb(28_28_30/18%)]">
+        <nav aria-label="ניווט" className="app-bar pointer-events-auto grid w-full max-w-md auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden rounded-2xl border border-border/80 p-1 shadow-[0_12px_28px_rgb(20_32_26/16%)]">
           {items.map((item) => {
             const active = pathname === item.href;
             const Icon = item.icon;
@@ -93,8 +93,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-[22px] px-1 text-[11px] leading-[13px] ${
-                  active ? "bg-secondary font-semibold text-primary" : "text-muted-foreground"
+                className={`flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] leading-[13px] ${
+                  active ? "bg-primary/12 font-semibold text-primary" : "text-muted-foreground"
                 }`}
               >
                 <Icon className="size-5 shrink-0" />

@@ -1,5 +1,6 @@
-import { shiftDate } from "@/lib/time";
+import { coversDay } from "@/lib/programs/span";
 import { weekdayOf } from "@/lib/programs/weekdays";
+import { shiftDate } from "@/lib/time";
 
 export type TimelineClock = {
   id: string;
@@ -20,6 +21,9 @@ export type TimelineProgram = {
   offTime: string | null;
   slots?: Array<{ onTime: string | null; offTime: string | null; weekdays?: number[] }>;
   deviceIds: string[];
+  startDate?: string | null;
+  endDate?: string | null;
+  skippedDates?: string[];
 };
 
 export type DayBar = {
@@ -113,6 +117,7 @@ export function dayBars(date: string, clocks: TimelineClock[], programs: Timelin
   for (const clock of clocks) {
     if (clock.recurring) continue;
     const owner = clock.programId ? owners.get(clock.programId) : undefined;
+    if (owner && (owner.skippedDates ?? []).includes(clock.day)) continue;
     const shared = {
       key: clock.id,
       source: "clock" as const,
@@ -131,9 +136,16 @@ export function dayBars(date: string, clocks: TimelineClock[], programs: Timelin
   const previousWeekday = weekdayOf(previous);
   for (const program of programs) {
     if (!program.weekdays.length) continue;
+    const skipped = new Set(program.skippedDates ?? []);
     const groups = [
-      ...(program.weekdays.includes(previousWeekday) ? [{ offset: -1440, slots: slotsFor(program, previousWeekday) }] : []),
-      ...(program.weekdays.includes(weekday) ? [{ offset: 0, slots: slotsFor(program, weekday) }] : []),
+      ...(program.weekdays.includes(previousWeekday) &&
+      coversDay(previous, program.startDate ?? null, program.endDate ?? null) &&
+      !skipped.has(previous)
+        ? [{ offset: -1440, slots: slotsFor(program, previousWeekday) }]
+        : []),
+      ...(program.weekdays.includes(weekday) && coversDay(date, program.startDate ?? null, program.endDate ?? null) && !skipped.has(date)
+        ? [{ offset: 0, slots: slotsFor(program, weekday) }]
+        : []),
     ];
     programSpans(groups).forEach(([start, end], index) => {
       const title = `${program.name} ${formatMin(start)}–${formatMin(end)}`;

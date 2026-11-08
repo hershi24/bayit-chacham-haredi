@@ -18,6 +18,11 @@ export function yemotRead(input: {
   allowEmpty?: boolean;
   /** Value Yemot posts when allowEmpty times out (keeps the next API turn from replaying). */
   emptyVal?: string;
+  /**
+   * How many times Yemot replays the prompt before accepting empty/timeout.
+   * Default 2 matches the rest of the menu. Use 1 for one-shot wait lines.
+   */
+  attempts?: number;
 }): string {
   // Keypress list: field, reuse, max, min, seconds, playback, then confirm last.
   // max and min are the capture length. playback is how Yemot speaks the buffer:
@@ -36,7 +41,7 @@ export function yemotRead(input: {
     "",
     "",
     input.allowed ?? "",
-    "2",
+    String(input.attempts ?? 2),
     input.allowEmpty ? "Ok" : "",
     input.emptyVal ?? "",
     "",

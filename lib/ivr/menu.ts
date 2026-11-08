@@ -121,6 +121,8 @@ export async function handleMenu(request: Request) {
           seconds: 1,
           allowEmpty: true,
           emptyVal: "1",
+          // amount_attempts=2 would speak this wait line twice before continuing.
+          attempts: 1,
           mode: "No",
         }),
       );

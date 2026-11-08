@@ -577,6 +577,8 @@ test("the on and off keys are answered before the socket finishes switching", as
     assert.match(menuText, /מבצע בדיקת מצב ערוץ אנא המתן/);
     assert.equal(menuText.includes("להפעלה הקש אחד"), false);
     assert.equal(menuText.includes("מבצע בדיקת מצב ערוץ אנא המתן,"), false);
+    // amount_attempts must be 1 — otherwise Yemot speaks the wait line twice.
+    assert.match(menuText, /=pikud_ready,no,1,1,1,No,yes,,,,1,Ok,1,,no/);
     menu = await phonePress({ ApiPhone: "035551001", pikud_device: "1", pikud_ready: "1" });
     menuText = await menu.text();
   }

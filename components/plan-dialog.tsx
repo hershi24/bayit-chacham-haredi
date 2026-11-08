@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import type { OccurrenceClock, OccurrenceProgram } from "@/lib/programs/occurrences";
 import { maxDayClocks, maxProgramDays, maxSlots, slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
-import { weekdayOf, weekdayPhrase } from "@/lib/programs/weekdays";
+import { WEEKDAY_LABELS, cleanWeekdays, weekdayOf, weekdayPhrase } from "@/lib/programs/weekdays";
 import { israelDate, shiftDate } from "@/lib/time";
 import { cn } from "cn";
 
@@ -56,6 +56,7 @@ type FormState = {
   scheduleDirty: boolean;
   name: string;
   frequency: Frequency;
+  weekdays: number[];
   startDate: string;
   endDate: string;
   schedule: ScheduleKind;
@@ -135,6 +136,17 @@ function dateForWeekday(weekday: number, from: string) {
   return day;
 }
 
+function applyWeekdays(ranges: Range[], weekdays: number[], startDate: string): Range[] {
+  const days = cleanWeekdays(weekdays);
+  const origin = isIso(startDate) ? startDate : israelDate();
+  const anchor = days.length ? dateForWeekday(days[0], origin) : origin;
+  return ranges.map((range) => ({
+    ...range,
+    weekdays: days,
+    date: days.length ? dateForWeekday(days[0], isIso(range.date) ? range.date : origin) : range.date || anchor,
+  }));
+}
+
 function rangesFromProgram(draft: PlannerDraft, program: PlannerProgram): Range[] {
   const origin = program.startDate || draft.date;
   if (program.weekdays.length === 7) {
@@ -167,6 +179,7 @@ function buildForm(draft: PlannerDraft): FormState {
     scheduleDirty: false,
     name: "",
     frequency: "once",
+    weekdays: [weekdayOf(draft.date)],
     startDate: draft.date,
     endDate: "",
     schedule: "times",
@@ -193,12 +206,20 @@ function buildForm(draft: PlannerDraft): FormState {
   const program = draft.program;
   if (draft.mode !== "program" || !program) return base;
   const weekly = program.weekdays.length > 0;
+  const frequency: Frequency = program.weekdays.length === 7 ? "daily" : weekly ? "weekly" : "once";
+  const weekdays =
+    frequency === "weekly"
+      ? cleanWeekdays(program.weekdays)
+      : frequency === "daily"
+        ? [0, 1, 2, 3, 4, 5, 6]
+        : [weekdayOf(program.startDate ?? draft.date)];
   return {
     ...base,
     programId: program.id,
     hadWeekdays: weekly,
     name: program.name,
-    frequency: program.weekdays.length === 7 ? "daily" : weekly ? "weekly" : "once",
+    frequency,
+    weekdays,
     startDate: weekly ? (program.startDate ?? draft.date) : draft.date,
     endDate: weekly ? (program.endDate ?? "") : "",
     ranges: rangesFromProgram(draft, program),
@@ -257,15 +278,12 @@ function summaryText(form: FormState, places: PlannerPlace[]) {
     form.ranges.map((range) => range.date),
   );
   const until = form.frequency !== "once" && form.endDate ? ` עד ${form.endDate}` : "";
-  const weeklyDays = form.ranges.flatMap((range) =>
-    range.weekdays?.length ? range.weekdays : isIso(range.date) ? [weekdayOf(range.date)] : [],
-  );
   const when =
     form.frequency === "once"
       ? "חד־פעמית לפי תאריך כל שעון"
       : form.frequency === "daily"
         ? `מ־${start || "תאריך שלא נבחר"} · כל יום${until}`
-        : `מ־${start || "תאריך שלא נבחר"} · כל שבוע ${weekdayPhrase(weeklyDays) || "לפי תאריך השעון"}${until}`;
+        : `מ־${start || "תאריך שלא נבחר"} · כל שבוע ${weekdayPhrase(form.weekdays) || "בלי ימים"}${until}`;
   const city = places.find((place) => place.id === form.city)?.name ?? "";
   const how =
     form.schedule === "times"
@@ -294,6 +312,7 @@ function validate(form: FormState) {
   if (!form.name.trim()) return "יש להזין שם לתוכנית";
   if (!form.startDate) return "יש לבחור תאריך התחלה";
   if (!form.deviceIds.length) return "יש לבחור לפחות שקע אחד";
+  if (form.frequency === "weekly" && !cleanWeekdays(form.weekdays).length) return "יש לסמן לפחות יום אחד בשבוע";
   if (form.schedule === "times") {
     if (form.ranges.length > maxSlots) return `אפשר עד ${maxSlots} שעונים בתוכנית`;
     if (form.ranges.some((range) => !range.on || !range.off)) return "יש למלא את כל שעות ההדלקה והכיבוי";
@@ -354,12 +373,9 @@ function draftRanges(form: FormState, day: string) {
   );
   if (!coversDay(day, start || null, form.endDate || null)) return [];
   if (form.frequency === "daily") return chosen.map((range) => ({ on: range.on, off: range.off }));
-  return chosen
-    .filter((range) => {
-      const days = range.weekdays?.length ? range.weekdays : isIso(range.date) ? [weekdayOf(range.date)] : [];
-      return days.includes(weekdayOf(day));
-    })
-    .map((range) => ({ on: range.on, off: range.off }));
+  const days = cleanWeekdays(form.weekdays);
+  if (!days.includes(weekdayOf(day))) return [];
+  return chosen.map((range) => ({ on: range.on, off: range.off }));
 }
 
 function storedRanges(program: PlannerProgram, clocks: PlannerClock[], day: string) {
@@ -435,13 +451,10 @@ function buildBody(form: FormState) {
       seen.add(key);
       return [{ onTime, offTime, weekdays: [] as number[] }];
     }
-    const days = range.weekdays?.length ? range.weekdays : isIso(range.date) ? [weekdayOf(range.date)] : [];
+    const days = cleanWeekdays(form.weekdays);
     return [{ onTime, offTime, weekdays: days }];
   });
-  const weekdays =
-    form.frequency === "daily"
-      ? [0, 1, 2, 3, 4, 5, 6]
-      : [...new Set(slots.flatMap((slot) => slot.weekdays))].sort((left, right) => left - right);
+  const weekdays = form.frequency === "daily" ? [0, 1, 2, 3, 4, 5, 6] : cleanWeekdays(form.weekdays);
   return {
     action: "repeat-save",
     id: form.programId,
@@ -577,8 +590,22 @@ export function PlanDialog({
                   active={form.frequency === "weekly"}
                   icon={<Repeat className="mx-auto size-5" />}
                   title="חזרה שבועית"
-                  detail="לפי תאריך כל שעון"
-                  onClick={() => patch((current) => (current.frequency === "weekly" ? current : { ...current, frequency: "weekly", scheduleDirty: true }))}
+                  detail="סימון ימי פעולה"
+                  onClick={() =>
+                    patch((current) => {
+                      if (current.frequency === "weekly") return current;
+                      const weekdays = cleanWeekdays(current.weekdays).length
+                        ? cleanWeekdays(current.weekdays)
+                        : [weekdayOf(current.startDate || israelDate())];
+                      return {
+                        ...current,
+                        frequency: "weekly",
+                        weekdays,
+                        ranges: applyWeekdays(current.ranges, weekdays, current.startDate),
+                        scheduleDirty: true,
+                      };
+                    })
+                  }
                 />
                 <Choice
                   active={form.frequency === "daily"}
@@ -613,6 +640,45 @@ export function PlanDialog({
                     </label>
                   )}
                 </div>
+                {form.frequency === "weekly" ? (
+                  <div className="mt-4">
+                    <p className="mb-2 text-xs font-bold">ימים לפעולה</p>
+                    <div className="flex flex-wrap gap-2">
+                      {WEEKDAY_LABELS.map((label, day) => {
+                        const active = form.weekdays.includes(day);
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            aria-pressed={active}
+                            className={cn(
+                              "min-w-10 rounded-xl border px-3 py-2 text-sm font-bold",
+                              active ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground",
+                            )}
+                            onClick={() =>
+                              patch((current) => {
+                                const weekdays = cleanWeekdays(
+                                  active ? current.weekdays.filter((item) => item !== day) : [...current.weekdays, day],
+                                );
+                                return {
+                                  ...current,
+                                  weekdays,
+                                  ranges: applyWeekdays(current.ranges, weekdays, current.startDate),
+                                  scheduleDirty: true,
+                                };
+                              })
+                            }
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-2 text-[11px] font-medium text-muted-foreground">
+                      {weekdayPhrase(form.weekdays) || "סמנו לפחות יום אחד"}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </section>
             <section className="mb-6">
@@ -680,6 +746,9 @@ export function PlanDialog({
                                     ranges: current.ranges.map((item) => {
                                       if (item.key !== range.key) return item;
                                       const date = event.target.value;
+                                      if (current.frequency === "weekly") {
+                                        return { ...item, date, weekdays: cleanWeekdays(current.weekdays) };
+                                      }
                                       const keep = item.weekdays && item.weekdays.length > 1;
                                       return {
                                         ...item,
@@ -694,7 +763,7 @@ export function PlanDialog({
                             />
                             <span className="mt-1 block text-[11px] font-medium text-muted-foreground">
                               {form.frequency === "weekly"
-                                ? `יחזור כל שבוע ${weekdayPhrase(range.weekdays?.length ? range.weekdays : isIso(range.date) ? [weekdayOf(range.date)] : []) || "ביום שנבחר"}`
+                                ? `יחזור כל שבוע ${weekdayPhrase(form.weekdays) || "בימים שסומנו למעלה"}`
                                 : "אפשר לבחור תאריך אחר לכל שעון באותה תוכנית."}
                             </span>
                           </label>
@@ -751,20 +820,25 @@ export function PlanDialog({
                       type="button"
                       className="mt-2 w-full rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-3 font-bold text-primary"
                       onClick={() =>
-                        patch(
-                          (current) => ({
+                        patch((current) => {
+                          const next = clockRange("", "", current.startDate, null, null, current.frequency === "weekly" ? cleanWeekdays(current.weekdays) : undefined);
+                          return {
                             ...current,
-                            ranges: [...current.ranges, clockRange("", "", current.startDate)],
-                          }),
-                          true,
-                        )
+                            ranges:
+                              current.frequency === "weekly"
+                                ? applyWeekdays([...current.ranges, next], current.weekdays, current.startDate)
+                                : [...current.ranges, next],
+                          };
+                        }, true)
                       }
                     >
                       ＋ הוסף עוד טווח שעות
                     </button>
                   ) : null}
                   <p className="mt-3 rounded-xl bg-primary/5 px-3 py-3 text-xs leading-6 text-muted-foreground">
-                    לכל שעון בוחרים תאריך משלו מתוך לוח שנה. אפשר להוסיף כמה שעונים לאותו תאריך, או לבחור תאריכים שונים. כיבוי בשעה מוקדמת מההדלקה ייחשב לכיבוי ביום הבא.
+                    {form.frequency === "weekly"
+                      ? "ימי הפעולה מסומנים למעלה. כאן בוחרים את שעות ההדלקה והכיבוי, ואת תאריך ההפעלה הראשון לכל שעון. כיבוי בשעה מוקדמת מההדלקה ייחשב לכיבוי ביום הבא."
+                      : "לכל שעון בוחרים תאריך משלו מתוך לוח שנה. אפשר להוסיף כמה שעונים לאותו תאריך, או לבחור תאריכים שונים. כיבוי בשעה מוקדמת מההדלקה ייחשב לכיבוי ביום הבא."}
                   </p>
                 </div>
               ) : null}

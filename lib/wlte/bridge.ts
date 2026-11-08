@@ -4,13 +4,22 @@ import { publishDevice, publishStatus } from "@/lib/sse";
 import { storageMode } from "@/lib/storage";
 import { addAudit, getDevice, listDeviceIds, updateDeviceState, type StatePatch } from "@/lib/store";
 import type { AuditSource, BridgeStatus, DeviceView, RelayAction } from "@/lib/types";
-import { isWlteError, wlteMessage } from "@/lib/wlte/errors";
+import { isWlteError, wlteMessage, WlteError } from "@/lib/wlte/errors";
 import { createLiveGateway, requestAccessToken } from "@/lib/wlte/live";
 import { MockGateway } from "@/lib/wlte/mock-gateway";
-import { isNewerIso, parseCommandResponse, parseDeviceResponse, parseWsEvent } from "@/lib/wlte/parse";
+import {
+  deviceRelaySetRequest,
+  deviceStateGetRequest,
+  isNewerIso,
+  parseCommandReplyState,
+  parseCommandResponse,
+  parseDeviceResponse,
+  parseWsEvent,
+  wsReplyOk,
+} from "@/lib/wlte/parse";
 import { REQUIRED_SCOPES } from "@/lib/wlte/policy";
 import { createIdempotencyKey } from "@/lib/wlte/retry";
-import { startLiveSocket } from "@/lib/wlte/socket";
+import { startLiveSocket, type LiveSocketHandle } from "@/lib/wlte/socket";
 import { TokenManager } from "@/lib/wlte/token-manager";
 
 type Gateway = {
@@ -34,7 +43,7 @@ class Bridge {
   private lastEventAt: string | null = null;
   private lastError: string | null = null;
   private started = false;
-  private stopSocket: (() => void) | null = null;
+  private liveSocket: LiveSocketHandle | null = null;
   private ready: Promise<void> = Promise.resolve();
   private persistQueue: Promise<void> = Promise.resolve();
 
@@ -116,13 +125,13 @@ class Bridge {
 
     if (this.mock) return;
 
-    this.stopSocket = startLiveSocket({
+    this.liveSocket = startLiveSocket({
       ticket: async () => {
         const live = createLiveGateway(this.config, this.tokens);
         return live.ticket();
       },
       urlFor: (ticket) => websocketUrl(this.config.baseUrl, ticket),
-      onMessage: (payload) => this.enqueue(payload),
+      onEvent: (payload) => this.enqueue(payload),
       onStatus: (state, error) => {
         this.socketState = state;
         if (error) this.lastError = error;
@@ -130,9 +139,10 @@ class Bridge {
         this.pushStatus();
       },
       onOpen: async () => {
+        // Docs: after reconnect, rebuild baseline over REST — not a WS fan-out of every device.
         for (const deviceId of await listDeviceIds()) {
           try {
-            await this.refresh(deviceId, false);
+            await this.refreshRest(deviceId, false);
           } catch (error) {
             this.note(error);
           }
@@ -165,7 +175,44 @@ class Bridge {
     await this.ready;
     const before = await getDevice(deviceId);
     if (!before) return null;
+
+    try {
+      const snapshot = await this.readDevice(deviceId);
+      return this.applySnapshot(deviceId, before, snapshot, audit);
+    } catch (error) {
+      if (this.liveSocket?.isOpen() && shouldFallbackToRest(error)) {
+        const snapshot = await this.gateway.read(deviceId);
+        return this.applySnapshot(deviceId, before, snapshot, audit);
+      }
+      throw error;
+    }
+  }
+
+  private async refreshRest(deviceId: string, audit = true): Promise<DeviceView | null> {
+    const before = await getDevice(deviceId);
+    if (!before) return null;
     const snapshot = await this.gateway.read(deviceId);
+    return this.applySnapshot(deviceId, before, snapshot, audit);
+  }
+
+  private async readDevice(deviceId: string) {
+    if (this.liveSocket?.isOpen()) {
+      const reply = await this.liveSocket.request(deviceStateGetRequest(crypto.randomUUID(), deviceId), 12_000);
+      const code = typeof reply.code === "string" ? reply.code : undefined;
+      if (!wsReplyOk(code)) {
+        throw new WlteError(code ?? "INTERNAL_ERROR", statusForCode(code), typeof reply.message === "string" ? reply.message : undefined);
+      }
+      return parseDeviceResponse(reply, deviceId);
+    }
+    return this.gateway.read(deviceId);
+  }
+
+  private async applySnapshot(
+    deviceId: string,
+    before: DeviceView,
+    snapshot: ReturnType<typeof parseDeviceResponse>,
+    audit: boolean,
+  ) {
     const view = await updateDeviceState(
       deviceId,
       {
@@ -206,9 +253,19 @@ class Bridge {
     if (current.frozen) throw new HttpError(403, "השקע מוקפא");
     const key = createIdempotencyKey();
     try {
-      const command = await this.gateway.command(input.deviceId, input.action, key);
+      const command = await this.executeCommand(input.deviceId, input.action, key);
       let device: DeviceView | null = await getDevice(input.deviceId);
-      if (command.status === "SUCCESS" && command.action) {
+      const bundled = parseCommandReplyState(command.raw);
+      if (bundled) {
+        device = await updateDeviceState(input.deviceId, {
+          connectivity: bundled.connectivity,
+          relayOn: bundled.relayOn,
+          stateUpdatedAt: bundled.stateUpdatedAt,
+          deviceType: bundled.deviceType,
+          sensorSummary: bundled.sensorSummary,
+          lastError: null,
+        });
+      } else if (command.status === "SUCCESS" && command.action) {
         device = await updateDeviceState(input.deviceId, {
           relayOn: command.action === "ON",
           connectivity: "ONLINE",
@@ -261,6 +318,24 @@ class Bridge {
       if (device) publishDevice(device);
       throw error;
     }
+  }
+
+  private async executeCommand(deviceId: string, action: RelayAction, key: string) {
+    if (this.liveSocket?.isOpen()) {
+      try {
+        const reply = await this.liveSocket.request(deviceRelaySetRequest(crypto.randomUUID(), deviceId, action, key), 20_000);
+        const code = typeof reply.code === "string" ? reply.code : undefined;
+        if (!wsReplyOk(code)) {
+          throw new WlteError(code ?? "INTERNAL_ERROR", statusForCode(code), typeof reply.message === "string" ? reply.message : undefined);
+        }
+        const parsed = parseCommandResponse(reply);
+        return { ...parsed, raw: reply as unknown };
+      } catch (error) {
+        if (!shouldFallbackToRest(error)) throw error;
+      }
+    }
+    const body = await this.gateway.command(deviceId, action, key);
+    return { ...body, raw: null as unknown };
   }
 
   async simulate(deviceId: string, patch: { relayOn?: boolean; online?: boolean }) {
@@ -346,6 +421,22 @@ function describe(before: DeviceView, after: DeviceView): string {
   const link = (value: DeviceView["connectivity"]) =>
     value === "ONLINE" ? "מחובר" : value === "OFFLINE" ? "מנותק" : "אין קריאה";
   return `ממסר ${relay(before.relayOn)} אל ${relay(after.relayOn)}, חיבור ${link(before.connectivity)} אל ${link(after.connectivity)}`;
+}
+
+function shouldFallbackToRest(error: unknown): boolean {
+  if (!isWlteError(error)) return true;
+  return error.code === "WS_CLOSED" || error.code === "WS_TIMEOUT" || error.code === "GATEWAY_UNAVAILABLE";
+}
+
+function statusForCode(code: string | undefined): number {
+  if (code === "AUTH_SCOPE_DENIED" || code === "AUTH_INVALID" || code === "AUTH_REQUIRED" || code === "AUTH_EXPIRED") return 401;
+  if (code === "DEVICE_NOT_FOUND") return 404;
+  if (code === "DEVICE_OFFLINE" || code === "DEVICE_BUSY" || code === "COMMAND_REJECTED" || code === "IDEMPOTENCY_CONFLICT") {
+    return 422;
+  }
+  if (code === "RATE_LIMITED") return 429;
+  if (code === "DEVICE_TIMEOUT" || code === "TIMEOUT" || code === "WS_TIMEOUT") return 504;
+  return 502;
 }
 
 export function getBridge(): Bridge {

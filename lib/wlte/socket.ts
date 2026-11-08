@@ -1,17 +1,39 @@
-import { sessionPing } from "@/lib/wlte/parse";
+import { WlteError } from "@/lib/wlte/errors";
+import { isWsReply, sessionPing } from "@/lib/wlte/parse";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+type Pending = {
+  resolve: (payload: Record<string, unknown>) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+export type LiveSocketHandle = {
+  stop: () => void;
+  isOpen: () => boolean;
+  request: (frame: { type: "request"; requestId: string; topic: string; data: Record<string, unknown> }, timeoutMs?: number) => Promise<Record<string, unknown>>;
+};
 
 export function startLiveSocket(options: {
   ticket: () => Promise<string>;
   urlFor: (ticket: string) => string;
-  onMessage: (payload: unknown) => void;
+  onEvent: (payload: unknown) => void;
   onStatus: (state: "connecting" | "open" | "closed", error?: string) => void;
   onOpen: () => Promise<void>;
-}): () => void {
+}): LiveSocketHandle {
   let stopped = false;
   let active: WebSocket | null = null;
   let delay = 1000;
+  const pending = new Map<string, Pending>();
+
+  const rejectAll = (error: Error) => {
+    for (const [id, item] of pending) {
+      clearTimeout(item.timer);
+      item.reject(error);
+      pending.delete(id);
+    }
+  };
 
   const loop = async () => {
     while (!stopped) {
@@ -57,6 +79,7 @@ export function startLiveSocket(options: {
         settled = true;
         clearInterval(ping);
         if (active === socket) active = null;
+        rejectAll(new WlteError("WS_CLOSED", 503));
         resolve({ ...result, close: () => socket.close() });
       };
 
@@ -69,11 +92,22 @@ export function startLiveSocket(options: {
 
       socket.addEventListener("message", (event) => {
         if (typeof event.data !== "string") return;
+        let payload: unknown;
         try {
-          options.onMessage(JSON.parse(event.data) as unknown);
+          payload = JSON.parse(event.data) as unknown;
         } catch {
-          // Ignore non-JSON frames.
+          return;
         }
+        if (isWsReply(payload)) {
+          const id = payload.requestId as string;
+          const waiter = pending.get(id);
+          if (!waiter) return;
+          clearTimeout(waiter.timer);
+          pending.delete(id);
+          waiter.resolve(payload);
+          return;
+        }
+        options.onEvent(payload);
       });
 
       socket.addEventListener("close", () => {
@@ -97,8 +131,38 @@ export function startLiveSocket(options: {
 
   void loop();
 
-  return () => {
-    stopped = true;
-    active?.close();
+  return {
+    stop() {
+      stopped = true;
+      rejectAll(new WlteError("WS_CLOSED", 503));
+      active?.close();
+    },
+    isOpen() {
+      return Boolean(active && active.readyState === WebSocket.OPEN);
+    },
+    request(frame, timeoutMs = 15_000) {
+      return new Promise((resolve, reject) => {
+        if (!active || active.readyState !== WebSocket.OPEN) {
+          reject(new WlteError("WS_CLOSED", 503));
+          return;
+        }
+        if (pending.has(frame.requestId)) {
+          reject(new WlteError("INVALID_REQUEST", 400, "requestId כפול ב-WebSocket"));
+          return;
+        }
+        const timer = setTimeout(() => {
+          pending.delete(frame.requestId);
+          reject(new WlteError("WS_TIMEOUT", 504));
+        }, timeoutMs);
+        pending.set(frame.requestId, { resolve, reject, timer });
+        try {
+          active.send(JSON.stringify(frame));
+        } catch (error) {
+          clearTimeout(timer);
+          pending.delete(frame.requestId);
+          reject(error instanceof Error ? error : new WlteError("WS_CLOSED", 503));
+        }
+      });
+    },
   };
 }

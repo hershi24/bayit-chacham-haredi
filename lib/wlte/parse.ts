@@ -138,6 +138,7 @@ export function parseCommandResponse(body: unknown): CommandSnapshot {
 
 export function parseWsEvent(payload: unknown): NormalizedEvent | null {
   if (!isRecord(payload)) return null;
+  if (payload.type === "reply" || payload.type === "request") return null;
   const topic = text(payload.topic);
   const data = isRecord(payload.data) ? payload.data : {};
   const deviceId = text(data.deviceId);
@@ -165,6 +166,14 @@ export function parseWsEvent(payload: unknown): NormalizedEvent | null {
   return null;
 }
 
+export function isWsReply(payload: unknown): payload is Record<string, unknown> {
+  return isRecord(payload) && payload.type === "reply" && typeof payload.requestId === "string";
+}
+
+export function wsReplyOk(code: string | undefined): boolean {
+  return code === "SUCCESS" || code === "COMMAND_ACCEPTED";
+}
+
 export function sessionPing(requestId: string) {
   return {
     type: "request" as const,
@@ -172,6 +181,44 @@ export function sessionPing(requestId: string) {
     topic: "session.ping" as const,
     data: {},
   };
+}
+
+export function deviceStateGetRequest(requestId: string, deviceId: string) {
+  return {
+    type: "request" as const,
+    requestId,
+    topic: "device.state.get" as const,
+    data: { deviceId },
+  };
+}
+
+export function deviceRelaySetRequest(requestId: string, deviceId: string, action: RelayAction, idempotencyKey: string) {
+  return {
+    type: "request" as const,
+    requestId,
+    topic: "device.operation.execute" as const,
+    data: {
+      deviceId,
+      idempotencyKey,
+      operation: {
+        name: "device.relay.set",
+        params: {
+          relays: [{ index: 1, action }],
+        },
+      },
+    },
+  };
+}
+
+/** Optional live state bundled with a relay-command WebSocket reply. */
+export function parseCommandReplyState(body: unknown): DeviceSnapshot | null {
+  if (!isRecord(body)) return null;
+  const data = dataOf(body);
+  const state = isRecord(data.state) ? data.state : null;
+  if (!state) return null;
+  const deviceId = text(state.deviceId) ?? text(data.deviceId);
+  if (!deviceId) return null;
+  return parseDeviceResponse({ data: state }, deviceId);
 }
 
 export function codeOf(body: unknown): string | undefined {

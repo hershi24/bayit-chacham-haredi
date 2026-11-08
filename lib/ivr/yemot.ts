@@ -16,6 +16,8 @@ export function yemotRead(input: {
   mode?: "No" | "Number" | "Time" | "Digits" | "Date";
   seconds?: number;
   allowEmpty?: boolean;
+  /** Value Yemot posts when allowEmpty times out (keeps the next API turn from replaying). */
+  emptyVal?: string;
 }): string {
   // Keypress list: field, reuse, max, min, seconds, playback, then confirm last.
   // max and min are the capture length. playback is how Yemot speaks the buffer:
@@ -36,7 +38,7 @@ export function yemotRead(input: {
     input.allowed ?? "",
     "2",
     input.allowEmpty ? "Ok" : "",
-    "",
+    input.emptyVal ?? "",
     "",
     "no",
   ].join(",");

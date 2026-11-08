@@ -82,8 +82,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className={`mx-auto w-full min-w-0 flex-1 px-4 pt-6 pb-32 md:px-8 md:pt-10 md:pb-14 ${frame}`}>{children}</main>
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 md:hidden" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+      <main
+        className={`mx-auto w-full min-w-0 flex-1 px-4 pt-6 pb-[calc(8.75rem+env(safe-area-inset-bottom,0px))] md:px-8 md:pt-10 md:pb-14 ${frame}`}
+      >
+        {children}
+      </main>
+      <div
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 sm:px-4 md:hidden"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0px))" }}
+      >
         <nav aria-label="ניווט" className="app-bar pointer-events-auto grid w-full max-w-md auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden rounded-2xl border border-border/80 p-1 shadow-[0_12px_28px_rgb(20_32_26/16%)]">
           {items.map((item) => {
             const active = pathname === item.href;

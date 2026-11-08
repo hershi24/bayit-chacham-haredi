@@ -80,18 +80,22 @@ export function AdminConsole() {
   }
 
   return (
-    <section>
+    <section className="min-w-0">
       <h2 className="text-2xl font-semibold tracking-tight">ניהול</h2>
       <p className="mb-4 text-sm text-muted-foreground">כל נתוני הלקוח, וחיבור לימות המשיח.</p>
-      <Tabs defaultValue="tenants">
-        <TabsList>
-          <TabsTrigger value="tenants">לקוחות</TabsTrigger>
-          <TabsTrigger value="link">חיבור וטלפון</TabsTrigger>
+      <Tabs defaultValue="tenants" className="min-w-0">
+        <TabsList className="grid h-auto w-full grid-cols-2 sm:inline-flex sm:w-fit">
+          <TabsTrigger value="tenants" className="px-3 py-2">
+            לקוחות
+          </TabsTrigger>
+          <TabsTrigger value="link" className="px-3 py-2">
+            חיבור וטלפון
+          </TabsTrigger>
         </TabsList>
-        <TabsContent value="tenants" className="pt-4">
+        <TabsContent value="tenants" className="min-w-0 pt-4">
           <CustomerPanel actorId={actorId} tenants={tenants} users={users} devices={devices} onChange={load} />
         </TabsContent>
-        <TabsContent value="link" className="pt-4">
+        <TabsContent value="link" className="min-w-0 pt-4">
           <LinkPanel status={status} ivr={ivr} devices={devices} />
         </TabsContent>
       </Tabs>
@@ -183,8 +187,8 @@ function CustomerPanel({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
-      <Card>
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[22rem_1fr]">
+      <Card className="order-2 min-w-0 lg:order-1">
         <CardHeader>
           <CardTitle>לקוח חדש</CardTitle>
         </CardHeader>
@@ -220,23 +224,28 @@ function CustomerPanel({
                 <Input id="customer-phone" dir="ltr" className="text-left" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="035551001" />
               </div>
             ) : null}
-            <Button type="submit">הוספה</Button>
+            <Button type="submit" className="w-full">
+              הוספה
+            </Button>
           </form>
         </CardContent>
       </Card>
-      <div className="grid gap-3">
+      <div className="order-1 grid min-w-0 gap-3 lg:order-2">
+        <p className="text-sm font-medium lg:hidden">לקוחות קיימים ({tenants.length})</p>
         {tenants.map((tenant) => {
           const people = users.filter((user) => user.tenantId === tenant.id);
           const primary = people[0] ?? null;
           return (
-            <div key={tenant.id} className="grid gap-2 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
+            <div key={tenant.id} className="grid min-w-0 gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
                   <p className="font-medium">{tenant.name}</p>
                   <p className="text-sm text-muted-foreground">
                     {primary ? (
                       <>
-                        <span dir="ltr" className="font-mono">{primary.username}</span>
+                        <span dir="ltr" className="font-mono">
+                          {primary.username}
+                        </span>
                         {" · "}
                         {socketLabel(primary)}
                       </>
@@ -253,23 +262,43 @@ function CustomerPanel({
                   )}
                   <CustomerSocketsLine devices={devices.filter((device) => device.tenantId === tenant.id)} />
                 </div>
-                <span className="flex shrink-0 gap-1">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setEditing({ tenantId: tenant.id, userId: primary?.id ?? null })}>
+                <span className="flex w-full gap-2 sm:w-auto sm:shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-10 flex-1 sm:min-h-8 sm:flex-none"
+                    onClick={() => setEditing({ tenantId: tenant.id, userId: primary?.id ?? null })}
+                  >
                     עריכה
                   </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => void removeTenant(tenant)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="min-h-10 flex-1 sm:min-h-8 sm:flex-none"
+                    onClick={() => void removeTenant(tenant)}
+                  >
                     מחיקה
                   </Button>
                 </span>
               </div>
               {people.slice(1).map((user) => (
-                <div key={user.id} className="flex items-center justify-between gap-3 text-sm">
-                  <span>
-                    <span dir="ltr" className="font-mono">{user.username}</span>
+                <div key={user.id} className="flex min-w-0 flex-col gap-2 border-t border-border/60 pt-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                  <span className="min-w-0 truncate">
+                    <span dir="ltr" className="font-mono">
+                      {user.username}
+                    </span>
                     {" · "}
                     {socketLabel(user)}
                   </span>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setEditing({ tenantId: tenant.id, userId: user.id })}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-10 w-full sm:min-h-8 sm:w-auto"
+                    onClick={() => setEditing({ tenantId: tenant.id, userId: user.id })}
+                  >
                     עריכה
                   </Button>
                 </div>
@@ -280,19 +309,33 @@ function CustomerPanel({
         <div className="grid gap-2">
           <p className="text-sm font-medium">מנהלים</p>
           {admins.map((user) => (
-            <div key={user.id} className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-              <div>
+            <div key={user.id} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 <p className="font-medium">{user.name}</p>
                 <p className="text-sm text-muted-foreground">
-                  <span dir="ltr" className="font-mono">{user.username}</span>
+                  <span dir="ltr" className="font-mono">
+                    {user.username}
+                  </span>
                   {" · מנהל"}
                 </p>
               </div>
-              <span className="flex gap-1">
-                <Button type="button" variant="outline" size="sm" onClick={() => setEditing({ tenantId: null, userId: user.id })}>
+              <span className="flex w-full gap-2 sm:w-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-10 flex-1 sm:min-h-8 sm:flex-none"
+                  onClick={() => setEditing({ tenantId: null, userId: user.id })}
+                >
                   עריכה
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void removeAdmin(user)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="min-h-10 flex-1 sm:min-h-8 sm:flex-none"
+                  onClick={() => void removeAdmin(user)}
+                >
                   מחיקה
                 </Button>
               </span>
@@ -619,13 +662,13 @@ function CustomerEditorForm({
 function CustomerSocketsLine({ devices }: { devices: DeviceView[] }) {
   if (!devices.length) return <p className="text-sm text-muted-foreground">אין שקעים</p>;
   return (
-    <ul className="mt-1 grid gap-0.5 text-sm text-muted-foreground">
+    <ul className="mt-1 grid gap-1 text-sm text-muted-foreground">
       {devices.map((device) => (
-        <li key={device.deviceId}>
-          {device.name}
-          {device.frozen ? " (מוקפא)" : ""}
-          {" · "}
-          <span dir="ltr" className="font-mono">{device.deviceId}</span>
+        <li key={device.deviceId} className="min-w-0">
+          <span className="block truncate">{device.name}{device.frozen ? " (מוקפא)" : ""}</span>
+          <span dir="ltr" className="block break-all font-mono text-xs">
+            {device.deviceId}
+          </span>
         </li>
       ))}
     </ul>

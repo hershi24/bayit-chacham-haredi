@@ -257,10 +257,19 @@ export function ProgramsBoard() {
           ＋ תוכנית חדשה
         </Button>
       </div>
-      <div className="mb-3 grid grid-cols-3 gap-1.5 sm:gap-2 md:mb-4">
-        <Stat label="תוכניות שמורות" value={String(savedCount)} />
-        <Stat label="פעולות החודש" value={String(monthCount)} />
-        <Stat label="הפעולה הקרובה" value={soon ? `${soon.time} · ${shortDate(soon.day)}` : "אין"} small />
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border bg-card px-3 py-2 text-[12px] md:mb-3">
+        <span className="text-muted-foreground">
+          תוכניות שמורות <strong className="font-semibold text-foreground">{savedCount}</strong>
+        </span>
+        <span className="hidden text-border sm:inline">·</span>
+        <span className="text-muted-foreground">
+          פעולות החודש <strong className="font-semibold text-foreground">{monthCount}</strong>
+        </span>
+        <span className="hidden text-border sm:inline">·</span>
+        <span className="min-w-0 truncate text-muted-foreground">
+          הפעולה הקרובה{" "}
+          <strong className="font-semibold text-foreground">{soon ? `${soon.time} · ${shortDate(soon.day)}` : "אין"}</strong>
+        </span>
       </div>
       <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-4">
         <section className="min-w-0 overflow-hidden rounded-xl border bg-card">
@@ -781,15 +790,6 @@ export function ProgramsBoard() {
         />
       ) : null}
     </section>
-  );
-}
-
-function Stat({ label, value, small = false }: { label: string; value: string; small?: boolean }) {
-  return (
-    <div className="rounded-lg border bg-card px-2.5 py-2 sm:px-3 sm:py-2.5">
-      <span className="block text-[10px] text-muted-foreground">{label}</span>
-      <strong className={cn("mt-0.5 block truncate font-semibold", small ? "text-[13px] sm:text-sm" : "text-base sm:text-lg")}>{value}</strong>
-    </div>
   );
 }
 

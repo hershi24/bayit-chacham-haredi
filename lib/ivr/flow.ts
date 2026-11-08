@@ -90,10 +90,12 @@ export function decideMenu(devices: MenuDevice[], values: MenuValues): MenuDecis
 
 function deviceList(devices: MenuDevice[]): MenuDecision {
   if (!devices.length) return { type: "say", message: "אין שקעים משויכים" };
+  // Join sockets with commas (Yemot pause). Append settings with "ו" and no
+  // leading comma — a trailing ", להגדרות..." becomes its own choppy fragment.
   const sockets = devices.map((device, index) => `ל${label(device)} הקש ${DIGIT_WORD[index + 1]}`).join(", ");
   return {
     type: "read",
-    message: `${sockets}, להגדרות הקש אפס`,
+    message: `${sockets} ולהגדרות הקש אפס`,
     field: "pikud_device",
     min: 1,
     max: 1,

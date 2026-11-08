@@ -48,7 +48,8 @@ test("reads the sockets and then the action that matches the relay", () => {
   if (list.type !== "read") return;
   assert.match(list.message, /למזגן הקש אחד/);
   assert.match(list.message, /לתאורה הקש שתיים/);
-  assert.match(list.message, /להגדרות הקש אפס/);
+  assert.match(list.message, /ולהגדרות הקש אפס/);
+  assert.equal(list.message.includes(", להגדרות"), false);
   assert.equal(list.allowed, "012");
   const spoken = yemotRead(list);
   assert.equal(spoken.startsWith("read=t-"), true);

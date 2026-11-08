@@ -247,37 +247,37 @@ export function ProgramsBoard() {
 
   return (
     <section className="min-w-0">
-      <div className="mb-5 flex items-start justify-between gap-3">
+      <div className="mb-3 flex items-start justify-between gap-3 md:mb-4">
         <div className="min-w-0">
-          <p className="text-xs font-bold text-primary">ניהול אוטומציות</p>
-          <h1 className="text-[23px] font-semibold tracking-tight sm:text-[29px]">תוכניות ותזמונים</h1>
-          <p className="mt-1 text-sm text-muted-foreground">כל ההפעלות והכיבויים שלך, בלוח אחד מסודר.</p>
+          <p className="text-[11px] font-medium text-muted-foreground">ניהול אוטומציות</p>
+          <h1 className="text-[20px] font-semibold tracking-tight md:text-[22px]">תוכניות ותזמונים</h1>
+          <p className="mt-0.5 hidden text-[13px] text-muted-foreground sm:block">כל ההפעלות והכיבויים שלך, בלוח אחד מסודר.</p>
         </div>
-        <Button type="button" className="h-11 shrink-0 rounded-xl px-3 sm:px-4" onClick={() => openNew(today)}>
+        <Button type="button" size="sm" className="h-9 shrink-0 rounded-lg px-3 text-[13px]" onClick={() => openNew(today)}>
           ＋ תוכנית חדשה
         </Button>
       </div>
-      <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-4">
+      <div className="mb-3 grid grid-cols-3 gap-1.5 sm:gap-2 md:mb-4">
         <Stat label="תוכניות שמורות" value={String(savedCount)} />
         <Stat label="פעולות החודש" value={String(monthCount)} />
         <Stat label="הפעולה הקרובה" value={soon ? `${soon.time} · ${shortDate(soon.day)}` : "אין"} small />
       </div>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-        <section className="min-w-0 overflow-hidden rounded-2xl border bg-card">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-3 sm:px-4">
+      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-4">
+        <section className="min-w-0 overflow-hidden rounded-xl border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-2.5 py-2 sm:px-3">
             <div className="flex items-center gap-1">
-              <button type="button" className="rounded-lg border px-3 py-2" aria-label="הקודם" onClick={() => move(-1)}>
+              <button type="button" className="rounded-md border px-2 py-1 text-sm" aria-label="הקודם" onClick={() => move(-1)}>
                 ‹
               </button>
-              <h2 className="min-w-28 px-1 text-center text-sm font-semibold sm:min-w-40 sm:text-base">{heading}</h2>
-              <button type="button" className="rounded-lg border px-3 py-2" aria-label="הבא" onClick={() => move(1)}>
+              <h2 className="min-w-24 px-1 text-center text-[13px] font-semibold sm:min-w-36 sm:text-sm">{heading}</h2>
+              <button type="button" className="rounded-md border px-2 py-1 text-sm" aria-label="הבא" onClick={() => move(1)}>
                 ›
               </button>
-              <button type="button" className="rounded-lg border px-3 py-2 text-sm" onClick={jumpToday}>
+              <button type="button" className="rounded-md border px-2 py-1 text-[12px]" onClick={jumpToday}>
                 היום
               </button>
             </div>
-            <div className="grid grid-cols-4 rounded-xl bg-secondary p-1" role="tablist" aria-label="תצוגת הלוח">
+            <div className="grid grid-cols-4 rounded-lg bg-secondary p-0.5" role="tablist" aria-label="תצוגת הלוח">
               {(
                 [
                   ["month", "חודש"],
@@ -291,7 +291,7 @@ export function ProgramsBoard() {
                   type="button"
                   role="tab"
                   aria-selected={view === key}
-                  className={cn("rounded-lg px-2 py-1.5 text-xs sm:text-sm", view === key ? "bg-card font-semibold text-primary shadow-sm" : "text-muted-foreground")}
+                  className={cn("rounded-md px-2 py-1 text-[11px] sm:text-xs", view === key ? "bg-card font-semibold text-foreground shadow-sm" : "text-muted-foreground")}
                   onClick={() => setView(key)}
                 >
                   {label}
@@ -401,16 +401,16 @@ export function ProgramsBoard() {
               )}
             </div>
           ) : view === "day" ? (
-            <div className="p-3 sm:p-4">
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <div className="p-2.5 sm:p-3">
+              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-bold tracking-[0.12em] text-muted-foreground uppercase">{shortDayName(cursor)}</p>
-                  <h3 className="text-xl font-black tracking-tight sm:text-2xl">
+                  <p className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">{shortDayName(cursor)}</p>
+                  <h3 className="text-base font-semibold tracking-tight sm:text-lg">
                     {longDay(cursor)}
-                    {dayMeta?.hebrew ? <span className="ms-2 text-sm font-bold text-muted-foreground sm:text-base">{dayMeta.hebrew}</span> : null}
+                    {dayMeta?.hebrew ? <span className="ms-2 text-xs font-medium text-muted-foreground sm:text-sm">{dayMeta.hebrew}</span> : null}
                   </h3>
                   {dayMeta?.parsha || dayMeta?.candles || dayMeta?.havdalah ? (
-                    <p className="mt-1 truncate text-sm font-semibold text-muted-foreground">
+                    <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
                       {[
                         dayMeta.parsha ? `פרשת ${dayMeta.parsha}` : null,
                         dayMeta.candles ? `כניסת שבת ${dayMeta.candles}` : null,
@@ -423,7 +423,7 @@ export function ProgramsBoard() {
                 </div>
                 <button
                   type="button"
-                  className="grid size-10 place-items-center rounded-xl bg-foreground text-lg font-black text-background"
+                  className="grid size-8 place-items-center rounded-lg border text-sm font-semibold text-foreground"
                   aria-label="תוכנית חדשה ליום"
                   onClick={() => openNew(cursor)}
                 >
@@ -466,9 +466,9 @@ export function ProgramsBoard() {
                       key={day}
                       data-date={day}
                       className={cn(
-                        "group flex min-w-0 flex-col gap-1 bg-card p-1 sm:p-1.5",
-                        view === "month" && "min-h-[5.4rem] sm:min-h-[7.8rem]",
-                        view === "week" && "min-h-40",
+                        "group flex min-w-0 flex-col gap-0.5 bg-card p-1",
+                        view === "month" && "min-h-[4.5rem] md:min-h-[5.25rem]",
+                        view === "week" && "min-h-28 md:min-h-32",
                         !inMonth && "bg-muted/50 text-muted-foreground",
                         day === today && "bg-primary/5",
                       )}
@@ -482,18 +482,18 @@ export function ProgramsBoard() {
                             setView("day");
                           }}
                         >
-                          <span className={cn("grid size-6 place-items-center rounded-full text-xs font-extrabold", day === today && "bg-primary text-primary-foreground")}>
+                          <span className={cn("grid size-5 place-items-center rounded-full text-[11px] font-semibold", day === today && "bg-primary text-primary-foreground")}>
                             {Number(day.slice(8))}
                           </span>
                           {meta?.hebrew ? (
-                            <span className="mt-0.5 block truncate text-[9px] font-semibold leading-none text-muted-foreground sm:text-[10px]">
+                            <span className="mt-0.5 block truncate text-[9px] font-medium leading-none text-muted-foreground">
                               {meta.hebrew}
                             </span>
                           ) : null}
                         </button>
                         <button
                           type="button"
-                          className="grid size-6 place-items-center rounded-md bg-foreground text-[13px] font-black text-background shadow-sm"
+                          className="grid size-5 place-items-center rounded border text-[11px] font-semibold text-muted-foreground opacity-0 transition group-hover:opacity-100"
                           aria-label={`תוכנית חדשה ב-${day}`}
                           onClick={() => openNew(day)}
                         >
@@ -550,22 +550,22 @@ export function ProgramsBoard() {
             </>
           )}
         </section>
-        <aside className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <div className="rounded-2xl border bg-card p-5">
-            <h3 className="mb-3 text-base font-semibold">ההתקנים שלי</h3>
+        <aside className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+          <div className="rounded-xl border bg-card p-3">
+            <h3 className="mb-2 text-[13px] font-semibold">ההתקנים שלי</h3>
             {board.devices.map((device) => {
               const selected = filter === device.deviceId;
               return (
                 <label
                   key={device.deviceId}
-                  className={cn("mb-2 flex cursor-pointer items-center gap-2 rounded-xl border p-3", selected && "border-primary/40 bg-primary/5")}
+                  className={cn("mb-1.5 flex cursor-pointer items-center gap-2 rounded-lg border p-2", selected && "border-primary/40 bg-primary/5")}
                 >
-                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary">
-                    <DeviceGlyph name={device.name} icon={device.icon} className="size-4" />
+                  <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-secondary">
+                    <DeviceGlyph name={device.name} icon={device.icon} className="size-3.5" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <b className="block truncate text-sm">{device.name}</b>
-                    <small className="text-[11px] text-muted-foreground">{devicePlanCount(board, device.deviceId)} תוכניות</small>
+                    <b className="block truncate text-[13px] font-medium">{device.name}</b>
+                    <small className="text-[10px] text-muted-foreground">{devicePlanCount(board, device.deviceId)} תוכניות</small>
                   </span>
                   <input
                     type="radio"
@@ -577,41 +577,41 @@ export function ProgramsBoard() {
                 </label>
               );
             })}
-            <button type="button" className="mt-1 h-10 w-full rounded-xl border text-sm" onClick={() => setFilter("all")}>
+            <button type="button" className="mt-1 h-8 w-full rounded-lg border text-[12px]" onClick={() => setFilter("all")}>
               הצג את כל ההתקנים
             </button>
           </div>
-          <div className="rounded-2xl border bg-card p-5">
-            <h3 className="mb-3 text-base font-semibold">פעולות קרובות</h3>
+          <div className="rounded-xl border bg-card p-3">
+            <h3 className="mb-2 text-[13px] font-semibold">פעולות קרובות</h3>
             {nextEvents.length ? (
               nextEvents.slice(0, 5).map((event) => (
                 <button
                   key={`${event.day}-${event.key}`}
                   type="button"
-                  className="flex w-full items-center gap-3 border-b py-2 text-start last:border-0"
+                  className="flex w-full items-center gap-2 border-b border-border/60 py-1.5 text-start last:border-0"
                   onClick={() => openEvent(event, board, showProgram, showClock)}
                 >
-                  <time className="font-extrabold text-primary" dir="ltr">
+                  <time className="text-[12px] font-semibold text-muted-foreground tabular-nums" dir="ltr">
                     {event.time}
                   </time>
                   <span className="min-w-0">
-                    <b className="block truncate text-sm">{event.name}</b>
-                    <small className="text-muted-foreground">{longDate(event.day)}</small>
+                    <b className="block truncate text-[12px] font-medium">{event.name}</b>
+                    <small className="text-[10px] text-muted-foreground">{longDate(event.day)}</small>
                   </span>
                 </button>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">אין פעולות קרובות</p>
+              <p className="text-[12px] text-muted-foreground">אין פעולות קרובות</p>
             )}
           </div>
-          <div className="rounded-2xl bg-primary/10 p-4 text-xs leading-6 text-primary sm:col-span-2 lg:col-span-1">
-            <b>שליטה חכמה, בדרך שלך</b>
+          <div className="rounded-xl bg-muted/60 p-3 text-[11px] leading-5 text-muted-foreground sm:col-span-2 lg:col-span-1">
+            <b className="text-foreground">שליטה חכמה, בדרך שלך</b>
             <br />
             צרו תוכניות חד־פעמיות או חוזרות. התוכנית נשמרת בחשבון ומפעילה את השקעים שנבחרו.
-            <label className="mt-3 block font-bold">
+            <label className="mt-2 block font-medium text-foreground">
               עיר לזמני שבת
               <select
-                className="mt-1 h-10 w-full rounded-xl border bg-card px-2 text-foreground"
+                className="mt-1 h-8 w-full rounded-lg border bg-card px-2 text-[12px] text-foreground"
                 aria-label="עיר לזמני היום"
                 value={board.locationId}
                 onChange={(event) => void send({ action: "location", locationId: event.target.value }, "location")}
@@ -786,9 +786,9 @@ export function ProgramsBoard() {
 
 function Stat({ label, value, small = false }: { label: string; value: string; small?: boolean }) {
   return (
-    <div className="rounded-2xl border bg-card px-3 py-3 sm:px-5 sm:py-4">
-      <span className="block text-[10px] text-muted-foreground sm:text-xs">{label}</span>
-      <strong className={cn("mt-1 block truncate font-semibold", small ? "text-sm sm:text-lg" : "text-xl sm:text-[26px]")}>{value}</strong>
+    <div className="rounded-lg border bg-card px-2.5 py-2 sm:px-3 sm:py-2.5">
+      <span className="block text-[10px] text-muted-foreground">{label}</span>
+      <strong className={cn("mt-0.5 block truncate font-semibold", small ? "text-[13px] sm:text-sm" : "text-base sm:text-lg")}>{value}</strong>
     </div>
   );
 }

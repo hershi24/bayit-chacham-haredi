@@ -37,14 +37,14 @@
 }
 
 .power-switch[data-state="on"] {
-  color: #146c2e;
+  color: #155a8f;
 }
 
 .power-switch[data-state="on"] .power-switch-ring {
-  background: linear-gradient(180deg, #5ee08a 0%, #187a34 100%);
+  background: linear-gradient(180deg, #5ba3e8 0%, #1a4f8c 100%);
   box-shadow:
-    0 0 0 6px rgb(52 199 89 / 14%),
-    0 6px 18px rgb(24 122 52 / 35%),
+    0 0 0 6px rgb(26 79 140 / 14%),
+    0 6px 18px rgb(27 108 168 / 35%),
     inset 0 1px 0 rgb(255 255 255 / 55%);
 }
 
@@ -84,7 +84,7 @@
 
 .socket-card[data-lit] {
   background:
-    radial-gradient(120% 90% at 100% 0%, rgb(52 199 89 / 16%) 0%, transparent 60%),
+    radial-gradient(120% 90% at 100% 0%, rgb(27 108 168 / 16%) 0%, transparent 60%),
     var(--card);
 }
 
@@ -98,7 +98,7 @@
 html[data-theme="dark"] {
   .socket-card[data-lit] {
     background:
-      radial-gradient(120% 90% at 100% 0%, rgb(48 209 88 / 14%) 0%, transparent 60%),
+      radial-gradient(120% 90% at 100% 0%, rgb(77 163 232 / 14%) 0%, transparent 60%),
       var(--card);
   }
 
@@ -107,7 +107,7 @@ html[data-theme="dark"] {
   }
 
   .power-switch[data-state="on"] {
-    color: #30d158;
+    color: #7ec0f5;
   }
 
   .power-switch[data-state="off"] .power-switch-ring {

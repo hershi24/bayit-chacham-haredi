@@ -160,7 +160,7 @@ export function SocketCard({
         <button
           type="button"
           className={`grid size-14 shrink-0 place-items-center rounded-2xl transition-colors duration-300 ${
-            lit ? "bg-online text-white shadow-[0_6px_16px_rgb(27_108_168/30%)]" : "bg-secondary text-muted-foreground hover:text-foreground"
+            lit ? "bg-online text-white shadow-[0_4px_12px_rgb(74_80_88/16%)]" : "bg-secondary text-muted-foreground hover:text-foreground"
           }`}
           aria-label={`אייקון ${iconLabel}`}
           onClick={() => {

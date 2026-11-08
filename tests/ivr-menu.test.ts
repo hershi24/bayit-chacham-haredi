@@ -568,7 +568,13 @@ test("the on and off keys are answered before the socket finishes switching", as
   await updateDeviceState("rct074190118", { connectivity: "ONLINE", relayOn: true, stateUpdatedAt: now, lastError: null });
   await updateDeviceState("rct063285417", { connectivity: "OFFLINE", relayOn: false, stateUpdatedAt: now, lastError: null });
 
-  const menu = await phonePress({ ApiPhone: "035551001", pikud_device: "1" });
+  const waiting = await phonePress({ ApiPhone: "035551001", pikud_device: "1" });
+  const waitingText = await waiting.text();
+  assert.match(waitingText, /מבצע בדיקת מצב ערוץ, אנא המתן/);
+  assert.match(waitingText, /pikud_ready/);
+  assert.equal(waitingText.includes("להפעלה הקש אחד"), false);
+
+  const menu = await phonePress({ ApiPhone: "035551001", pikud_device: "1", pikud_ready: "" });
   assert.match(await menu.text(), /כבוי כעת, להפעלה הקש אחד/);
 
   const started = Date.now();

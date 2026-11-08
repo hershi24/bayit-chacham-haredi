@@ -4,10 +4,15 @@ import { canAccessDevice, devicesForPhone, normalizePhone, phonesMatch, resolveD
 import { speechFor, yemotBody } from "../lib/ivr/speech";
 import { MockGateway } from "../lib/wlte/mock-gateway";
 import {
+  deviceRelaySetRequest,
+  deviceStateGetRequest,
   isNewerIso,
+  isWsReply,
+  parseCommandReplyState,
   parseCommandResponse,
   parseDeviceResponse,
   parseWsEvent,
+  wsReplyOk,
 } from "../lib/wlte/parse";
 import { REQUIRED_SCOPES, missingScopes, tokenNeedsRefresh } from "../lib/wlte/policy";
 import { retryDecision, runIdempotent } from "../lib/wlte/retry";
@@ -80,6 +85,76 @@ describe("WLTE payloads", () => {
     assert.equal(command.status, "SENT");
     assert.equal(command.action, "ON");
     assert.equal(command.commandId, "cmd_batch");
+  });
+
+  it("builds websocket state and relay requests from the official contract", () => {
+    assert.deepEqual(deviceStateGetRequest("req_state_001", "abc123456789"), {
+      type: "request",
+      requestId: "req_state_001",
+      topic: "device.state.get",
+      data: { deviceId: "abc123456789" },
+    });
+    assert.deepEqual(deviceRelaySetRequest("req_relay_001", "abc123456789", "ON", "idem_relay_001"), {
+      type: "request",
+      requestId: "req_relay_001",
+      topic: "device.operation.execute",
+      data: {
+        deviceId: "abc123456789",
+        idempotencyKey: "idem_relay_001",
+        operation: {
+          name: "device.relay.set",
+          params: { relays: [{ index: 1, action: "ON" }] },
+        },
+      },
+    });
+  });
+
+  it("parses a websocket command reply and optional bundled state", () => {
+    const reply = {
+      type: "reply",
+      requestId: "req_relay_001",
+      code: "COMMAND_ACCEPTED",
+      message: "Command accepted.",
+      data: {
+        command: {
+          id: "cmd_01HX",
+          deviceId: "abc123456789",
+          operation: "device.relay.set",
+          status: "SUCCESS",
+          params: { relays: [{ index: 1, action: "ON" }] },
+          createdAt: "2026-07-15T08:30:00Z",
+        },
+        state: {
+          deviceId: "abc123456789",
+          status: "ONLINE",
+          peripherals: { relays: [{ index: 1, on: true }] },
+          stateUpdatedAt: "2026-07-15T08:30:00Z",
+        },
+      },
+    };
+    assert.equal(isWsReply(reply), true);
+    assert.equal(wsReplyOk("COMMAND_ACCEPTED"), true);
+    assert.equal(wsReplyOk("DEVICE_OFFLINE"), false);
+    const command = parseCommandResponse(reply);
+    assert.equal(command.commandId, "cmd_01HX");
+    assert.equal(command.status, "SUCCESS");
+    assert.equal(command.action, "ON");
+    const state = parseCommandReplyState(reply);
+    assert.equal(state?.deviceId, "abc123456789");
+    assert.equal(state?.relayOn, true);
+    assert.equal(state?.connectivity, "ONLINE");
+  });
+
+  it("ignores websocket replies when normalizing events", () => {
+    assert.equal(
+      parseWsEvent({
+        type: "reply",
+        requestId: "req_state_001",
+        code: "SUCCESS",
+        data: { deviceId: "abc", peripherals: { relays: [{ index: 1, on: true }] } },
+      }),
+      null,
+    );
   });
 
   it("reads relay changes from both websocket envelopes", () => {

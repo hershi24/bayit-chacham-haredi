@@ -11,10 +11,13 @@ const MESSAGES: Record<string, string> = {
   RATE_LIMITED: "יותר מדי בקשות. נסו שוב בעוד רגע",
   COMMAND_REJECTED: "הפקודה נדחתה",
   TIMEOUT: "לא התקבל אישור מהשקע",
+  DEVICE_TIMEOUT: "השקע לא ענה בזמן",
   GATEWAY_UNAVAILABLE: "שער WLTE אינו זמין",
   INVALID_REQUEST: "הבקשה ל-WLTE אינה תקינה",
   INTERNAL_ERROR: "WLTE החזיר שגיאה פנימית",
   RETRY_EXHAUSTED: "הפקודה לא הושלמה אחרי ניסיונות חוזרים",
+  WS_TIMEOUT: "לא התקבלה תשובה ב-WebSocket",
+  WS_CLOSED: "חיבור ה-WebSocket אינו פתוח",
 };
 
 export function wlteMessage(code: string | undefined, fallback?: string): string {

@@ -71,9 +71,10 @@
   --border: #d5d7db;
   --input: #d5d7db;
   --ring: #4a5058;
-  --online: #5e6e7a;
-  --online-soft: #eef0f2;
-  --online-foreground: #465560;
+  /* Powered-on / connected: glowing green, separate from the soft stone brand. */
+  --online: #1f9d4a;
+  --online-soft: #e7f8ec;
+  --online-foreground: #147a38;
   --bar: #f7f7f8;
   --bar-opaque: #f3f3f4;
   --chart-1: oklch(0.87 0 0);
@@ -111,9 +112,9 @@ html[data-theme="dark"] {
   --border: #34363d;
   --input: #34363d;
   --ring: #b0b4bc;
-  --online: #8e9ba8;
-  --online-soft: #1e2228;
-  --online-foreground: #c5ced6;
+  --online: #30d158;
+  --online-soft: #14301f;
+  --online-foreground: #5ee08a;
   --bar: #18191d;
   --bar-opaque: #121316;
   --chart-1: oklch(0.87 0 0);

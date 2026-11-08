@@ -3,18 +3,20 @@ import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
 import { savePhoneClock } from "@/lib/ivr/phone-clock";
 import { answerPrograms } from "@/lib/ivr/programs";
 import { speechFor } from "@/lib/ivr/speech";
+import { ensureStatusCheck, statusCheckRunning } from "@/lib/ivr/status-check";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
 import { listIvrTargets, saveSchedule } from "@/lib/store";
 import { getBridge } from "@/lib/wlte/bridge";
 import { isWlteError } from "@/lib/wlte/errors";
+
+const STATUS_WAIT = "מבצע בדיקת מצב ערוץ אנא המתן";
 
 function bag(entries: Iterable<[string, string]>) {
   const result: Record<string, string> = {};
   for (const [key, value] of entries) {
     const name = key.toLowerCase();
     const trimmed = value.trim();
-    // Keep empty date/ready markers so the next API turn knows the step already ran.
-    if (trimmed || name === "pikud_date" || name === "pikud_ready") result[name] = trimmed;
+    if (trimmed || name === "pikud_date") result[name] = trimmed;
   }
   return result;
 }
@@ -97,27 +99,34 @@ export async function handleMenu(request: Request) {
 
   const selected = Number(present(input.values.pikud_device));
   const chosen = Number.isInteger(selected) ? devices[selected - 1] : undefined;
-  // Before the slow status refresh, play a short wait line so the caller is not
-  // left in unexplained silence. Yemot then re-enters with pikud_ready set.
-  if (chosen && !present(input.values.pikud_action) && !Object.hasOwn(input.values, "pikud_ready")) {
-    return reply(
-      input.format,
-      yemotRead({
-        message: "מבצע בדיקת מצב ערוץ, אנא המתן",
-        field: "pikud_ready",
-        min: 0,
-        max: 0,
-        seconds: 1,
-        allowEmpty: true,
-        mode: "No",
-      }),
-    );
+  // Start live status checks while the caller still hears the device list / wait line.
+  if (!present(input.values.pikud_action)) {
+    for (const device of devices) {
+      void ensureStatusCheck(device.deviceId).catch(() => {});
+    }
   }
   // Refresh only while the caller is still choosing. Once a key asks to switch
   // the socket, answer from the state already stored and send the command after the reply.
   if (chosen && !present(input.values.pikud_action)) {
+    // Only announce a wait line when the check is still running — and only once.
+    // No inner comma/period: Yemot would otherwise split the sentence into two readings.
+    if (!present(input.values.pikud_ready) && statusCheckRunning(chosen.deviceId)) {
+      return reply(
+        input.format,
+        yemotRead({
+          message: STATUS_WAIT,
+          field: "pikud_ready",
+          min: 1,
+          max: 1,
+          seconds: 1,
+          allowEmpty: true,
+          emptyVal: "1",
+          mode: "No",
+        }),
+      );
+    }
     try {
-      const fresh = await getBridge().refresh(chosen.deviceId);
+      const fresh = await ensureStatusCheck(chosen.deviceId);
       if (fresh) {
         chosen.relayOn = fresh.relayOn;
         chosen.connectivity = fresh.connectivity;

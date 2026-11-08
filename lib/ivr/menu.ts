@@ -13,7 +13,8 @@ function bag(entries: Iterable<[string, string]>) {
   for (const [key, value] of entries) {
     const name = key.toLowerCase();
     const trimmed = value.trim();
-    if (trimmed || name === "pikud_date") result[name] = trimmed;
+    // Keep empty date/ready markers so the next API turn knows the step already ran.
+    if (trimmed || name === "pikud_date" || name === "pikud_ready") result[name] = trimmed;
   }
   return result;
 }
@@ -96,6 +97,22 @@ export async function handleMenu(request: Request) {
 
   const selected = Number(present(input.values.pikud_device));
   const chosen = Number.isInteger(selected) ? devices[selected - 1] : undefined;
+  // Before the slow status refresh, play a short wait line so the caller is not
+  // left in unexplained silence. Yemot then re-enters with pikud_ready set.
+  if (chosen && !present(input.values.pikud_action) && !Object.hasOwn(input.values, "pikud_ready")) {
+    return reply(
+      input.format,
+      yemotRead({
+        message: "מבצע בדיקת מצב ערוץ, אנא המתן",
+        field: "pikud_ready",
+        min: 0,
+        max: 0,
+        seconds: 1,
+        allowEmpty: true,
+        mode: "No",
+      }),
+    );
+  }
   // Refresh only while the caller is still choosing. Once a key asks to switch
   // the socket, answer from the state already stored and send the command after the reply.
   if (chosen && !present(input.values.pikud_action)) {

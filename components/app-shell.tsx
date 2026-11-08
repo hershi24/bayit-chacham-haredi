@@ -16,15 +16,28 @@ const links: Array<{ href: string; label: string; short: string; icon: LucideIco
   { href: "/audit", label: "יומן", short: "יומן", icon: ScrollText },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+function navItems(user: SessionUser) {
+  if (user.role === "admin") {
+    return [...links, { href: "/admin", label: "ניהול", short: "ניהול", icon: Settings }];
+  }
+  return [
+    ...links,
+    { href: "/phones", label: "מספרים לחיוג", short: "מספרים", icon: Phone },
+    { href: "/password", label: "סיסמה", short: "סיסמה", icon: KeyRound },
+  ];
+}
+
+export function AppShell({ children, user }: { children: React.ReactNode; user: SessionUser }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<SessionUser | null>(null);
+  const [session, setSession] = useState(user);
+  const items = navItems(session);
 
   useEffect(() => {
-    void api<{ user: SessionUser }>("/api/auth/me")
-      .then((payload) => setUser(payload.user))
-      .catch(() => undefined);
+    setSession(user);
+  }, [user]);
+
+  useEffect(() => {
     const onUnauthorized = () => router.replace("/login");
     window.addEventListener("pikud:unauthorized", onUnauthorized);
     return () => window.removeEventListener("pikud:unauthorized", onUnauthorized);
@@ -35,17 +48,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.replace("/login");
     router.refresh();
   }
-
-  const items =
-    user?.role === "admin"
-      ? [...links, { href: "/admin", label: "ניהול", short: "ניהול", icon: Settings }]
-      : user
-        ? [
-            ...links,
-            { href: "/phones", label: "מספרים לחיוג", short: "מספרים", icon: Phone },
-            { href: "/password", label: "סיסמה", short: "סיסמה", icon: KeyRound },
-          ]
-        : links;
 
   const frame = pathname === "/programs" ? "max-w-[1120px]" : pathname === "/" ? "max-w-7xl" : "max-w-5xl";
 
@@ -74,7 +76,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </nav>
           <div className="ms-auto flex items-center gap-1">
-            <span className="hidden max-w-40 truncate px-2 text-[13px] text-muted-foreground sm:inline">{user?.name ?? ""}</span>
+            <span className="hidden max-w-40 truncate px-2 text-[13px] text-muted-foreground sm:inline">{session.name}</span>
             <ThemeToggle compact className="h-8 rounded-full border-0 bg-transparent px-2.5 text-[13px] text-muted-foreground shadow-none" />
             <Button variant="ghost" size="icon" className="size-8 rounded-full text-muted-foreground" onClick={() => void logout()} aria-label="יציאה">
               <LogOut className="size-4" />

@@ -47,7 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ]
         : links;
 
-  const frame = pathname === "/programs" ? "max-w-[1300px]" : "max-w-5xl";
+  const frame = pathname === "/programs" ? "max-w-[1300px]" : pathname === "/" ? "max-w-7xl" : "max-w-5xl";
 
   return (
     <div className="flex min-h-dvh min-w-0 flex-col overflow-x-clip">

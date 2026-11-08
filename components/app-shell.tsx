@@ -91,7 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 sm:px-4 md:hidden"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0px))" }}
       >
-        <nav aria-label="ניווט" className="app-bar pointer-events-auto grid w-full max-w-md auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden rounded-2xl border border-border/80 p-1 shadow-[0_12px_28px_rgb(20_32_26/16%)]">
+        <nav aria-label="ניווט" className="app-bar pointer-events-auto grid w-full max-w-md auto-cols-[minmax(0,1fr)] grid-flow-col overflow-hidden rounded-2xl border border-border/80 p-1 shadow-[0_12px_28px_rgb(18_26_38/16%)]">
           {items.map((item) => {
             const active = pathname === item.href;
             const Icon = item.icon;

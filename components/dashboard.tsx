@@ -163,15 +163,94 @@ export function Dashboard() {
     .sort((a, b) => Date.parse(a.next.at) - Date.parse(b.next.at))
     .slice(0, 5);
   const recent = (audit ?? []).filter((entry) => entry.deviceName).slice(0, 5);
+  const compactBoard = count > 0 && count <= 2;
 
   const deviceGrid =
     count <= 1
-      ? "mx-auto grid w-full max-w-xl min-w-0 gap-4"
+      ? "grid w-full min-w-0 gap-4"
       : count === 2
-        ? "mx-auto grid w-full max-w-3xl min-w-0 gap-4 sm:grid-cols-2"
-        : count === 3
-          ? "mx-auto grid w-full max-w-5xl min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3"
-          : "mx-auto grid w-full max-w-5xl min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3";
+        ? "grid w-full min-w-0 gap-4 sm:grid-cols-2"
+        : "grid w-full min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3";
+
+  const upcomingBlock = (
+    <div className="min-w-0">
+      <h2 className="mb-3 text-[13px] font-medium text-muted-foreground">בהמשך</h2>
+      {upcoming.length === 0 ? (
+        <p className="rounded-2xl border border-border/60 bg-card px-4 py-3 text-[14px] text-muted-foreground">אין פעולות מתוכננות.</p>
+      ) : (
+        <ol className="overflow-hidden rounded-2xl border border-border/60 bg-card">
+          {upcoming.map((device) => (
+            <li key={device.deviceId} className="flex min-w-0 items-center gap-3 border-b border-border/50 px-4 py-3 text-[15px] last:border-b-0">
+              <span className="shrink-0 text-[13px] text-foreground tabular-nums" dir="ltr">
+                {planWhen(device.next.at)}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{device.name}</span>
+              <span className="shrink-0 text-[13px] text-muted-foreground">{device.next.action === "ON" ? "יידלק" : "יכבה"}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+
+  const recentBlock = (
+    <div className="min-w-0">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="text-[13px] font-medium text-muted-foreground">פעילות אחרונה</h2>
+        <Link href="/audit" className="shrink-0 text-[12px] text-primary hover:underline">
+          ליומן
+        </Link>
+      </div>
+      {audit === null ? null : recent.length === 0 ? (
+        <p className="rounded-2xl border border-border/60 bg-card px-4 py-3 text-[14px] text-muted-foreground">עוד אין פעולות.</p>
+      ) : (
+        <ol className="overflow-hidden rounded-2xl border border-border/60 bg-card">
+          {recent.map((entry) => (
+            <li key={entry.id} className="flex min-w-0 items-center gap-3 border-b border-border/50 px-4 py-3 last:border-b-0">
+              <span className="shrink-0 text-[13px] text-muted-foreground tabular-nums" dir="ltr">
+                {planWhen(entry.at)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px]">{entry.deviceName}</span>
+                <span className="text-[13px] text-muted-foreground">{auditAction(entry.action)}</span>
+              </span>
+              <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[12px] text-muted-foreground">{sources[entry.source] ?? entry.source}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+
+  const socketsBlock = (
+    <div className="min-w-0">
+      <h2 className="mb-4 text-[13px] font-medium tracking-[0.08em] text-muted-foreground uppercase">השקעים</h2>
+      {devices === null && !error ? <div className="h-28 animate-pulse rounded-2xl bg-muted" /> : null}
+      {devices && devices.length === 0 ? (
+        <div className="rounded-2xl border border-border/60 bg-card p-6 text-start">
+          <h3 className="font-medium">אין שקעים משויכים לחשבון הזה</h3>
+          <p className="mt-1 text-sm text-muted-foreground">מנהל המערכת יכול לשייך שקע ללקוח מתוך מסך הניהול.</p>
+        </div>
+      ) : null}
+      {devices && devices.length > 0 ? (
+        <div className={deviceGrid}>
+          {devices.map((device) => (
+            <SocketCard
+              key={device.deviceId}
+              device={device}
+              busy={busy[device.deviceId] ?? null}
+              showTenant={role === "admin"}
+              mockMode={status?.mode === "mock" && role === "admin"}
+              onCommand={(action) => void command(device, action)}
+              onSimulate={(patch) => void simulate(device, patch)}
+              onIcon={(icon) => chooseIcon(device, icon)}
+              onTimer={(input) => armTimer(device, input)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 
   return (
     <section className="w-full min-w-0">
@@ -183,7 +262,7 @@ export function Dashboard() {
           <span className={`size-1.5 rounded-full ${live ? "bg-online" : "bg-muted-foreground/50"}`} aria-label={live ? "מחובר" : "מתחבר"} />
         </Button>
       </div>
-      <div className="mx-auto max-w-3xl text-center sm:text-start">
+      <div>
         <h1 className="text-[28px] leading-9 font-semibold tracking-tight text-balance sm:text-[32px]">
           {greeting()}
           {name ? `, ${name}` : ""}
@@ -205,79 +284,20 @@ export function Dashboard() {
         </div>
       ) : null}
 
-      <div className="mt-8 min-w-0">
-        <h2 className="mb-4 text-center text-[13px] font-medium tracking-[0.08em] text-muted-foreground uppercase">השקעים</h2>
-        {devices === null && !error ? <div className="mx-auto h-28 max-w-xl animate-pulse rounded-2xl bg-muted" /> : null}
-        {devices && devices.length === 0 ? (
-          <div className="mx-auto max-w-xl rounded-2xl border border-border/60 bg-card p-6 text-center">
-            <h3 className="font-medium">אין שקעים משויכים לחשבון הזה</h3>
-            <p className="mt-1 text-sm text-muted-foreground">מנהל המערכת יכול לשייך שקע ללקוח מתוך מסך הניהול.</p>
-          </div>
-        ) : null}
-        {devices && devices.length > 0 ? (
-          <div className={deviceGrid}>
-            {devices.map((device) => (
-              <SocketCard
-                key={device.deviceId}
-                device={device}
-                busy={busy[device.deviceId] ?? null}
-                showTenant={role === "admin"}
-                mockMode={status?.mode === "mock" && role === "admin"}
-                onCommand={(action) => void command(device, action)}
-                onSimulate={(patch) => void simulate(device, patch)}
-                onIcon={(icon) => chooseIcon(device, icon)}
-                onTimer={(input) => armTimer(device, input)}
-              />
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="mx-auto mt-10 max-w-3xl min-w-0">
-        <h2 className="mb-3 text-[13px] font-medium text-muted-foreground">בהמשך</h2>
-        {upcoming.length === 0 ? (
-          <p className="rounded-2xl border border-border/60 bg-card px-4 py-3 text-[14px] text-muted-foreground">אין פעולות מתוכננות.</p>
-        ) : (
-          <ol className="overflow-hidden rounded-2xl border border-border/60 bg-card">
-            {upcoming.map((device) => (
-              <li key={device.deviceId} className="flex min-w-0 items-center gap-3 border-b border-border/50 px-4 py-3 text-[15px] last:border-b-0">
-                <span className="shrink-0 text-[13px] text-foreground tabular-nums" dir="ltr">
-                  {planWhen(device.next.at)}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{device.name}</span>
-                <span className="shrink-0 text-[13px] text-muted-foreground">{device.next.action === "ON" ? "יידלק" : "יכבה"}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-
-      <div className="mx-auto mt-8 max-w-3xl min-w-0">
-        <div className="mb-3 flex items-baseline justify-between gap-3">
-          <h2 className="text-[13px] font-medium text-muted-foreground">פעילות אחרונה</h2>
-          <Link href="/audit" className="shrink-0 text-[12px] text-primary hover:underline">
-            ליומן
-          </Link>
+      {compactBoard ? (
+        <div className="mt-8 grid min-w-0 items-start gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(17rem,0.9fr)]">
+          {socketsBlock}
+          <aside className="grid min-w-0 gap-8">{upcomingBlock}{recentBlock}</aside>
         </div>
-        {audit === null ? null : recent.length === 0 ? (
-          <p className="rounded-2xl border border-border/60 bg-card px-4 py-3 text-[14px] text-muted-foreground">עוד אין פעולות.</p>
-        ) : (
-          <ol className="overflow-hidden rounded-2xl border border-border/60 bg-card">
-            {recent.map((entry) => (
-              <li key={entry.id} className="flex min-w-0 items-center gap-3 border-b border-border/50 px-4 py-3 last:border-b-0">
-                <span className="shrink-0 text-[13px] text-muted-foreground tabular-nums" dir="ltr">
-                  {planWhen(entry.at)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px]">{entry.deviceName}</span>
-                  <span className="text-[13px] text-muted-foreground">{auditAction(entry.action)}</span>
-                </span>
-                <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[12px] text-muted-foreground">{sources[entry.source] ?? entry.source}</span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
+      ) : (
+        <>
+          <div className="mt-8">{socketsBlock}</div>
+          <div className="mt-10 grid min-w-0 gap-8 md:grid-cols-2">
+            {upcomingBlock}
+            {recentBlock}
+          </div>
+        </>
+      )}
     </section>
   );
 }

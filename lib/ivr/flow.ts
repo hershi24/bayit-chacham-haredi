@@ -25,7 +25,22 @@ export type MenuValues = {
 export type MenuRead = {
   type: "read";
   message: string;
-  field: "pikud_device" | "pikud_action" | "pikud_minutes" | "pikud_repeat" | "pikud_week" | "pikud_date" | "pikud_side" | "pikud_on" | "pikud_off" | "pikud_more" | "pikud_sockets";
+  field:
+    | "pikud_device"
+    | "pikud_action"
+    | "pikud_minutes"
+    | "pikud_repeat"
+    | "pikud_week"
+    | "pikud_date"
+    | "pikud_side"
+    | "pikud_on"
+    | "pikud_off"
+    | "pikud_more"
+    | "pikud_sockets"
+    | "pikud_settings"
+    | "pikud_new_phone"
+    | "pikud_del_phone"
+    | "pikud_admin_ask";
   min: number;
   max: number;
   allowed?: string;
@@ -75,14 +90,14 @@ export function decideMenu(devices: MenuDevice[], values: MenuValues): MenuDecis
 
 function deviceList(devices: MenuDevice[]): MenuDecision {
   if (!devices.length) return { type: "say", message: "אין שקעים משויכים" };
-  const message = devices.map((device, index) => `ל${label(device)} הקש ${DIGIT_WORD[index + 1]}`).join(", ");
+  const sockets = devices.map((device, index) => `ל${label(device)} הקש ${DIGIT_WORD[index + 1]}`).join(", ");
   return {
     type: "read",
-    message,
+    message: `${sockets}, להגדרות הקש אפס`,
     field: "pikud_device",
     min: 1,
     max: 1,
-    allowed: devices.map((_, index) => String(index + 1)).join(""),
+    allowed: `0${devices.map((_, index) => String(index + 1)).join("")}`,
     mode: "No",
   };
 }

@@ -2,6 +2,7 @@ import { devicesForPhone, normalizePhone } from "@/lib/access";
 import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
 import { savePhoneClock } from "@/lib/ivr/phone-clock";
 import { answerPrograms } from "@/lib/ivr/programs";
+import { answerSettings } from "@/lib/ivr/settings";
 import { speechFor } from "@/lib/ivr/speech";
 import { ensureStatusCheck, statusCheckRunning } from "@/lib/ivr/status-check";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
@@ -96,6 +97,22 @@ export async function handleMenu(request: Request) {
     .sort((left, right) => left.name.localeCompare(right.name, "he"))
     .slice(0, 9);
   if (!devices.length) return reply(input.format, yemotSpeak("המספר הזה לא משויך לשקע"));
+
+  const tenantId = targets[0]?.tenantId;
+  if (present(input.values.pikud_device) === "0") {
+    if (!tenantId) return reply(input.format, yemotSpeak("לא ניתן לפתוח הגדרות כעת"));
+    const answered = await answerSettings({
+      tenantId,
+      actorPhone: input.phone,
+      deviceIds: targets.map((device) => device.deviceId),
+      settings: present(input.values.pikud_settings),
+      newPhone: present(input.values.pikud_new_phone),
+      delPhone: present(input.values.pikud_del_phone),
+      adminAsk: present(input.values.pikud_admin_ask),
+    });
+    if (answered.type === "read") return reply(input.format, yemotRead(answered));
+    return reply(input.format, yemotSpeak(answered.message));
+  }
 
   const selected = Number(present(input.values.pikud_device));
   const chosen = Number.isInteger(selected) ? devices[selected - 1] : undefined;

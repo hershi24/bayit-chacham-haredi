@@ -3,11 +3,25 @@ import test from "node:test";
 import { devicesForPhone } from "../lib/access";
 import { decideMenu, type MenuDevice } from "../lib/ivr/flow";
 import { handleMenu } from "../lib/ivr/menu";
+import { speakPhone } from "../lib/ivr/settings";
 import { resetStatusChecks } from "../lib/ivr/status-check";
 import { cleanYemotText, yemotRead } from "../lib/ivr/yemot";
 import { handleIvr } from "../lib/ivr/handle";
 import { syncTenantPrograms } from "../lib/programs/sync";
-import { createDevice, createTenant, deleteDayClock, deleteDevice, deleteTenant, getDevice, listDayClocks, setDeviceFrozen, updateDeviceState } from "../lib/store";
+import {
+  createDevice,
+  createTenant,
+  deleteDayClock,
+  deleteDevice,
+  deleteTenant,
+  getDevice,
+  listCallerNumbers,
+  listDayClocks,
+  listIvrTargets,
+  removeCallerNumber,
+  setDeviceFrozen,
+  updateDeviceState,
+} from "../lib/store";
 import { israelDate, nextJerusalemClock } from "../lib/time";
 
 const ac: MenuDevice = { deviceId: "ac", name: "מזגן", relayOn: false, connectivity: "ONLINE" };
@@ -34,7 +48,8 @@ test("reads the sockets and then the action that matches the relay", () => {
   if (list.type !== "read") return;
   assert.match(list.message, /למזגן הקש אחד/);
   assert.match(list.message, /לתאורה הקש שתיים/);
-  assert.equal(list.allowed, "12");
+  assert.match(list.message, /להגדרות הקש אפס/);
+  assert.equal(list.allowed, "012");
   const spoken = yemotRead(list);
   assert.equal(spoken.startsWith("read=t-"), true);
   assert.equal(spoken.includes("=&"), false);
@@ -649,4 +664,60 @@ test("a clock time that already passed is scheduled for tomorrow in Israel", () 
   assert.equal(later.at.toISOString(), "2026-11-02T17:00:00.000Z");
   assert.equal(earlier.today, false);
   assert.equal(earlier.at.toISOString(), "2026-11-03T15:00:00.000Z");
+});
+
+test("settings branch adds and removes a caller number and can ask for an admin callback", async () => {
+  const menu = await phonePress({ ApiPhone: "035551001", pikud_device: "0" });
+  assert.match(await menu.text(), /להוספת מספר מורשה הקש אחד/);
+
+  const ask = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "1" });
+  const askText = await ask.text();
+  assert.match(askText, /הקישו את מספר הטלפון להוספה/);
+  assert.match(askText, /pikud_new_phone/);
+
+  const added = await phonePress({
+    ApiPhone: "035551001",
+    pikud_device: "0",
+    pikud_settings: "1",
+    pikud_new_phone: "0540001999",
+  });
+  assert.match(await added.text(), /נוסף בהצלחה/);
+
+  const tenantId = (await listIvrTargets()).find((device) => device.phones.includes("035551001"))?.tenantId;
+  assert.ok(tenantId);
+  const phones = await listCallerNumbers(tenantId!);
+  const index = phones.findIndex((item) => item.phone === "0540001999");
+  assert.ok(index >= 0);
+
+  const removeMenu = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "2" });
+  const removeText = await removeMenu.text();
+  assert.match(removeText, /pikud_del_phone/);
+  assert.match(removeText, new RegExp(speakPhone("0540001999")));
+
+  const removed = await phonePress({
+    ApiPhone: "035551001",
+    pikud_device: "0",
+    pikud_settings: "2",
+    pikud_del_phone: String(index + 1),
+  });
+  assert.match(await removed.text(), /הוסר/);
+  assert.equal((await listCallerNumbers(tenantId!)).some((item) => item.phone === "0540001999"), false);
+
+  const confirm = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "4" });
+  assert.match(await confirm.text(), /לשליחת פניה למנהל המערכת/);
+  const sent = await phonePress({
+    ApiPhone: "035551001",
+    pikud_device: "0",
+    pikud_settings: "4",
+    pikud_admin_ask: "1",
+  });
+  assert.match(await sent.text(), /הפניה נשלחה למנהל המערכת/);
+
+  const logs = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "3" });
+  assert.match(await logs.text(), /פעולות אחרונות|אין פעולות ביומן/);
+
+  // Cleanup if anything lingered from a previous failed run.
+  for (const item of await listCallerNumbers(tenantId!)) {
+    if (item.phone === "0540001999") await removeCallerNumber(tenantId!, item.id);
+  }
 });

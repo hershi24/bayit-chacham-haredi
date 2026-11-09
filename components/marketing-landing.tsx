@@ -187,9 +187,15 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
             </div>
             <div className="product-stage">
               <div className="product-glow" />
-              <Image className="product-img" src="/product/socket.png" width={867} height={1162} priority alt="שקע חכם Kosher Smart Home עם חיבור ישראלי" />
-              <div className="floating-chip chip-a">בלי חשמלאי בדגם השקע</div>
-              <div className="floating-chip chip-b">שליטה מהפלאפון הכשר</div>
+              <Image
+                className="product-img"
+                src="/product/socket-phone.gif"
+                width={512}
+                height={512}
+                priority
+                unoptimized
+                alt="שקע חכם Kosher Smart Home לצד פלאפון כשר לשליטה מרחוק"
+              />
             </div>
           </div>
         </section>

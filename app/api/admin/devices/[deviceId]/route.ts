@@ -23,8 +23,8 @@ export function DELETE(_request: Request, context: { params: Promise<{ deviceId:
     const user = await requireUser();
     requireAdmin(user);
     const { deviceId } = await context.params;
-    await deleteDevice(deviceId);
-    getBridge().forgetDevice(deviceId);
-    return Response.json({ ok: true });
+    const removed = await deleteDevice(deviceId);
+    for (const id of removed) getBridge().forgetDevice(id);
+    return Response.json({ ok: true, removed });
   });
 }

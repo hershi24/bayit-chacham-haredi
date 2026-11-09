@@ -25,6 +25,10 @@ create table if not exists devices (
   tenant_id text not null references tenants (id),
   name text not null,
   icon text,
+  vendor text not null default 'wlte',
+  kind text not null default 'socket',
+  external_id text,
+  channel integer,
   created_at text not null
 );
 

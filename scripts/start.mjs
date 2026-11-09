@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const port = process.env.PORT?.trim() || "38471";
 if (!/^\d+$/.test(port)) {
@@ -7,10 +9,11 @@ if (!/^\d+$/.test(port)) {
   process.exit(1);
 }
 
-const nextBin = createRequire(import.meta.url).resolve("next/dist/bin/next");
-const child = spawn(process.execPath, [nextBin, "start", "--hostname", "0.0.0.0", "--port", port], {
+const here = path.dirname(fileURLToPath(import.meta.url));
+const serve = path.join(here, "serve.mjs");
+const child = spawn(process.execPath, [serve], {
   stdio: "inherit",
-  env: process.env,
+  env: { ...process.env, NODE_ENV: "production", PORT: port },
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

@@ -64,6 +64,10 @@ function db(): DatabaseSync {
     dayClocksReady = true;
   }
   addDeviceColumn(globalDb.__pikudDb, "frozen", "frozen INTEGER NOT NULL DEFAULT 0");
+  addDeviceColumn(globalDb.__pikudDb, "vendor", "vendor TEXT NOT NULL DEFAULT 'wlte'");
+  addDeviceColumn(globalDb.__pikudDb, "kind", "kind TEXT NOT NULL DEFAULT 'socket'");
+  addDeviceColumn(globalDb.__pikudDb, "external_id", "external_id TEXT");
+  addDeviceColumn(globalDb.__pikudDb, "channel", "channel INTEGER");
   return globalDb.__pikudDb;
 }
 
@@ -276,7 +280,8 @@ function seed(database: DatabaseSync) {
 
 function deviceSelect() {
   return `
-    SELECT d.device_id, d.name, d.icon, d.frozen, d.tenant_id, t.name AS tenant_name, t.phone AS tenant_phone,
+    SELECT d.device_id, d.name, d.icon, d.frozen, d.vendor, d.kind, d.external_id, d.channel, d.tenant_id,
+      t.name AS tenant_name, t.phone AS tenant_phone,
       s.connectivity, s.relay_on, s.state_updated_at, s.device_type, s.sensor_summary, s.last_error
     FROM devices d
     JOIN tenants t ON t.id = d.tenant_id
@@ -284,8 +289,18 @@ function deviceSelect() {
   `;
 }
 
+function vendorOf(row: Row): DeviceView["vendor"] {
+  return text(row, "vendor") === "shelly" ? "shelly" : "wlte";
+}
+
+function kindOf(row: Row): DeviceView["kind"] {
+  return text(row, "kind") === "panel" ? "panel" : "socket";
+}
+
 function mapDevice(row: Row): DeviceView & { phone: string | null } {
   const connectivity = text(row, "connectivity");
+  const channelRaw = row.channel;
+  const channel = channelRaw == null || channelRaw === "" ? null : Number(channelRaw);
   return {
     deviceId: text(row, "device_id"),
     name: text(row, "name"),
@@ -300,6 +315,10 @@ function mapDevice(row: Row): DeviceView & { phone: string | null } {
     lastError: textOrNull(row, "last_error"),
     icon: textOrNull(row, "icon"),
     frozen: Number(row.frozen) === 1,
+    vendor: vendorOf(row),
+    kind: kindOf(row),
+    externalId: textOrNull(row, "external_id"),
+    channel: Number.isInteger(channel) ? channel : null,
   };
 }
 
@@ -317,6 +336,10 @@ export function presentDevice(device: DeviceView & { phone?: string | null }): D
     lastError: device.lastError,
     icon: device.icon ?? null,
     frozen: device.frozen === true,
+    vendor: device.vendor === "shelly" ? "shelly" : "wlte",
+    kind: device.kind === "panel" ? "panel" : "socket",
+    externalId: device.externalId ?? null,
+    channel: device.channel ?? null,
     ...(device.next === undefined ? {} : { next: device.next }),
   };
 }
@@ -658,23 +681,82 @@ export function updateUser(input: {
   }
 }
 
-export function createDevice(input: { deviceId: string; name: string; tenantId: string }) {
+export function createDevice(input: {
+  deviceId: string;
+  name: string;
+  tenantId: string;
+  vendor?: DeviceView["vendor"];
+  kind?: DeviceView["kind"];
+  externalId?: string | null;
+  channel?: number | null;
+  icon?: string | null;
+  deviceType?: string | null;
+}) {
   if (!listTenants().some((tenant) => tenant.id === input.tenantId)) throw new HttpError(404, "הלקוח לא נמצא");
   if (getDevice(input.deviceId)) throw new HttpError(409, "השקע כבר רשום במערכת");
   const now = new Date().toISOString();
-  db().prepare("INSERT INTO devices (device_id, tenant_id, name, created_at) VALUES (?, ?, ?, ?)").run(
-    input.deviceId,
-    input.tenantId,
-    input.name,
-    now,
-  );
+  const vendor = input.vendor === "shelly" ? "shelly" : "wlte";
+  const kind = input.kind === "panel" ? "panel" : "socket";
+  db()
+    .prepare(
+      `INSERT INTO devices (
+        device_id, tenant_id, name, icon, vendor, kind, external_id, channel, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      input.deviceId,
+      input.tenantId,
+      input.name,
+      input.icon ?? null,
+      vendor,
+      kind,
+      input.externalId ?? null,
+      input.channel ?? null,
+      now,
+    );
   db()
     .prepare(
       `INSERT INTO device_state (
         device_id, connectivity, relay_on, state_updated_at, device_type, api_name, sensor_summary, last_error, updated_at
-      ) VALUES (?, 'UNKNOWN', NULL, NULL, NULL, NULL, NULL, NULL, ?)`,
+      ) VALUES (?, 'UNKNOWN', NULL, NULL, ?, NULL, NULL, NULL, ?)`,
     )
-    .run(input.deviceId, now);
+    .run(input.deviceId, input.deviceType ?? null, now);
+}
+
+export function createShellyPro3(input: {
+  shellyId: string;
+  tenantId: string;
+  kind: DeviceView["kind"];
+  channels: [string, string, string];
+}) {
+  const shellyId = input.shellyId.trim().toLowerCase();
+  const existing = listDevicesByExternalId(shellyId);
+  if (existing.length) throw new HttpError(409, "התקן Shelly הזה כבר משויך במערכת");
+  const icon = input.kind === "panel" ? "panel" : "socket";
+  const created: string[] = [];
+  for (const channel of [0, 1, 2] as const) {
+    const deviceId = `${shellyId}_ch${channel}`;
+    createDevice({
+      deviceId,
+      name: input.channels[channel],
+      tenantId: input.tenantId,
+      vendor: "shelly",
+      kind: input.kind,
+      externalId: shellyId,
+      channel,
+      icon,
+      deviceType: "ShellyPro3",
+    });
+    created.push(deviceId);
+  }
+  return created;
+}
+
+export function listDevicesByExternalId(externalId: string): DeviceView[] {
+  const id = externalId.trim().toLowerCase();
+  return (db().prepare(`${deviceSelect()} WHERE lower(d.external_id) = ? ORDER BY d.channel, d.name`).all(id) as Row[]).map((row) =>
+    presentDevice(mapDevice(row)),
+  );
 }
 
 export function updateDevice(input: { deviceId: string; name: string; tenantId: string }) {
@@ -688,8 +770,18 @@ export function updateDevice(input: { deviceId: string; name: string; tenantId: 
 }
 
 export function deleteDevice(deviceId: string) {
+  const current = getDevice(deviceId);
+  if (!current) throw new HttpError(404, "השקע לא נמצא");
+  // Removing one Shelly channel removes the whole Pro 3 unit (all three channels).
+  if (current.vendor === "shelly" && current.externalId) {
+    const siblings = listDevicesByExternalId(current.externalId);
+    const remove = db().prepare("DELETE FROM devices WHERE device_id = ?");
+    for (const sibling of siblings) remove.run(sibling.deviceId);
+    return siblings.map((sibling) => sibling.deviceId);
+  }
   const result = db().prepare("DELETE FROM devices WHERE device_id = ?").run(deviceId);
   if (Number(result.changes) === 0) throw new HttpError(404, "השקע לא נמצא");
+  return [deviceId];
 }
 
 export function changeOwnPassword(userId: string, currentPassword: string, nextPassword: string) {

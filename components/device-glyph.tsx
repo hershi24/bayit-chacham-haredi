@@ -1,8 +1,9 @@
-import { AirVent, Droplets, Fan, Heater, Lightbulb, Plug, Refrigerator, type LucideIcon } from "lucide-react";
+import { AirVent, Droplets, Fan, Heater, LayoutPanelLeft, Lightbulb, Plug, Refrigerator, type LucideIcon } from "lucide-react";
 import { isDeviceIcon, suggestIcon, type DeviceIconKey } from "@/lib/devices/icons";
 
 const ICONS: Record<DeviceIconKey, LucideIcon> = {
   socket: Plug,
+  panel: LayoutPanelLeft,
   ac: AirVent,
   fan: Fan,
   light: Lightbulb,

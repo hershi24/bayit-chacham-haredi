@@ -33,6 +33,7 @@ export function AdminConsole() {
   const [devices, setDevices] = useState<DeviceView[]>([]);
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [ivr, setIvr] = useState<IvrInfo | null>(null);
+  const [shellyUrl, setShellyUrl] = useState("");
   const [actorId, setActorId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -42,13 +43,14 @@ export function AdminConsole() {
       const [tenantPayload, userPayload, devicePayload, session, ivrPayload] = await Promise.all([
         api<{ tenants: TenantView[] }>("/api/admin/tenants"),
         api<{ users: UserView[] }>("/api/admin/users"),
-        api<{ devices: DeviceView[] }>("/api/admin/devices"),
+        api<{ devices: DeviceView[]; shelly?: { outboundUrl: string; certificateHint: string } }>("/api/admin/devices"),
         api<{ user: { id: string }; status: BridgeStatus }>("/api/auth/me"),
         api<IvrInfo>("/api/admin/ivr"),
       ]);
       setTenants(tenantPayload.tenants);
       setUsers(userPayload.users);
       setDevices(devicePayload.devices);
+      setShellyUrl(devicePayload.shelly?.outboundUrl ?? "");
       setActorId(session.user.id);
       setStatus(session.status);
       setIvr(ivrPayload);
@@ -96,7 +98,7 @@ export function AdminConsole() {
           <CustomerPanel actorId={actorId} tenants={tenants} users={users} devices={devices} onChange={load} />
         </TabsContent>
         <TabsContent value="link" className="min-w-0 pt-4">
-          <LinkPanel status={status} ivr={ivr} devices={devices} />
+          <LinkPanel status={status} ivr={ivr} devices={devices} shellyUrl={shellyUrl} />
         </TabsContent>
       </Tabs>
     </section>
@@ -417,6 +419,9 @@ function CustomerEditorForm({
   const [socketId, setSocketId] = useState("");
   const [socketName, setSocketName] = useState("");
   const [socketBusy, setSocketBusy] = useState<string | null>(null);
+  const [shellyId, setShellyId] = useState("");
+  const [shellyKind, setShellyKind] = useState<"panel" | "socket">("panel");
+  const [channelNames, setChannelNames] = useState(["לוח ערוץ 1", "לוח ערוץ 2", "לוח ערוץ 3"]);
   const tenantDevices = devices.filter((device) => device.tenantId === tenant?.id);
 
   function toggleDevice(deviceId: string) {
@@ -442,6 +447,31 @@ function CustomerEditorForm({
     }
   }
 
+  async function addShelly() {
+    if (!tenant) return;
+    setSocketBusy("shelly");
+    try {
+      await api("/api/admin/devices", {
+        method: "POST",
+        body: JSON.stringify({
+          vendor: "shelly",
+          type: "shelly-pro3",
+          shellyId,
+          tenantId: tenant.id,
+          kind: shellyKind,
+          channels: channelNames,
+        }),
+      });
+      setShellyId("");
+      toast.success("Shelly Pro 3 שויך כשלושה ערוצים");
+      await onSaved();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "שמירה נכשלה");
+    } finally {
+      setSocketBusy(null);
+    }
+  }
+
   async function freezeSocket(device: DeviceView) {
     setSocketBusy(device.deviceId);
     try {
@@ -459,11 +489,15 @@ function CustomerEditorForm({
   }
 
   async function removeSocket(device: DeviceView) {
-    if (!window.confirm(`להסיר את ${device.name}?`)) return;
+    const shellyUnit = device.vendor === "shelly";
+    const prompt = shellyUnit
+      ? `להסיר את כל שלושת ערוצי Shelly של ${device.externalId ?? device.name}?`
+      : `להסיר את ${device.name}?`;
+    if (!window.confirm(prompt)) return;
     setSocketBusy(device.deviceId);
     try {
       await api(`/api/admin/devices/${device.deviceId}`, { method: "DELETE" });
-      toast.success("השקע הוסר");
+      toast.success(shellyUnit ? "התקן Shelly הוסר (שלושה ערוצים)" : "השקע הוסר");
       await onSaved();
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "ההסרה נכשלה");
@@ -583,6 +617,11 @@ function CustomerEditorForm({
                         {device.name}
                         {device.frozen ? " (מוקפא)" : ""}
                       </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {device.vendor === "shelly"
+                          ? `Shelly · ${device.kind === "panel" ? "לוח חשמל" : "שקע"} · ערוץ ${(device.channel ?? 0) + 1}`
+                          : "WLTE · שקע"}
+                      </span>
                       <span dir="ltr" className="block truncate text-left font-mono text-xs text-muted-foreground">{device.deviceId}</span>
                     </span>
                     <span className="flex shrink-0 gap-1">
@@ -612,7 +651,56 @@ function CustomerEditorForm({
               <Label htmlFor="socket-device-name">שם בלוח</Label>
               <Input id="socket-device-name" value={socketName} onChange={(event) => setSocketName(event.target.value)} />
               <Button type="button" variant="outline" disabled={socketBusy !== null} onClick={() => void addSocket()}>
-                הוספת שקע
+                הוספת שקע WLTE
+              </Button>
+            </div>
+            <div className="mt-4 grid gap-2 rounded-xl border border-dashed border-border p-3">
+              <p className="text-sm font-medium">Shelly Pro 3 · שלושה ערוצים</p>
+              <Label htmlFor="shelly-id">מזהה Shelly</Label>
+              <Input
+                id="shelly-id"
+                dir="ltr"
+                className="text-left font-mono"
+                value={shellyId}
+                onChange={(event) => setShellyId(event.target.value)}
+                placeholder="shellypro3g3-xxxxxxxxxxxx"
+              />
+              <Label htmlFor="shelly-kind">סוג התקנה</Label>
+              <Select
+                value={shellyKind}
+                items={{ panel: "לוח חשמל (DIN)", socket: "שקע / ממסר" }}
+                onValueChange={(value) => {
+                  const kind = value === "socket" ? "socket" : "panel";
+                  setShellyKind(kind);
+                  setChannelNames(
+                    kind === "panel"
+                      ? ["לוח ערוץ 1", "לוח ערוץ 2", "לוח ערוץ 3"]
+                      : ["שקע ערוץ 1", "שקע ערוץ 2", "שקע ערוץ 3"],
+                  );
+                }}
+              >
+                <SelectTrigger id="shelly-kind">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="panel">לוח חשמל (DIN)</SelectItem>
+                  <SelectItem value="socket">שקע / ממסר</SelectItem>
+                </SelectContent>
+              </Select>
+              {[0, 1, 2].map((index) => (
+                <div key={index} className="grid gap-1">
+                  <Label htmlFor={`shelly-ch-${index}`}>שם ערוץ {index + 1}</Label>
+                  <Input
+                    id={`shelly-ch-${index}`}
+                    value={channelNames[index]}
+                    onChange={(event) =>
+                      setChannelNames((current) => current.map((name, i) => (i === index ? event.target.value : name)))
+                    }
+                  />
+                </div>
+              ))}
+              <Button type="button" variant="outline" disabled={socketBusy !== null} onClick={() => void addShelly()}>
+                הוספת Shelly Pro 3
               </Button>
             </div>
           </div>
@@ -679,10 +767,12 @@ function LinkPanel({
   status,
   ivr,
   devices,
+  shellyUrl,
 }: {
   status: BridgeStatus | null;
   ivr: IvrInfo | null;
   devices: DeviceView[];
+  shellyUrl: string;
 }) {
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const sample = devices[0]?.deviceId ?? "rct063285302";
@@ -727,6 +817,36 @@ function LinkPanel({
             <p>ההרשאות הנדרשות קיימות באסימון הנוכחי.</p>
           )}
           {status?.lastError ? <p className="text-destructive">{status.lastError}</p> : null}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>חיבור Shelly Pro 3</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-2 text-sm">
+          <p>ההתקן מתחבר אלינו ב־Outbound WebSocket. ב־Shelly → רשת → שקע אינטרנט יוצא:</p>
+          <ol className="list-decimal space-y-1 pe-5 text-muted-foreground">
+            <li>סמנו «לאפשר»</li>
+            <li>הדביקו את כתובת השרת למטה</li>
+            <li>בחרו תעודה <span dir="ltr">*</span> (מומלץ ל־wss ציבורי)</li>
+            <li>שמרו ובצעו אתחול מחדש להתקן</li>
+          </ol>
+          {shellyUrl ? (
+            <div className="grid gap-1">
+              <div className="flex items-center justify-between gap-2">
+                <span>כתובת Outbound WebSocket</span>
+                <Button type="button" size="sm" variant="outline" onClick={() => void copy(shellyUrl)}>
+                  העתקה
+                </Button>
+              </div>
+              <code className="block overflow-x-auto rounded-lg bg-muted px-2 py-1 font-mono text-xs" dir="ltr">
+                {shellyUrl}
+              </code>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">הכתובת תופיע אחרי טעינת הניהול.</p>
+          )}
+          <p className="text-muted-foreground">כל Pro 3 מתווסף כלקוח כשלושה ערוצים נפרדים בלוח ובמערכת הקולית.</p>
         </CardContent>
       </Card>
       <Card>

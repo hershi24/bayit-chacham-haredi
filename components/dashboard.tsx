@@ -131,6 +131,15 @@ export function Dashboard() {
     toast.success("האייקון נשמר");
   }
 
+  async function renameDevice(device: DeviceView, name: string) {
+    const result = await api<{ device: DeviceView }>(`/api/devices/${device.deviceId}/name`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    applyDevice(result.device);
+    toast.success("הכינוי נשמר");
+  }
+
   async function armTimer(device: DeviceView, input: { mode: "now" | "later"; time?: string; minutes: number }) {
     const result = await api<{ device: DeviceView; saved: boolean; message: string }>(`/api/devices/${device.deviceId}/timer`, {
       method: "POST",
@@ -244,6 +253,7 @@ export function Dashboard() {
               onCommand={(action) => void command(device, action)}
               onSimulate={(patch) => void simulate(device, patch)}
               onIcon={(icon) => chooseIcon(device, icon)}
+              onName={(name) => renameDevice(device, name)}
               onTimer={(input) => armTimer(device, input)}
             />
           ))}

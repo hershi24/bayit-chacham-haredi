@@ -82,6 +82,13 @@ export async function setDeviceIcon(deviceId: string, icon: string) {
   return withNext;
 }
 
+export async function setDeviceName(deviceId: string, name: string) {
+  const device = remoteOn() ? await remote.setDeviceName(deviceId, name) : sqlite.setDeviceName(deviceId, name);
+  if (!device) return null;
+  const [withNext] = await withPlans([device]);
+  return withNext;
+}
+
 export async function listTenants() {
   if (remoteOn()) return remote.listTenants();
   return sqlite.listTenants();

@@ -25,6 +25,7 @@ export function SocketCard({
   onCommand,
   onSimulate,
   onIcon,
+  onName,
   onTimer,
   mockMode,
 }: {
@@ -34,6 +35,7 @@ export function SocketCard({
   onCommand: (action: RelayAction) => void;
   onSimulate?: (patch: { relayOn?: boolean; online?: boolean }) => void;
   onIcon: (icon: DeviceIconKey) => Promise<void>;
+  onName: (name: string) => Promise<void>;
   onTimer: (input: { mode: "now" | "later"; time?: string; minutes: number }) => Promise<{ saved: boolean; message: string }>;
   mockMode: boolean;
 }) {
@@ -47,6 +49,10 @@ export function SocketCard({
   const [iconOpen, setIconOpen] = useState(false);
   const [picking, setPicking] = useState<DeviceIconKey | null>(null);
   const [iconError, setIconError] = useState<string | null>(null);
+  const [nameOpen, setNameOpen] = useState(false);
+  const [nameValue, setNameValue] = useState(device.name);
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [timerOpen, setTimerOpen] = useState(false);
   const [mode, setMode] = useState<"now" | "later">("now");
   const [time, setTime] = useState("13:00");
@@ -64,6 +70,28 @@ export function SocketCard({
       setIconError(error instanceof Error ? error.message : "שמירת האייקון נכשלה");
     } finally {
       setPicking(null);
+    }
+  }
+
+  async function saveName() {
+    const next = nameValue.trim();
+    if (next.length < 2) {
+      setNameError("הכינוי חייב להכיל לפחות שני תווים");
+      return;
+    }
+    if (next === device.name) {
+      setNameOpen(false);
+      return;
+    }
+    setSavingName(true);
+    setNameError(null);
+    try {
+      await onName(next);
+      setNameOpen(false);
+    } catch (error) {
+      setNameError(error instanceof Error ? error.message : "שמירת הכינוי נכשלה");
+    } finally {
+      setSavingName(false);
     }
   }
 
@@ -171,7 +199,18 @@ export function SocketCard({
           <DeviceGlyph name={device.name} icon={iconKey} className="size-7" />
         </button>
         <div className="min-w-0 flex-1 pt-1">
-          <h2 className="truncate text-[20px] leading-6 font-semibold">{device.name}</h2>
+          <button
+            type="button"
+            className="block max-w-full truncate text-start text-[20px] leading-6 font-semibold hover:underline"
+            aria-label={`עריכת כינוי ${device.name}`}
+            onClick={() => {
+              setNameValue(device.name);
+              setNameError(null);
+              setNameOpen(true);
+            }}
+          >
+            {device.name}
+          </button>
           {status}
           {showTenant ? (
             <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
@@ -201,6 +240,52 @@ export function SocketCard({
           </Button>
         </div>
       ) : null}
+
+      <Dialog
+        open={nameOpen}
+        onOpenChange={(open) => {
+          if (!open && savingName) return;
+          setNameOpen(open);
+          if (!open) setNameError(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <form
+            className="contents"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveName();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>כינוי להתקן</DialogTitle>
+              <DialogDescription>השם יופיע בלוח ובמערכת הקולית.</DialogDescription>
+            </DialogHeader>
+            <label className="grid gap-1 text-sm">
+              כינוי
+              <Input
+                className="h-11"
+                value={nameValue}
+                autoFocus
+                onChange={(event) => setNameValue(event.target.value)}
+                placeholder="למשל דוד שמש"
+                required
+              />
+            </label>
+            {nameError ? (
+              <p role="alert" className="text-sm text-destructive">
+                {nameError}
+              </p>
+            ) : null}
+            <DialogFooter>
+              <Button type="submit" className="h-11" disabled={savingName}>
+                {savingName ? <Loader2 className="animate-spin" /> : null}
+                {savingName ? "שומר…" : "שמירה"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={iconOpen}

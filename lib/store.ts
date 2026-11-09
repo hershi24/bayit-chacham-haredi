@@ -196,6 +196,11 @@ export async function listDevicesByExternalId(externalId: string) {
   return sqlite.listDevicesByExternalId(externalId);
 }
 
+export async function findShellyDevices(anyId: string) {
+  if (remoteOn()) return remote.findShellyDevices(anyId);
+  return sqlite.findShellyDevices(anyId);
+}
+
 export async function updateDevice(input: { deviceId: string; name: string; tenantId: string }) {
   if (remoteOn()) return remote.updateDevice(input);
   return sqlite.updateDevice(input);

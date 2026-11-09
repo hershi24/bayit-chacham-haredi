@@ -14,6 +14,7 @@ import type { PlanItem } from "@/lib/devices/upcoming";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { presentDevice, type StatePatch } from "@/lib/store-sqlite";
 import type { AuditSource, AuditView, CallerNumber, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
+import { shellyIdsMatch, shellyMac } from "@/lib/shelly/ids";
 import { isNewerIso } from "@/lib/wlte/parse";
 
 type DbError = { message: string; code?: string };
@@ -746,6 +747,27 @@ export async function listDevicesByExternalId(externalId: string): Promise<Devic
   if (result.error && /external_id/i.test(result.error.message)) return [];
   if (result.error) fail(result.error, "לא ניתן לקרוא התקני Shelly");
   return ((result.data ?? []) as unknown as DeviceRow[]).map(mapDevice).map(presentDevice);
+}
+
+export async function findShellyDevices(anyId: string): Promise<DeviceView[]> {
+  const exact = await listDevicesByExternalId(anyId);
+  if (exact.length) return exact;
+  await ready();
+  const mac = shellyMac(anyId);
+  const result = await client().from("devices").select(deviceColumns).eq("vendor", "shelly").not("external_id", "is", null);
+  if (result.error && /vendor|external_id/i.test(result.error.message)) return [];
+  if (result.error) fail(result.error, "לא ניתן לקרוא התקני Shelly");
+  const matched = ((result.data ?? []) as unknown as DeviceRow[])
+    .map(mapDevice)
+    .map(presentDevice)
+    .filter((device) => {
+      if (!device.externalId) return false;
+      if (shellyIdsMatch(device.externalId, anyId)) return true;
+      return Boolean(mac && shellyMac(device.externalId) === mac);
+    });
+  if (!matched.length) return [];
+  const canonical = matched[0]?.externalId;
+  return canonical ? matched.filter((device) => device.externalId === canonical) : matched;
 }
 
 export async function updateDevice(input: { deviceId: string; name: string; tenantId: string }) {

@@ -663,8 +663,11 @@ function CustomerEditorForm({
                 className="text-left font-mono"
                 value={shellyId}
                 onChange={(event) => setShellyId(event.target.value)}
-                placeholder="shellypro3g3-xxxxxxxxxxxx"
+                placeholder="8c4f008f0328"
               />
+              <p className="text-xs text-muted-foreground">
+                מהאפליקציה: הגדרות → פרטי התקן → «מזהה התקן» (אפשר גם את המזהה המלא עם קידומת shellypro3-).
+              </p>
               <Label htmlFor="shelly-kind">סוג התקנה</Label>
               <Select
                 value={shellyKind}

@@ -1,11 +1,7 @@
 import type { WebSocket } from "ws";
 import { publishDevice } from "@/lib/sse";
-import {
-  getDevice,
-  listDevicesByExternalId,
-  updateDeviceState,
-} from "@/lib/store";
-import { parseShellyChannelId, shellyChannelDeviceId, type ShellyChannel } from "@/lib/shelly/ids";
+import { findShellyDevices, getDevice, updateDeviceState } from "@/lib/store";
+import { parseShellyChannelId, shellyChannelDeviceId, shellyMac, type ShellyChannel } from "@/lib/shelly/ids";
 import {
   channelStatesFromStatus,
   getDeviceInfoCall,
@@ -175,27 +171,38 @@ class ShellyHub {
     }
   }
 
-  private async bind(socket: Socket, shellyId: string) {
-    const known = await listDevicesByExternalId(shellyId);
+  private async bind(socket: Socket, reportedId: string) {
+    const known = await findShellyDevices(reportedId);
     if (!known.length) {
-      console.warn(`[shelly] connected unknown device ${shellyId}`);
+      console.warn(`[shelly] connected unknown device ${reportedId}`);
       return;
     }
-    const previous = this.sockets.get(shellyId);
-    if (previous && previous !== socket) {
-      try {
-        previous.close();
-      } catch {
-        // ignore
+    // Prefer the id stored in admin (often the short MAC from the Shelly app).
+    const canonical = known[0]?.externalId ?? reportedId;
+    const aliases = new Set<string>([reportedId, canonical]);
+    const mac = shellyMac(reportedId) ?? shellyMac(canonical);
+    if (mac) aliases.add(mac);
+    for (const device of known) {
+      if (device.externalId) aliases.add(device.externalId);
+    }
+
+    for (const key of aliases) {
+      const previous = this.sockets.get(key);
+      if (previous && previous !== socket) {
+        try {
+          previous.close();
+        } catch {
+          // ignore
+        }
       }
     }
-    socket.__pikudShellyId = shellyId;
-    this.sockets.set(shellyId, socket);
-    await this.markOnline(shellyId);
+    socket.__pikudShellyId = canonical;
+    for (const key of aliases) this.sockets.set(key, socket);
+    await this.markOnline(canonical);
   }
 
   private async markOnline(shellyId: string) {
-    const devices = await listDevicesByExternalId(shellyId);
+    const devices = await findShellyDevices(shellyId);
     const at = new Date().toISOString();
     for (const device of devices) {
       const view = await updateDeviceState(device.deviceId, {
@@ -209,7 +216,7 @@ class ShellyHub {
   }
 
   private async markOffline(shellyId: string) {
-    const devices = await listDevicesByExternalId(shellyId);
+    const devices = await findShellyDevices(shellyId);
     for (const device of devices) {
       const view = await updateDeviceState(device.deviceId, {
         connectivity: "OFFLINE",
@@ -222,10 +229,13 @@ class ShellyHub {
   private async applyStatus(shellyId: string, payload: unknown) {
     const states = channelStatesFromStatus(payload);
     if (!states.length) return;
+    const devices = await findShellyDevices(shellyId);
+    const byChannel = new Map(devices.map((device) => [device.channel, device]));
     const at = new Date().toISOString();
     for (const state of states) {
       if (typeof state.on !== "boolean") continue;
-      const deviceId = shellyChannelDeviceId(shellyId, state.channel);
+      const known = byChannel.get(state.channel);
+      const deviceId = known?.deviceId ?? shellyChannelDeviceId(devices[0]?.externalId ?? shellyId, state.channel);
       if (!(await getDevice(deviceId))) continue;
       const view = await updateDeviceState(deviceId, {
         relayOn: state.on,

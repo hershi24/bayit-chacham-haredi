@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { decideMenu } from "../lib/ivr/flow";
-import { cleanShellyId, parseShellyChannelId, shellyChannelDeviceId } from "../lib/shelly/ids";
+import { cleanShellyId, parseShellyChannelId, shellyChannelDeviceId, shellyIdsMatch, shellyMac } from "../lib/shelly/ids";
 import { channelStatesFromStatus, parseShellyFrame, readDeviceInfoId, switchSetCall } from "../lib/shelly/rpc";
 import { getShellyHub } from "../lib/shelly/hub";
-import { createShellyPro3, createTenant, deleteDevice, deleteTenant, getDevice, listDevicesByExternalId } from "../lib/store";
+import {
+  createShellyPro3,
+  createTenant,
+  deleteDevice,
+  deleteTenant,
+  findShellyDevices,
+  getDevice,
+  listDevicesByExternalId,
+} from "../lib/store";
 
 test("shelly channel ids round-trip", () => {
   const id = cleanShellyId("ShellyPro3G3-AABBCC");
@@ -12,6 +20,13 @@ test("shelly channel ids round-trip", () => {
   assert.equal(shellyChannelDeviceId(id, 0), "shellypro3g3-aabbcc_ch0");
   assert.deepEqual(parseShellyChannelId("shellypro3g3-aabbcc_ch2"), { shellyId: "shellypro3g3-aabbcc", channel: 2 });
   assert.equal(parseShellyChannelId("rct063285302"), null);
+});
+
+test("Shelly app device id matches full device info id by MAC", () => {
+  assert.equal(cleanShellyId("8c4f008f0328"), "8c4f008f0328");
+  assert.equal(shellyMac("shellypro3-8c4f008f0328"), "8c4f008f0328");
+  assert.equal(shellyIdsMatch("8c4f008f0328", "shellypro3-8c4f008f0328"), true);
+  assert.equal(shellyIdsMatch("8c4f008f0328", "shellypro3g3-deadbeef0001"), false);
 });
 
 test("rpc helpers parse status and device info", () => {
@@ -88,6 +103,31 @@ test("creating a Shelly Pro 3 registers three separate channels for a tenant", a
     for (const channel of [0, 1, 2]) {
       try {
         await deleteDevice(`${shellyId}_ch${channel}`);
+      } catch {
+        // ignore
+      }
+    }
+    await deleteTenant(tenant.id);
+  }
+});
+
+test("admin can paste the short MAC from the Shelly app and still resolve the unit", async () => {
+  const tenant = await createTenant({ name: `Shelly MAC ${Date.now()}`, phone: null });
+  const mac = `8c4f00${String(Date.now()).slice(-6)}`;
+  try {
+    await createShellyPro3({
+      shellyId: mac,
+      tenantId: tenant.id,
+      kind: "panel",
+      channels: ["לוח א", "לוח ב", "לוח ג"],
+    });
+    const found = await findShellyDevices(`shellypro3-${mac}`);
+    assert.equal(found.length, 3);
+    assert.equal(found[0]?.externalId, mac);
+  } finally {
+    for (const channel of [0, 1, 2]) {
+      try {
+        await deleteDevice(`${mac}_ch${channel}`);
       } catch {
         // ignore
       }

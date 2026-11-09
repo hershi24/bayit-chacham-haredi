@@ -188,9 +188,11 @@ describe("token and retries", () => {
 describe("IVR and tenants", () => {
   it("speaks the phrases from the spec", () => {
     assert.equal(speechFor({ kind: "on-success" }), "השקע הופעל בהצלחה");
+    assert.equal(speechFor({ kind: "off-success", name: "דוד שמש" }), "דוד שמש נכבה בהצלחה");
+    assert.equal(speechFor({ kind: "on-success", name: "לוח תאורה" }), "לוח תאורה הופעל בהצלחה");
     assert.equal(speechFor({ kind: "status", relayOn: false }), "השקע כבוי כעת");
     assert.equal(speechFor({ kind: "status", relayOn: true }), "השקע פועל כעת");
-    assert.equal(speechFor({ kind: "frozen" }), "השקע מוקפא");
+    assert.equal(speechFor({ kind: "frozen" }), "לא ניתן לשלוט בהשקע, הוא מוקפא");
     assert.equal(yemotBody("השקע הופעל בהצלחה"), "id_list_message=t-השקע הופעל בהצלחה&go_to_folder=hangup\n");
   });
 

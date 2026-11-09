@@ -606,18 +606,18 @@ test("the on and off keys are answered before the socket finishes switching", as
   const on = await phonePress({ ApiPhone: "035551001", pikud_device: "1", pikud_action: "1" });
   const onText = await on.text();
   assert.ok(Date.now() - started < 1500);
-  assert.match(onText, /השקע הופעל בהצלחה/);
+  assert.match(onText, /שקע אולם הופעל בהצלחה/);
   assert.match(onText, /go_to_folder=hangup/);
   assert.equal(onText.includes("אין הרשאה"), false);
   await waitForRelay("rct063285302", true);
 
   const off = await phonePress({ ApiPhone: "035551002", pikud_device: "1", pikud_action: "1" });
   const offText = await off.text();
-  assert.match(offText, /השקע כובה בהצלחה/);
+  assert.match(offText, /שקע תאורה נכבה בהצלחה/);
   await waitForRelay("rct074190118", false);
 
   const offline = await phonePress({ ApiPhone: "035551001", pikud_device: "2", pikud_action: "1" });
-  assert.match(await offline.text(), /השקע אינו מחובר כעת/);
+  assert.match(await offline.text(), /שקע מזגן אינו מחובר כעת/);
 });
 
 test("a frozen socket is refused on the phone and stays as it was", async () => {
@@ -634,9 +634,9 @@ test("a frozen socket is refused on the phone and stays as it was", async () => 
     await setDeviceFrozen(deviceId, true);
 
     const turn = await phonePress({ ApiPhone: "0540001777", pikud_device: "1", pikud_action: "1" });
-    assert.match(await turn.text(), /השקע מוקפא/);
+    assert.match(await turn.text(), /לא ניתן לשלוט בשקע מוקפא, הוא מוקפא/);
     const timer = await phonePress({ ApiPhone: "0540001777", pikud_device: "1", pikud_action: "2", pikud_minutes: "15" });
-    assert.match(await timer.text(), /השקע מוקפא/);
+    assert.match(await timer.text(), /לא ניתן לשלוט בשקע מוקפא, הוא מוקפא/);
     assert.equal((await getDevice(deviceId))?.relayOn, false);
 
     const direct = await handleIvr(
@@ -650,7 +650,7 @@ test("a frozen socket is refused on the phone and stays as it was", async () => 
     assert.equal(direct.status, 403);
     const payload = (await direct.json()) as { outcome?: string; speech?: string };
     assert.equal(payload.outcome, "frozen");
-    assert.equal(payload.speech, "השקע מוקפא");
+    assert.equal(payload.speech, "לא ניתן לשלוט בשקע מוקפא, הוא מוקפא");
     assert.equal((await getDevice(deviceId))?.relayOn, false);
   } finally {
     await setDeviceFrozen(deviceId, false).catch(() => undefined);

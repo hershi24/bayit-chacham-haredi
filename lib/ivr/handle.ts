@@ -85,21 +85,25 @@ export async function handleIvr(request: Request, action: "on" | "off" | "status
   const bridge = getBridge();
   const actor = input.phone ? `טלפון ${normalizePhone(input.phone)}` : "ימות המשיח";
 
+  const name = resolved.device.name;
+
   if (action === "status") {
     try {
       const device = await bridge.refresh(resolved.device.deviceId);
       if (!device) return respond(input.format, { kind: "not-found" }, undefined, 404);
-      if (device.connectivity === "OFFLINE") return respond(input.format, { kind: "offline" }, { device });
-      return respond(input.format, { kind: "status", relayOn: device.relayOn }, { device });
+      if (device.connectivity === "OFFLINE") {
+        return respond(input.format, { kind: "offline", name: device.name || name }, { device });
+      }
+      return respond(input.format, { kind: "status", relayOn: device.relayOn, name: device.name || name }, { device });
     } catch (error) {
       if (isWlteError(error) && error.code === "DEVICE_OFFLINE") {
-        return respond(input.format, { kind: "offline" });
+        return respond(input.format, { kind: "offline", name });
       }
       return respond(input.format, { kind: "failed" }, undefined, 502);
     }
   }
 
-  if (resolved.device.frozen) return respond(input.format, { kind: "frozen" }, undefined, 403);
+  if (resolved.device.frozen) return respond(input.format, { kind: "frozen", name }, undefined, 403);
 
   try {
     const result = await bridge.command({
@@ -109,19 +113,23 @@ export async function handleIvr(request: Request, action: "on" | "off" | "status
       actor,
     });
     if (result.status === "SUCCESS") {
-      return respond(input.format, { kind: action === "on" ? "on-success" : "off-success" }, result);
+      return respond(
+        input.format,
+        { kind: action === "on" ? "on-success" : "off-success", name: result.device.name || name },
+        result,
+      );
     }
-    if (result.status === "SENT") return respond(input.format, { kind: "pending" }, result);
+    if (result.status === "SENT") return respond(input.format, { kind: "pending", name }, result);
     if (result.status === "TIMEOUT") {
-      return respond(input.format, { kind: "timeout", relayOn: result.device.relayOn }, result);
+      return respond(input.format, { kind: "timeout", relayOn: result.device.relayOn, name }, result);
     }
     return respond(input.format, { kind: "failed" }, result, 502);
   } catch (error) {
     if (error instanceof HttpError && error.message === "השקע מוקפא") {
-      return respond(input.format, { kind: "frozen" }, undefined, 403);
+      return respond(input.format, { kind: "frozen", name }, undefined, 403);
     }
     if (isWlteError(error) && (error.code === "DEVICE_OFFLINE" || error.status === 422)) {
-      return respond(input.format, { kind: "offline" });
+      return respond(input.format, { kind: "offline", name });
     }
     return respond(input.format, { kind: "failed" }, undefined, 502);
   }

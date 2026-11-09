@@ -69,6 +69,7 @@ function db(): DatabaseSync {
   addDeviceColumn(globalDb.__pikudDb, "kind", "kind TEXT NOT NULL DEFAULT 'socket'");
   addDeviceColumn(globalDb.__pikudDb, "external_id", "external_id TEXT");
   addDeviceColumn(globalDb.__pikudDb, "channel", "channel INTEGER");
+  addCallerColumn(globalDb.__pikudDb, "label", "label TEXT");
   return globalDb.__pikudDb;
 }
 
@@ -88,6 +89,17 @@ function addDeviceColumn(database: DatabaseSync, name: string, definition: strin
   if (columns.some((column) => column.name === name)) return;
   try {
     database.exec(`ALTER TABLE devices ADD COLUMN ${definition}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!/duplicate column/i.test(message)) throw error;
+  }
+}
+
+function addCallerColumn(database: DatabaseSync, name: string, definition: string) {
+  const columns = database.prepare("PRAGMA table_info(caller_numbers)").all() as Array<{ name?: string }>;
+  if (columns.some((column) => column.name === name)) return;
+  try {
+    database.exec(`ALTER TABLE caller_numbers ADD COLUMN ${definition}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (!/duplicate column/i.test(message)) throw error;
@@ -223,6 +235,7 @@ function ensureAccessTables(database: DatabaseSync) {
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
       phone TEXT NOT NULL UNIQUE,
+      label TEXT,
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS caller_numbers_tenant_idx ON caller_numbers (tenant_id);
@@ -241,6 +254,7 @@ function ensureAccessTables(database: DatabaseSync) {
   for (const row of rows) {
     insert.run(`ph_${text(row, "id")}`, text(row, "id"), text(row, "phone"), text(row, "created_at") || new Date().toISOString());
   }
+  addCallerColumn(database, "label", "label TEXT");
 }
 
 function seed(database: DatabaseSync) {
@@ -450,15 +464,23 @@ export function updateDeviceState(
   return view ? presentDevice(view) : null;
 }
 
+function mapCallerNumber(row: Row): CallerNumber {
+  return {
+    id: text(row, "id"),
+    phone: text(row, "phone"),
+    label: textOrNull(row, "label"),
+  };
+}
+
 function callerNumbersByTenant(): Map<string, CallerNumber[]> {
   const rows = db()
-    .prepare("SELECT id, tenant_id, phone FROM caller_numbers ORDER BY created_at, id")
+    .prepare("SELECT id, tenant_id, phone, label FROM caller_numbers ORDER BY created_at, id")
     .all() as Row[];
   const map = new Map<string, CallerNumber[]>();
   for (const row of rows) {
     const tenantId = text(row, "tenant_id");
     const list = map.get(tenantId) ?? [];
-    list.push({ id: text(row, "id"), phone: text(row, "phone") });
+    list.push(mapCallerNumber(row));
     map.set(tenantId, list);
   }
   return map;
@@ -475,17 +497,24 @@ export function listCallerNumbers(tenantId: string): CallerNumber[] {
   return callerNumbersByTenant().get(tenantId) ?? [];
 }
 
-export function addCallerNumber(tenantId: string, phone: string): CallerNumber {
+export function addCallerNumber(tenantId: string, phone: string, label: string | null = null): CallerNumber {
   if (!db().prepare("SELECT id FROM tenants WHERE id = ?").get(tenantId)) throw new HttpError(404, "הלקוח לא נמצא");
   const taken = db().prepare("SELECT tenant_id FROM caller_numbers WHERE phone = ?").get(phone) as Row | undefined;
   if (taken && text(taken, "tenant_id") === tenantId) throw new HttpError(409, "המספר כבר ברשימה");
   if (taken) throw new HttpError(409, "המספר כבר משויך ללקוח אחר");
   const id = `ph_${randomUUID().slice(0, 8)}`;
   db()
-    .prepare("INSERT INTO caller_numbers (id, tenant_id, phone, created_at) VALUES (?, ?, ?, ?)")
-    .run(id, tenantId, phone, new Date().toISOString());
+    .prepare("INSERT INTO caller_numbers (id, tenant_id, phone, label, created_at) VALUES (?, ?, ?, ?, ?)")
+    .run(id, tenantId, phone, label, new Date().toISOString());
   syncTenantPhone(tenantId);
-  return { id, phone };
+  return { id, phone, label };
+}
+
+export function updateCallerNumber(tenantId: string, id: string, input: { label: string | null }): CallerNumber {
+  const row = db().prepare("SELECT id, tenant_id, phone, label FROM caller_numbers WHERE id = ?").get(id) as Row | undefined;
+  if (!row || text(row, "tenant_id") !== tenantId) throw new HttpError(404, "המספר לא נמצא");
+  db().prepare("UPDATE caller_numbers SET label = ? WHERE id = ?").run(input.label, id);
+  return { id, phone: text(row, "phone"), label: input.label };
 }
 
 export function removeCallerNumber(tenantId: string, id: string) {
@@ -514,7 +543,7 @@ export function listTenants(): TenantView[] {
       id,
       name: text(row, "name"),
       phone: listed[0]?.phone ?? phone,
-      phones: listed.length ? listed : phone ? [{ id: `ph_${id}`, phone }] : [],
+      phones: listed.length ? listed : phone ? [{ id: `ph_${id}`, phone, label: null }] : [],
       deviceCount: Number(row.device_count ?? 0),
       userCount: Number(row.user_count ?? 0),
     };

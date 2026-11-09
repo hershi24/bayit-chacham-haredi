@@ -151,9 +151,14 @@ export async function listCallerNumbers(tenantId: string) {
   return sqlite.listCallerNumbers(tenantId);
 }
 
-export async function addCallerNumber(tenantId: string, phone: string) {
-  if (remoteOn()) return remote.addCallerNumber(tenantId, phone);
-  return sqlite.addCallerNumber(tenantId, phone);
+export async function addCallerNumber(tenantId: string, phone: string, label: string | null = null) {
+  if (remoteOn()) return remote.addCallerNumber(tenantId, phone, label);
+  return sqlite.addCallerNumber(tenantId, phone, label);
+}
+
+export async function updateCallerNumber(tenantId: string, id: string, input: { label: string | null }) {
+  if (remoteOn()) return remote.updateCallerNumber(tenantId, id, input);
+  return sqlite.updateCallerNumber(tenantId, id, input);
 }
 
 export async function removeCallerNumber(tenantId: string, id: string) {

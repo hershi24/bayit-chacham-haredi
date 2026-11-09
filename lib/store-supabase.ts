@@ -382,14 +382,31 @@ function countOf(value: unknown): number {
 }
 
 async function loadCallerNumbers(): Promise<Map<string, CallerNumber[]> | null> {
-  const result = await client().from("caller_numbers").select("id, tenant_id, phone, created_at").order("created_at");
-  if (result.error && missingRelation(result.error)) return null;
-  if (result.error) fail(result.error, "לא ניתן לקרוא מספרים");
+  type CallerRow = { id: unknown; tenant_id: unknown; phone: unknown; label?: unknown; created_at?: unknown };
+  let rows: CallerRow[] | null = null;
+  const withLabel = await client().from("caller_numbers").select("id, tenant_id, phone, label, created_at").order("created_at");
+  if (withLabel.error && /label/i.test(withLabel.error.message)) {
+    const withoutLabel = await client().from("caller_numbers").select("id, tenant_id, phone, created_at").order("created_at");
+    if (withoutLabel.error && missingRelation(withoutLabel.error)) return null;
+    if (withoutLabel.error) fail(withoutLabel.error, "לא ניתן לקרוא מספרים");
+    rows = (withoutLabel.data ?? []) as CallerRow[];
+  } else if (withLabel.error && missingRelation(withLabel.error)) {
+    return null;
+  } else if (withLabel.error) {
+    fail(withLabel.error, "לא ניתן לקרוא מספרים");
+  } else {
+    rows = (withLabel.data ?? []) as CallerRow[];
+  }
   const map = new Map<string, CallerNumber[]>();
-  for (const row of result.data ?? []) {
+  for (const row of rows ?? []) {
     const tenantId = String(row.tenant_id);
     const list = map.get(tenantId) ?? [];
-    list.push({ id: String(row.id), phone: String(row.phone) });
+    const labelRaw = row.label;
+    list.push({
+      id: String(row.id),
+      phone: String(row.phone),
+      label: typeof labelRaw === "string" && labelRaw.trim() ? labelRaw.trim() : null,
+    });
     map.set(tenantId, list);
   }
   return map;
@@ -413,7 +430,7 @@ export async function listCallerNumbers(tenantId: string): Promise<CallerNumber[
   return numbers.get(tenantId) ?? [];
 }
 
-export async function addCallerNumber(tenantId: string, phone: string): Promise<CallerNumber> {
+export async function addCallerNumber(tenantId: string, phone: string, label: string | null = null): Promise<CallerNumber> {
   await ready();
   const tenant = await client().from("tenants").select("id").eq("id", tenantId).maybeSingle();
   if (tenant.error) fail(tenant.error, "הלקוח לא נמצא");
@@ -424,17 +441,45 @@ export async function addCallerNumber(tenantId: string, phone: string): Promise<
   if (taken.data && String(taken.data.tenant_id) === tenantId) throw new HttpError(409, "המספר כבר ברשימה");
   if (taken.data) throw new HttpError(409, "המספר כבר משויך ללקוח אחר");
   const id = `ph_${randomUUID().slice(0, 8)}`;
-  const inserted = await client().from("caller_numbers").insert({
+  let inserted = await client().from("caller_numbers").insert({
     id,
     tenant_id: tenantId,
     phone,
+    label,
     created_at: new Date().toISOString(),
   });
+  if (inserted.error && /label/i.test(inserted.error.message)) {
+    inserted = await client().from("caller_numbers").insert({
+      id,
+      tenant_id: tenantId,
+      phone,
+      created_at: new Date().toISOString(),
+    });
+  }
   if (inserted.error && missingRelation(inserted.error)) throw new HttpError(500, NUMBERS_SCHEMA);
   if (inserted.error?.code === "23505") throw new HttpError(409, "המספר כבר ברשימה");
   if (inserted.error) fail(inserted.error, "הוספת המספר נכשלה");
   await syncTenantPhone(tenantId);
-  return { id, phone };
+  return { id, phone, label };
+}
+
+export async function updateCallerNumber(tenantId: string, id: string, input: { label: string | null }): Promise<CallerNumber> {
+  await ready();
+  if (id.startsWith("legacy:")) throw new HttpError(500, NUMBERS_SCHEMA);
+  const existing = await client().from("caller_numbers").select("id, tenant_id, phone, label").eq("id", id).maybeSingle();
+  if (existing.error && /label/i.test(existing.error.message)) {
+    const fallback = await client().from("caller_numbers").select("id, tenant_id, phone").eq("id", id).maybeSingle();
+    if (fallback.error && missingRelation(fallback.error)) throw new HttpError(500, NUMBERS_SCHEMA);
+    if (fallback.error) fail(fallback.error, "המספר לא נמצא");
+    if (!fallback.data || String(fallback.data.tenant_id) !== tenantId) throw new HttpError(404, "המספר לא נמצא");
+    throw new HttpError(500, "יש להריץ בסופרבייס את עדכון עמודת הכינוי למספרים");
+  }
+  if (existing.error && missingRelation(existing.error)) throw new HttpError(500, NUMBERS_SCHEMA);
+  if (existing.error) fail(existing.error, "המספר לא נמצא");
+  if (!existing.data || String(existing.data.tenant_id) !== tenantId) throw new HttpError(404, "המספר לא נמצא");
+  const saved = await client().from("caller_numbers").update({ label: input.label }).eq("id", id);
+  if (saved.error) fail(saved.error, "עדכון הכינוי נכשל");
+  return { id, phone: String(existing.data.phone), label: input.label };
 }
 
 export async function removeCallerNumber(tenantId: string, id: string) {
@@ -461,7 +506,7 @@ export async function listTenants(): Promise<TenantView[]> {
       id: String(row.id),
       name: String(row.name),
       phone: listed[0]?.phone ?? phone,
-      phones: listed.length ? listed : phone ? [{ id: `legacy:${String(row.id)}`, phone }] : [],
+      phones: listed.length ? listed : phone ? [{ id: `legacy:${String(row.id)}`, phone, label: null }] : [],
       deviceCount: countOf(row.devices),
       userCount: countOf(row.users),
     };

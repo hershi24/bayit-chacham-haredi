@@ -42,3 +42,13 @@ export function cleanPhone(value: unknown) {
   if (digits.length < 8 || digits.length > 15) throw new HttpError(400, "מספר טלפון אינו תקין");
   return value.trim();
 }
+
+/** Optional nickname for a caller number; empty clears it. */
+export function cleanOptionalLabel(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value !== "string") throw new HttpError(400, "כינוי אינו תקין");
+  const label = value.trim();
+  if (!label) return null;
+  if (label.length > 40) throw new HttpError(400, "כינוי עד 40 תווים");
+  return label;
+}

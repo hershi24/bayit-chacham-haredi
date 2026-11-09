@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { CallerNumbers } from "@/components/caller-numbers";
+import { CallerNumbers, type CallerNumberInput } from "@/components/caller-numbers";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/client-api";
 import type { CallerNumber } from "@/lib/types";
@@ -26,16 +26,30 @@ export function PhonesBoard() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  async function add(phone: string) {
+  async function add(input: CallerNumberInput) {
     try {
       const payload = await api<{ phones: CallerNumber[] }>("/api/account/phones", {
         method: "POST",
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify(input),
       });
       setPhones(payload.phones);
       toast.success("המספר נוסף");
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "ההוספה נכשלה");
+      throw cause;
+    }
+  }
+
+  async function update(id: string, input: { label: string | null }) {
+    try {
+      const payload = await api<{ phones: CallerNumber[] }>(`/api/account/phones/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+      setPhones(payload.phones);
+      toast.success("הכינוי עודכן");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "עדכון הכינוי נכשל");
       throw cause;
     }
   }
@@ -68,11 +82,11 @@ export function PhonesBoard() {
       <div>
         <h2 className="text-[28px] leading-[34px] font-normal">מספרים לחיוג</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          המספרים האלה יכולים לחייג למערכת הקולית ולשלוט בשקעים שלכם. אפשר להוסיף מספר ולהסיר אותו.
+          המספרים האלה יכולים לחייג למערכת הקולית ולשלוט בשקעים שלכם. אפשר לתת כינוי לכל מספר ולערוך אותו.
         </p>
       </div>
       <div className="rounded-[22px] bg-card p-4">
-        <CallerNumbers numbers={phones} onAdd={add} onRemove={remove} />
+        <CallerNumbers numbers={phones} onAdd={add} onUpdate={update} onRemove={remove} />
       </div>
     </section>
   );

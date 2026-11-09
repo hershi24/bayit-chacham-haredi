@@ -257,7 +257,9 @@ function CustomerPanel({
                   </p>
                   {tenant.phones.length ? (
                     <p dir="ltr" className="truncate text-left font-mono text-sm text-muted-foreground">
-                      {tenant.phones.map((item) => item.phone).join(" · ")}
+                      {tenant.phones
+                        .map((item) => (item.label ? `${item.label} (${item.phone})` : item.phone))
+                        .join(" · ")}
                     </p>
                   ) : (
                     <p className="text-sm text-muted-foreground">אין מספר לחיוג</p>
@@ -617,13 +619,26 @@ function CustomerEditorForm({
             <p className="text-sm font-medium">מספרים מותרים לחיוג</p>
             <CallerNumbers
               numbers={tenant.phones}
-              onAdd={async (value) => {
+              onAdd={async (input) => {
                 try {
-                  await api(`/api/admin/tenants/${tenant.id}/phones`, { method: "POST", body: JSON.stringify({ phone: value }) });
+                  await api(`/api/admin/tenants/${tenant.id}/phones`, { method: "POST", body: JSON.stringify(input) });
                   toast.success("המספר נוסף");
                   await onSaved();
                 } catch (cause) {
                   toast.error(cause instanceof Error ? cause.message : "ההוספה נכשלה");
+                  throw cause;
+                }
+              }}
+              onUpdate={async (id, input) => {
+                try {
+                  await api(`/api/admin/tenants/${tenant.id}/phones/${id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify(input),
+                  });
+                  toast.success("הכינוי עודכן");
+                  await onSaved();
+                } catch (cause) {
+                  toast.error(cause instanceof Error ? cause.message : "עדכון הכינוי נכשל");
                   throw cause;
                 }
               }}

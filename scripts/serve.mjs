@@ -12,10 +12,11 @@ if (!/^\d+$/.test(port)) {
 const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev, hostname: "0.0.0.0", port: Number(port) });
 const handle = app.getRequestHandler();
-const upgrade = app.getUpgradeHandler();
 const SHELLY_PATH = "/api/shelly/ws";
 
+// getUpgradeHandler requires prepare() first (Render failed when called early).
 await app.prepare();
+const upgrade = app.getUpgradeHandler();
 
 const server = createServer((req, res) => {
   const parsed = parse(req.url ?? "/", true);

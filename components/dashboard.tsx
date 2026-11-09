@@ -103,6 +103,13 @@ export function Dashboard() {
   }, [applyDevice]);
 
   async function command(device: DeviceView, action: RelayAction) {
+    // Flip the switch color immediately so the tap feels instant.
+    applyDevice({
+      ...device,
+      relayOn: action === "ON",
+      stateUpdatedAt: new Date().toISOString(),
+      lastError: null,
+    });
     setBusy((current) => ({ ...current, [device.deviceId]: action }));
     try {
       const result = await api<{ device: DeviceView; status: string }>(`/api/devices/${device.deviceId}/commands`, {

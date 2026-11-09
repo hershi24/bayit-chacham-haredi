@@ -183,22 +183,30 @@ export async function handleMenu(request: Request) {
 
   if (decision.type === "turn") {
     if (frozen.has(decision.device.deviceId)) {
-      return reply(input.format, yemotSpeak(speechFor({ kind: "frozen" })));
+      return reply(input.format, yemotSpeak(speechFor({ kind: "frozen", name: decision.device.name })));
     }
     if (decision.device.connectivity === "OFFLINE") {
-      return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
+      return reply(input.format, yemotSpeak(speechFor({ kind: "offline", name: decision.device.name })));
     }
     sendCommand(decision.device.deviceId, decision.action, actor);
-    return reply(input.format, yemotSpeak(speechFor({ kind: decision.action === "ON" ? "on-success" : "off-success" })));
+    return reply(
+      input.format,
+      yemotSpeak(
+        speechFor({
+          kind: decision.action === "ON" ? "on-success" : "off-success",
+          name: decision.device.name,
+        }),
+      ),
+    );
   }
 
   if (decision.type === "timer") {
     if (frozen.has(decision.device.deviceId)) {
-      return reply(input.format, yemotSpeak(speechFor({ kind: "frozen" })));
+      return reply(input.format, yemotSpeak(speechFor({ kind: "frozen", name: decision.device.name })));
     }
     if (decision.device.relayOn !== true) {
       if (decision.device.connectivity === "OFFLINE") {
-        return reply(input.format, yemotSpeak(speechFor({ kind: "offline" })));
+        return reply(input.format, yemotSpeak(speechFor({ kind: "offline", name: decision.device.name })));
       }
       sendCommand(decision.device.deviceId, "ON", actor);
     }

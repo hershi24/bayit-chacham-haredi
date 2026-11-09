@@ -21,6 +21,7 @@ import type {
   TenantView,
   UserView,
 } from "@/lib/types";
+import { shellyIdsMatch, shellyMac } from "@/lib/shelly/ids";
 import { isNewerIso } from "@/lib/wlte/parse";
 
 type Row = Record<string, SqlValue>;
@@ -757,6 +758,22 @@ export function listDevicesByExternalId(externalId: string): DeviceView[] {
   return (db().prepare(`${deviceSelect()} WHERE lower(d.external_id) = ? ORDER BY d.channel, d.name`).all(id) as Row[]).map((row) =>
     presentDevice(mapDevice(row)),
   );
+}
+
+/** Match Shelly family by full id or by MAC from the Shelly app (`8c4f008f0328`). */
+export function findShellyDevices(anyId: string): DeviceView[] {
+  const exact = listDevicesByExternalId(anyId);
+  if (exact.length) return exact;
+  const mac = shellyMac(anyId);
+  const rows = db().prepare(`${deviceSelect()} WHERE d.vendor = 'shelly' AND d.external_id IS NOT NULL ORDER BY d.channel, d.name`).all() as Row[];
+  const matched = rows.map((row) => presentDevice(mapDevice(row))).filter((device) => {
+    if (!device.externalId) return false;
+    if (shellyIdsMatch(device.externalId, anyId)) return true;
+    return Boolean(mac && shellyMac(device.externalId) === mac);
+  });
+  if (!matched.length) return [];
+  const canonical = matched[0]?.externalId;
+  return canonical ? matched.filter((device) => device.externalId === canonical) : matched;
 }
 
 export function updateDevice(input: { deviceId: string; name: string; tenantId: string }) {

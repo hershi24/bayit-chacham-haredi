@@ -61,6 +61,8 @@ export type AuditView = {
 export type CallerNumber = {
   id: string;
   phone: string;
+  /** Optional display nickname for the number (not used by IVR matching). */
+  label: string | null;
 };
 
 export type TenantView = {

@@ -160,6 +160,7 @@ create table if not exists caller_numbers (
   id text primary key,
   tenant_id text not null references tenants (id) on delete cascade,
   phone text not null unique,
+  label text,
   created_at text not null
 );
 

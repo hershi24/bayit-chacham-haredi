@@ -1003,6 +1003,15 @@ export async function setDeviceIcon(deviceId: string, icon: string): Promise<Dev
   return view ? presentDevice(view) : null;
 }
 
+export async function setDeviceName(deviceId: string, name: string): Promise<DeviceView | null> {
+  await ready();
+  const result = await client().from("devices").update({ name }).eq("device_id", deviceId).select("device_id");
+  if (result.error) fail(result.error, "שמירת הכינוי נכשלה");
+  if (!result.data?.length) return null;
+  const view = await getDevice(deviceId);
+  return view ? presentDevice(view) : null;
+}
+
 // True when Supabase has not been given this table yet.
 function missingRelation(error: DbError) {
   return error.code === "42P01" || error.code === "PGRST205" || /schema cache|does not exist/i.test(error.message);

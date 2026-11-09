@@ -56,6 +56,8 @@ test("reads the sockets and then the action that matches the relay", () => {
   assert.equal(spoken.includes("=&"), false);
   assert.match(spoken, /,No,/);
   assert.equal(cleanYemotText("שקע-אולם. דולק"), "שקע אולם, דולק");
+  assert.match(cleanYemotText("לדוד שמש הקש אחד"), /לדוֹד שמש הקש אחד/);
+  assert.equal(cleanYemotText("דוד"), "דוֹד");
 
   const off = decideMenu([ac, light], { device: "1" });
   assert.equal(off.type, "read");

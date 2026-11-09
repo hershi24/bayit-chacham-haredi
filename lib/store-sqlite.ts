@@ -972,6 +972,13 @@ export function setDeviceIcon(deviceId: string, icon: string): DeviceView | null
   return view ? presentDevice(view) : null;
 }
 
+export function setDeviceName(deviceId: string, name: string): DeviceView | null {
+  const result = db().prepare("UPDATE devices SET name = ? WHERE device_id = ?").run(name, deviceId);
+  if (Number(result.changes) === 0) return null;
+  const view = getDevice(deviceId);
+  return view ? presentDevice(view) : null;
+}
+
 export function listUpcoming(nowIso: string, untilIso: string): Array<{ deviceId: string; at: string; action: "ON" | "OFF" }> {
   const database = db();
   const schedules = database

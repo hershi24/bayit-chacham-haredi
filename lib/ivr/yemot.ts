@@ -50,6 +50,18 @@ export function yemotRead(input: {
   return `read=t-${cleanYemotText(input.message)}=${capture}\n`;
 }
 
+/**
+ * Yemot Hebrew TTS reads «דוד» as the name David. Cue the boiler reading with holam.
+ * Applied to every spoken line so device nicknames like «דוד שמש» sound right.
+ */
+export function speakHebrewAmbiguities(message: string): string {
+  return message.replace(/דוד/g, "דוֹד");
+}
+
 export function cleanYemotText(message: string): string {
-  return message.replace(/[\r\n=&-]/g, " ").replace(/\.+/g, ",").replace(/\s+/g, " ").trim();
+  return speakHebrewAmbiguities(message)
+    .replace(/[\r\n=&-]/g, " ")
+    .replace(/\.+/g, ",")
+    .replace(/\s+/g, " ")
+    .trim();
 }

@@ -350,9 +350,10 @@
 .ksh-landing .product-img {
   position: relative;
   display: block;
-  width: auto;
+  width: min(100%, 520px);
   max-width: 100%;
-  height: min(570px, 68vh);
+  height: auto;
+  max-height: min(520px, 68vh);
   margin-inline: auto;
   object-fit: contain;
   filter: drop-shadow(0 28px 36px rgb(0 0 0 / 45%));
@@ -860,8 +861,6 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .ksh-landing .chip-b { left: 0; }
-  .ksh-landing .chip-a { right: 0; }
   .ksh-landing .feature:hover { transform: translateY(-5px); }
 }
 
@@ -896,16 +895,13 @@
     padding: 70px 0;
   }
 
-  .ksh-landing .floating-chip {
-    font-size: 11px;
-  }
-
   .ksh-landing .feature {
     padding: 24px;
   }
 
   .ksh-landing .product-img {
-    height: min(390px, 58vh);
+    width: min(100%, 390px);
+    max-height: min(390px, 58vh);
   }
 }
 

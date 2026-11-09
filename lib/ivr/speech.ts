@@ -1,35 +1,43 @@
+import { cleanYemotText } from "@/lib/ivr/yemot";
+
 export type IvrOutcome =
-  | { kind: "on-success" }
-  | { kind: "off-success" }
-  | { kind: "pending" }
-  | { kind: "timeout"; relayOn: boolean | null }
-  | { kind: "status"; relayOn: boolean | null }
-  | { kind: "offline" }
+  | { kind: "on-success"; name?: string }
+  | { kind: "off-success"; name?: string }
+  | { kind: "pending"; name?: string }
+  | { kind: "timeout"; relayOn: boolean | null; name?: string }
+  | { kind: "status"; relayOn: boolean | null; name?: string }
+  | { kind: "offline"; name?: string }
   | { kind: "not-found" }
   | { kind: "ambiguous" }
   | { kind: "missing" }
   | { kind: "failed" }
-  | { kind: "frozen" }
+  | { kind: "frozen"; name?: string }
   | { kind: "unauthorized" };
 
+function deviceLabel(name: string | undefined) {
+  const trimmed = name?.trim();
+  return trimmed || "השקע";
+}
+
 export function speechFor(outcome: IvrOutcome): string {
+  const label = "name" in outcome ? deviceLabel(outcome.name) : "השקע";
   switch (outcome.kind) {
     case "on-success":
-      return "השקע הופעל בהצלחה";
+      return `${label} הופעל בהצלחה`;
     case "off-success":
-      return "השקע כובה בהצלחה";
+      return `${label} נכבה בהצלחה`;
     case "pending":
-      return "הפקודה נשלחה לשקע וממתינה לאישור";
+      return `הפקודה נשלחה ל${label} וממתינה לאישור`;
     case "timeout":
-      if (outcome.relayOn === true) return "לא התקבל אישור מהשקע. השקע פועל כעת";
-      if (outcome.relayOn === false) return "לא התקבל אישור מהשקע. השקע כבוי כעת";
-      return "לא התקבל אישור מהשקע";
+      if (outcome.relayOn === true) return `לא התקבל אישור מ${label}. ${label} פועל כעת`;
+      if (outcome.relayOn === false) return `לא התקבל אישור מ${label}. ${label} כבוי כעת`;
+      return `לא התקבל אישור מ${label}`;
     case "status":
-      if (outcome.relayOn === true) return "השקע פועל כעת";
-      if (outcome.relayOn === false) return "השקע כבוי כעת";
-      return "מצב השקע אינו ידוע";
+      if (outcome.relayOn === true) return `${label} פועל כעת`;
+      if (outcome.relayOn === false) return `${label} כבוי כעת`;
+      return `מצב ${label} אינו ידוע`;
     case "offline":
-      return "השקע אינו מחובר כעת";
+      return `${label} אינו מחובר כעת`;
     case "not-found":
       return "השקע לא נמצא";
     case "ambiguous":
@@ -39,13 +47,12 @@ export function speechFor(outcome: IvrOutcome): string {
     case "failed":
       return "הפעולה נכשלה";
     case "frozen":
-      return "השקע מוקפא";
+      return `לא ניתן לשלוט ב${label}, הוא מוקפא`;
     case "unauthorized":
       return "אין הרשאה לפעולה";
   }
 }
 
 export function yemotBody(speech: string): string {
-  const cleaned = speech.replace(/[\r\n=&.-]/g, " ").replace(/\s+/g, " ").trim();
-  return `id_list_message=t-${cleaned}&go_to_folder=hangup\n`;
+  return `id_list_message=t-${cleanYemotText(speech)}&go_to_folder=hangup\n`;
 }

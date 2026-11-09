@@ -422,6 +422,8 @@ function CustomerEditorForm({
   const [shellyId, setShellyId] = useState("");
   const [shellyKind, setShellyKind] = useState<"panel" | "socket">("panel");
   const [channelNames, setChannelNames] = useState(["לוח ערוץ 1", "לוח ערוץ 2", "לוח ערוץ 3"]);
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const tenantDevices = devices.filter((device) => device.tenantId === tenant?.id);
 
   function toggleDevice(deviceId: string) {
@@ -467,6 +469,37 @@ function CustomerEditorForm({
       await onSaved();
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "שמירה נכשלה");
+    } finally {
+      setSocketBusy(null);
+    }
+  }
+
+  function startRename(device: DeviceView) {
+    setRenameId(device.deviceId);
+    setRenameValue(device.name);
+  }
+
+  async function saveRename(device: DeviceView) {
+    const next = renameValue.trim();
+    if (!next) {
+      toast.error("יש להזין כינוי");
+      return;
+    }
+    if (next === device.name) {
+      setRenameId(null);
+      return;
+    }
+    setSocketBusy(device.deviceId);
+    try {
+      await api(`/api/admin/devices/${device.deviceId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: next, tenantId: device.tenantId }),
+      });
+      setRenameId(null);
+      toast.success("הכינוי עודכן");
+      await onSaved();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "עדכון הכינוי נכשל");
     } finally {
       setSocketBusy(null);
     }
@@ -611,27 +644,67 @@ function CustomerEditorForm({
             {tenantDevices.length ? (
               <ul className="grid gap-2">
                 {tenantDevices.map((device) => (
-                  <li key={device.deviceId} className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2">
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">
-                        {device.name}
-                        {device.frozen ? " (מוקפא)" : ""}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {device.vendor === "shelly"
-                          ? `Shelly · ${device.kind === "panel" ? "לוח חשמל" : "שקע"} · ערוץ ${(device.channel ?? 0) + 1}`
-                          : "WLTE · שקע"}
-                      </span>
-                      <span dir="ltr" className="block truncate text-left font-mono text-xs text-muted-foreground">{device.deviceId}</span>
-                    </span>
-                    <span className="flex shrink-0 gap-1">
-                      <Button type="button" variant="outline" size="sm" disabled={socketBusy !== null} onClick={() => void freezeSocket(device)}>
-                        {device.frozen ? "שחרור" : "הקפאה"}
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" disabled={socketBusy !== null} onClick={() => void removeSocket(device)}>
-                        הסרה
-                      </Button>
-                    </span>
+                  <li key={device.deviceId} className="grid gap-2 rounded-xl border border-border px-3 py-2">
+                    {renameId === device.deviceId ? (
+                      <div
+                        className="grid gap-2"
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void saveRename(device);
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setRenameId(null);
+                          }
+                        }}
+                      >
+                        <Label htmlFor={`rename-${device.deviceId}`}>כינוי</Label>
+                        <Input
+                          id={`rename-${device.deviceId}`}
+                          value={renameValue}
+                          autoFocus
+                          onChange={(event) => setRenameValue(event.target.value)}
+                          placeholder={device.vendor === "shelly" ? "שם הערוץ" : "שם השקע"}
+                        />
+                        <span className="flex flex-wrap gap-1">
+                          <Button type="button" size="sm" disabled={socketBusy !== null} onClick={() => void saveRename(device)}>
+                            שמירת כינוי
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" disabled={socketBusy !== null} onClick={() => setRenameId(null)}>
+                            ביטול
+                          </Button>
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {device.name}
+                            {device.frozen ? " (מוקפא)" : ""}
+                          </span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {device.vendor === "shelly"
+                              ? `Shelly · ${device.kind === "panel" ? "לוח חשמל" : "שקע"} · ערוץ ${(device.channel ?? 0) + 1}`
+                              : "WLTE · שקע"}
+                          </span>
+                          <span dir="ltr" className="block truncate text-left font-mono text-xs text-muted-foreground">
+                            {device.deviceId}
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 flex-wrap justify-end gap-1">
+                          <Button type="button" variant="outline" size="sm" disabled={socketBusy !== null} onClick={() => startRename(device)}>
+                            כינוי
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" disabled={socketBusy !== null} onClick={() => void freezeSocket(device)}>
+                            {device.frozen ? "שחרור" : "הקפאה"}
+                          </Button>
+                          <Button type="button" variant="ghost" size="sm" disabled={socketBusy !== null} onClick={() => void removeSocket(device)}>
+                            הסרה
+                          </Button>
+                        </span>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

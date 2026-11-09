@@ -166,9 +166,34 @@ export async function setDeviceFrozen(deviceId: string, frozen: boolean) {
   return sqlite.setDeviceFrozen(deviceId, frozen);
 }
 
-export async function createDevice(input: { deviceId: string; name: string; tenantId: string }) {
+export async function createDevice(input: {
+  deviceId: string;
+  name: string;
+  tenantId: string;
+  vendor?: DeviceView["vendor"];
+  kind?: DeviceView["kind"];
+  externalId?: string | null;
+  channel?: number | null;
+  icon?: string | null;
+  deviceType?: string | null;
+}) {
   if (remoteOn()) return remote.createDevice(input);
   return sqlite.createDevice(input);
+}
+
+export async function createShellyPro3(input: {
+  shellyId: string;
+  tenantId: string;
+  kind: DeviceView["kind"];
+  channels: [string, string, string];
+}) {
+  if (remoteOn()) return remote.createShellyPro3(input);
+  return sqlite.createShellyPro3(input);
+}
+
+export async function listDevicesByExternalId(externalId: string) {
+  if (remoteOn()) return remote.listDevicesByExternalId(externalId);
+  return sqlite.listDevicesByExternalId(externalId);
 }
 
 export async function updateDevice(input: { deviceId: string; name: string; tenantId: string }) {
@@ -176,7 +201,7 @@ export async function updateDevice(input: { deviceId: string; name: string; tena
   return sqlite.updateDevice(input);
 }
 
-export async function deleteDevice(deviceId: string) {
+export async function deleteDevice(deviceId: string): Promise<string[]> {
   if (remoteOn()) return remote.deleteDevice(deviceId);
   return sqlite.deleteDevice(deviceId);
 }

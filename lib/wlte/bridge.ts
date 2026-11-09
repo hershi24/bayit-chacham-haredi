@@ -2,6 +2,8 @@ import { loadConfig, websocketUrl } from "@/lib/config";
 import { HttpError } from "@/lib/http-error";
 import { publishDevice, publishStatus } from "@/lib/sse";
 import { storageMode } from "@/lib/storage";
+import { getShellyHub } from "@/lib/shelly/hub";
+import { isShellyChannelId } from "@/lib/shelly/ids";
 import { addAudit, getDevice, listDeviceIds, updateDeviceState, type StatePatch } from "@/lib/store";
 import type { AuditSource, BridgeStatus, DeviceView, RelayAction } from "@/lib/types";
 import { isWlteError, wlteMessage } from "@/lib/wlte/errors";
@@ -93,6 +95,7 @@ class Bridge {
     if (this.mock) {
       for (const deviceId of await listDeviceIds()) {
         const device = await getDevice(deviceId);
+        if (device?.vendor === "shelly" || isShellyChannelId(deviceId)) continue;
         this.mock.ensure({
           deviceId,
           name: device?.name,
@@ -165,6 +168,17 @@ class Bridge {
     await this.ready;
     const before = await getDevice(deviceId);
     if (!before) return null;
+    if (before.vendor === "shelly" || isShellyChannelId(deviceId)) {
+      const online = before.externalId ? getShellyHub().isOnline(before.externalId) : false;
+      const view = await updateDeviceState(deviceId, {
+        connectivity: online ? "ONLINE" : "OFFLINE",
+        stateUpdatedAt: new Date().toISOString(),
+        lastError: null,
+      });
+      const next = view ?? (await getDevice(deviceId));
+      if (next) publishDevice(next);
+      return next;
+    }
     const snapshot = await this.gateway.read(deviceId);
     const view = await updateDeviceState(
       deviceId,
@@ -205,6 +219,9 @@ class Bridge {
     if (!current) throw new HttpError(404, "השקע לא נמצא");
     if (current.frozen) throw new HttpError(403, "השקע מוקפא");
     const key = createIdempotencyKey();
+    if (current.vendor === "shelly" || isShellyChannelId(input.deviceId)) {
+      return this.commandShelly(input, current, key);
+    }
     try {
       const command = await this.gateway.command(input.deviceId, input.action, key);
       let device: DeviceView | null = await getDevice(input.deviceId);
@@ -263,16 +280,90 @@ class Bridge {
     }
   }
 
+  private async commandShelly(
+    input: {
+      deviceId: string;
+      action: RelayAction;
+      source: Extract<AuditSource, "web" | "ivr">;
+      actor: string;
+    },
+    current: DeviceView,
+    key: string,
+  ) {
+    try {
+      const result = await getShellyHub().command(input.deviceId, input.action);
+      const device = (await getDevice(input.deviceId)) ?? current;
+      await addAudit({
+        source: input.source,
+        actor: input.actor,
+        deviceId: input.deviceId,
+        action: input.action,
+        idempotencyKey: key,
+        result: result.status,
+        detail: result.message ?? null,
+      });
+      if (result.status !== "SUCCESS") {
+        throw new HttpError(502, result.message ?? "פקודת Shelly נכשלה");
+      }
+      publishDevice(device);
+      return {
+        device,
+        commandId: null,
+        status: result.status,
+        idempotencyKey: key,
+        requestId: null,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "הפקודה נכשלה";
+      const device = await updateDeviceState(input.deviceId, { lastError: message });
+      await addAudit({
+        source: input.source,
+        actor: input.actor,
+        deviceId: input.deviceId,
+        action: input.action,
+        idempotencyKey: key,
+        result: "FAILED",
+        detail: message,
+      });
+      if (device) publishDevice(device);
+      throw error;
+    }
+  }
+
   async simulate(deviceId: string, patch: { relayOn?: boolean; online?: boolean }) {
     await this.ready;
     if (!this.mock) throw new HttpError(409, "דימוי לחיצה חיצונית זמין רק במצב הדגמה");
     if (!(await getDevice(deviceId))) throw new HttpError(404, "השקע לא נמצא");
+    const device = await getDevice(deviceId);
+    if (device?.vendor === "shelly" || isShellyChannelId(deviceId)) {
+      if (patch.online === false && device?.externalId) getShellyHub().mockDisconnect(device.externalId);
+      else if (device?.externalId) {
+        getShellyHub().mockConnect(device.externalId, [{ channel: (device.channel ?? 0) as 0 | 1 | 2, on: patch.relayOn }]);
+      }
+      if (typeof patch.relayOn === "boolean") {
+        await getShellyHub().command(deviceId, patch.relayOn ? "ON" : "OFF");
+      }
+      await this.persistQueue;
+      return;
+    }
     this.mock.simulate(deviceId, patch);
     await this.persistQueue;
   }
 
   async registerDevice(deviceId: string, name: string) {
     await this.ready;
+    const device = await getDevice(deviceId);
+    if (device?.vendor === "shelly" || isShellyChannelId(deviceId)) {
+      const view = await updateDeviceState(deviceId, {
+        connectivity: "OFFLINE",
+        relayOn: false,
+        stateUpdatedAt: new Date().toISOString(),
+        deviceType: "ShellyPro3",
+        lastError: null,
+      });
+      if (view) publishDevice(view);
+      return;
+    }
     if (!this.mock) {
       void this.refresh(deviceId).catch((error: unknown) => this.note(error));
       return;

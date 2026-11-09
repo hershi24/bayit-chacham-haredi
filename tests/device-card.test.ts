@@ -77,11 +77,16 @@ test("a published socket keeps its next event and drops the phone", () => {
     lastError: null,
     icon: "ac",
     frozen: false,
+    vendor: "wlte",
+    kind: "socket",
+    externalId: null,
+    channel: null,
     next: { at: "2026-11-03T11:00:00.000Z", action: "ON" },
   };
   const view = presentDevice(device);
   assert.equal(view.icon, "ac");
   assert.equal(view.frozen, false);
+  assert.equal(view.vendor, "wlte");
   assert.deepEqual(view.next, { at: "2026-11-03T11:00:00.000Z", action: "ON" });
   assert.equal("phone" in view, false);
 });

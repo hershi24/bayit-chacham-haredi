@@ -1,5 +1,6 @@
 export const DEVICE_ICONS = [
   { key: "socket", label: "שקע" },
+  { key: "panel", label: "לוח חשמל" },
   { key: "ac", label: "מזגן" },
   { key: "fan", label: "מאוורר" },
   { key: "light", label: "תאורה" },
@@ -17,6 +18,7 @@ export function isDeviceIcon(value: unknown): value is DeviceIconKey {
 }
 
 export function suggestIcon(name: string): DeviceIconKey {
+  if (name.includes("לוח")) return "panel";
   if (name.includes("מזגן")) return "ac";
   if (name.includes("תאורה") || name.includes("מנורה")) return "light";
   if (name.includes("מאוורר")) return "fan";

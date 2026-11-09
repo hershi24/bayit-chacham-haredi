@@ -18,6 +18,11 @@ export type NextPlan = {
   action: RelayAction;
 };
 
+export type DeviceVendor = "wlte" | "shelly";
+
+/** How the hardware is installed — wall socket vs DIN electrical panel. */
+export type DeviceKind = "socket" | "panel";
+
 export type DeviceView = {
   deviceId: string;
   name: string;
@@ -31,6 +36,10 @@ export type DeviceView = {
   lastError: string | null;
   icon: string | null;
   frozen: boolean;
+  vendor: DeviceVendor;
+  kind: DeviceKind;
+  externalId: string | null;
+  channel: number | null;
   next?: NextPlan | null;
 };
 

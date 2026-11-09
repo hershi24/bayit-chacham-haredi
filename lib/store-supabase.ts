@@ -34,6 +34,10 @@ type DeviceRow = {
   tenant_id: string;
   icon?: string | null;
   frozen?: boolean | number | null;
+  vendor?: string | null;
+  kind?: string | null;
+  external_id?: string | null;
+  channel?: number | null;
   tenants: Embed<{ name: string; phone: string | null }>;
   device_state: Embed<DeviceStateRow>;
 };
@@ -233,6 +237,7 @@ function mapDevice(row: DeviceRow): DeviceView & { phone: string | null } {
   const tenant = one(row.tenants);
   const state = one(row.device_state);
   const connectivity = state?.connectivity;
+  const channel = row.channel == null ? null : Number(row.channel);
   return {
     deviceId: row.device_id,
     name: row.name,
@@ -247,12 +252,16 @@ function mapDevice(row: DeviceRow): DeviceView & { phone: string | null } {
     lastError: state?.last_error ?? null,
     icon: row.icon ?? null,
     frozen: row.frozen === true || row.frozen === 1,
+    vendor: row.vendor === "shelly" ? "shelly" : "wlte",
+    kind: row.kind === "panel" ? "panel" : "socket",
+    externalId: row.external_id ?? null,
+    channel: Number.isInteger(channel) ? channel : null,
   };
 }
 
 const deviceColumnsPlain =
   "device_id, name, tenant_id, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)";
-let deviceColumns = `device_id, name, tenant_id, icon, frozen, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)`;
+let deviceColumns = `device_id, name, tenant_id, icon, frozen, vendor, kind, external_id, channel, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)`;
 
 function iconColumnMissing(error: DbError) {
   return deviceColumns.includes("icon") && (error.code === "42703" || error.code === "PGRST204" || /icon/i.test(error.message));
@@ -644,17 +653,43 @@ export async function updateUser(input: {
   if (inserted.error) fail(inserted.error, "עדכון השקעים נכשל");
 }
 
-export async function createDevice(input: { deviceId: string; name: string; tenantId: string }) {
+export async function createDevice(input: {
+  deviceId: string;
+  name: string;
+  tenantId: string;
+  vendor?: DeviceView["vendor"];
+  kind?: DeviceView["kind"];
+  externalId?: string | null;
+  channel?: number | null;
+  icon?: string | null;
+  deviceType?: string | null;
+}) {
   await ready();
   if (!(await listTenants()).some((tenant) => tenant.id === input.tenantId)) throw new HttpError(404, "הלקוח לא נמצא");
   if (await getDevice(input.deviceId)) throw new HttpError(409, "השקע כבר רשום במערכת");
   const now = new Date().toISOString();
-  const created = await client().from("devices").insert({
+  const vendor = input.vendor === "shelly" ? "shelly" : "wlte";
+  const kind = input.kind === "panel" ? "panel" : "socket";
+  const row: Record<string, unknown> = {
     device_id: input.deviceId,
     tenant_id: input.tenantId,
     name: input.name,
     created_at: now,
-  });
+    icon: input.icon ?? null,
+    vendor,
+    kind,
+    external_id: input.externalId ?? null,
+    channel: input.channel ?? null,
+  };
+  let created = await client().from("devices").insert(row);
+  if (created.error && /vendor|kind|external_id|channel|icon/i.test(created.error.message)) {
+    created = await client().from("devices").insert({
+      device_id: input.deviceId,
+      tenant_id: input.tenantId,
+      name: input.name,
+      created_at: now,
+    });
+  }
   if (created.error?.code === "23505") throw new HttpError(409, "השקע כבר רשום במערכת");
   if (created.error) fail(created.error, "שיוך שקע נכשל");
   const state = await client().from("device_state").insert({
@@ -662,7 +697,7 @@ export async function createDevice(input: { deviceId: string; name: string; tena
     connectivity: "UNKNOWN",
     relay_on: null,
     state_updated_at: null,
-    device_type: null,
+    device_type: input.deviceType ?? null,
     api_name: null,
     sensor_summary: null,
     last_error: null,
@@ -672,6 +707,45 @@ export async function createDevice(input: { deviceId: string; name: string; tena
     await client().from("devices").delete().eq("device_id", input.deviceId);
     fail(state.error, "שיוך שקע נכשל");
   }
+}
+
+export async function createShellyPro3(input: {
+  shellyId: string;
+  tenantId: string;
+  kind: DeviceView["kind"];
+  channels: [string, string, string];
+}) {
+  await ready();
+  const shellyId = input.shellyId.trim().toLowerCase();
+  const existing = await listDevicesByExternalId(shellyId);
+  if (existing.length) throw new HttpError(409, "התקן Shelly הזה כבר משויך במערכת");
+  const icon = input.kind === "panel" ? "panel" : "socket";
+  const created: string[] = [];
+  for (const channel of [0, 1, 2] as const) {
+    const deviceId = `${shellyId}_ch${channel}`;
+    await createDevice({
+      deviceId,
+      name: input.channels[channel],
+      tenantId: input.tenantId,
+      vendor: "shelly",
+      kind: input.kind,
+      externalId: shellyId,
+      channel,
+      icon,
+      deviceType: "ShellyPro3",
+    });
+    created.push(deviceId);
+  }
+  return created;
+}
+
+export async function listDevicesByExternalId(externalId: string): Promise<DeviceView[]> {
+  await ready();
+  const id = externalId.trim().toLowerCase();
+  let result = await client().from("devices").select(deviceColumns).ilike("external_id", id);
+  if (result.error && /external_id/i.test(result.error.message)) return [];
+  if (result.error) fail(result.error, "לא ניתן לקרוא התקני Shelly");
+  return ((result.data ?? []) as unknown as DeviceRow[]).map(mapDevice).map(presentDevice);
 }
 
 export async function updateDevice(input: { deviceId: string; name: string; tenantId: string }) {
@@ -684,9 +758,21 @@ export async function updateDevice(input: { deviceId: string; name: string; tena
 
 export async function deleteDevice(deviceId: string) {
   await ready();
+  const current = await getDevice(deviceId);
+  if (!current) throw new HttpError(404, "השקע לא נמצא");
+  // Removing one Shelly channel removes the whole Pro 3 unit (all three channels).
+  if (current.vendor === "shelly" && current.externalId) {
+    const siblings = await listDevicesByExternalId(current.externalId);
+    const ids = siblings.map((sibling) => sibling.deviceId);
+    const result = await client().from("devices").delete().in("device_id", ids).select("device_id");
+    if (result.error) fail(result.error, "הסרת שקע נכשלה");
+    if (!result.data?.length) throw new HttpError(404, "השקע לא נמצא");
+    return ids;
+  }
   const result = await client().from("devices").delete().eq("device_id", deviceId).select("device_id");
   if (result.error) fail(result.error, "הסרת שקע נכשלה");
   if (!result.data?.length) throw new HttpError(404, "השקע לא נמצא");
+  return [deviceId];
 }
 
 export async function changeOwnPassword(userId: string, currentPassword: string, nextPassword: string) {

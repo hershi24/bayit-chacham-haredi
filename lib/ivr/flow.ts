@@ -40,7 +40,9 @@ export type MenuRead = {
     | "pikud_settings"
     | "pikud_new_phone"
     | "pikud_del_phone"
-    | "pikud_admin_ask";
+    | "pikud_admin_ask"
+    | "pikud_program"
+    | "pikud_program_op";
   min: number;
   max: number;
   allowed?: string;

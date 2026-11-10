@@ -185,7 +185,12 @@ export async function handleMenu(request: Request) {
   }
 
   if (chosen && present(input.values.pikud_action) === "4") {
-    const answered = await answerPrograms(chosen.deviceId, present(input.values.pikud_program));
+    const answered = await answerPrograms(chosen.deviceId, {
+      program: present(input.values.pikud_program),
+      op: present(input.values.pikud_program_op),
+      on: present(input.values.pikud_on),
+      off: present(input.values.pikud_off),
+    });
     if (answered.type === "read") return reply(input.format, yemotRead(answered));
     return reply(input.format, yemotSpeak(answered.message));
   }

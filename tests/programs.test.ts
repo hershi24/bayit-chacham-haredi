@@ -61,7 +61,7 @@ test("november puts the parsha on saturday and keeps candle times as labels", as
   assert.equal(days[0]?.date, "2026-11-01");
 });
 
-test("the phone shows a program clock and can toggle or edit times", async () => {
+test("the phone reads every program clock in order and can edit one", async () => {
   for (const program of await listPrograms("ten_yeshiva")) {
     if (program.programKey.startsWith("days:")) await deleteProgram("ten_yeshiva", program.id);
   }
@@ -69,16 +69,20 @@ test("the phone shows a program clock and can toggle or edit times", async () =>
     id: programId("ten_yeshiva", "days:phone"),
     tenantId: "ten_yeshiva",
     programKey: "days:phone",
-    name: "שבת חתן",
+    name: "סוף שבוע",
     enabled: false,
     deviceIds: ["rct063285302"],
-    startDate: "2026-12-01",
-    endDate: "2026-12-02",
-    days: ["2026-12-01", "2026-12-02"],
-    weekdays: [5],
-    onTime: "18:00",
-    offTime: "22:30",
-    slots: [{ onTime: "18:00", offTime: "22:30" }],
+    startDate: null,
+    endDate: null,
+    days: [],
+    weekdays: [5, 6],
+    onTime: "18:30",
+    offTime: null,
+    slots: [
+      { onTime: "22:00", offTime: null, weekdays: [5] },
+      { onTime: "18:30", offTime: null, weekdays: [5] },
+      { onTime: "10:00", offTime: "12:00", weekdays: [6] },
+    ],
   });
   const menu = await handleMenu(
     new Request("http://127.0.0.1/api/ivr/menu", {
@@ -91,7 +95,7 @@ test("the phone shows a program clock and can toggle or edit times", async () =>
   assert.equal(prompt.includes("אין הרשאה"), false);
   assert.equal(prompt.includes("פרשת"), false);
   assert.match(prompt, /תפריט תוכניות לשקע אולם/);
-  assert.match(prompt, /תוכנית אחד, שבת חתן, כבויה כעת/);
+  assert.match(prompt, /תוכנית אחד, סוף שבוע, כבויה כעת/);
   assert.match(prompt, /לבחירה הקש אחד/);
   assert.match(prompt, /read=/);
 
@@ -108,13 +112,13 @@ test("the phone shows a program clock and can toggle or edit times", async () =>
     }),
   );
   const detailSpeech = await detail.text();
-  assert.match(detailSpeech, /תוכנית שבת חתן, כבויה כעת/);
-  assert.match(detailSpeech, /יום שישי/);
-  assert.match(detailSpeech, /יידלק בשש בערב/);
-  assert.match(detailSpeech, /יכבה בעשר וחצי בלילה/);
-  assert.match(detailSpeech, /להפעלה או כיבוי הקש אחד/);
-  assert.match(detailSpeech, /לעריכת שעת הדלקה הקש שתיים/);
-  assert.match(detailSpeech, /לעריכת שעת כיבוי הקש שלוש/);
+  assert.match(detailSpeech, /תוכנית סוף שבוע, כבויה כעת/);
+  // Sorted: Friday 18:30, Friday 22:00, Saturday 10:00–12:00 — each clock its own sentence.
+  assert.match(detailSpeech, /שעון אחד, יום שישי, יידלק בשש וחצי בערב/);
+  assert.match(detailSpeech, /שעון שתיים, יום שישי, יידלק בעשר בלילה/);
+  assert.match(detailSpeech, /שעון שלוש, שבת, יידלק בעשר בבוקר, יכבה בשתים עשרה בצהריים/);
+  assert.match(detailSpeech, /להפעלה או כיבוי של כל התוכנית הקש אחד/);
+  assert.match(detailSpeech, /לעריכת שעון בודד הקש שתיים/);
   assert.match(detailSpeech, /pikud_program_op/);
 
   const built = await handleMenu(
@@ -131,9 +135,25 @@ test("the phone shows a program clock and can toggle or edit times", async () =>
     }),
   );
   const speech = await built.text();
-  assert.match(speech, /תוכנית שבת חתן הופעלה/);
-  assert.match(speech, /יום שישי/);
+  assert.match(speech, /תוכנית סוף שבוע הופעלה/);
   assert.match(speech, /go_to_folder=hangup/);
+
+  const pick = await handleMenu(
+    new Request("http://127.0.0.1/api/ivr/menu", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
+      body: new URLSearchParams({
+        ApiPhone: "035551001",
+        pikud_device: "1",
+        pikud_action: "4",
+        pikud_program: "1",
+        pikud_program_op: "2",
+      }),
+    }),
+  );
+  const pickSpeech = await pick.text();
+  assert.match(pickSpeech, /איזה שעון לערוך/);
+  assert.match(pickSpeech, /pikud_program_slot/);
 
   const editOn = await handleMenu(
     new Request("http://127.0.0.1/api/ivr/menu", {
@@ -145,16 +165,18 @@ test("the phone shows a program clock and can toggle or edit times", async () =>
         pikud_action: "4",
         pikud_program: "1",
         pikud_program_op: "2",
-        pikud_on: "1730",
+        pikud_program_slot: "2",
+        pikud_side: "1",
+        pikud_on: "2130",
       }),
     }),
   );
   const onSpeech = await editOn.text();
-  assert.match(onSpeech, /שעת הדלקה עודכנה לחמש וחצי בערב/);
+  assert.match(onSpeech, /שעון שתיים, שעת הדלקה עודכנה לתשע וחצי בלילה/);
   const saved = (await listPrograms("ten_yeshiva")).find((item) => item.programKey === "days:phone");
-  assert.equal(saved?.onTime, "17:30");
-  assert.equal(saved?.offTime, "22:30");
-  assert.equal(saved?.slots[0]?.onTime, "17:30");
+  assert.equal(saved?.slots[1]?.onTime, "21:30");
+  assert.equal(saved?.slots[0]?.onTime, "18:30");
+  assert.equal(saved?.slots[2]?.onTime, "10:00");
 
   await deleteProgram("ten_yeshiva", programId("ten_yeshiva", "days:phone"));
 });

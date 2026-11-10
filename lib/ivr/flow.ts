@@ -42,7 +42,8 @@ export type MenuRead = {
     | "pikud_del_phone"
     | "pikud_admin_ask"
     | "pikud_program"
-    | "pikud_program_op";
+    | "pikud_program_op"
+    | "pikud_program_slot";
   min: number;
   max: number;
   allowed?: string;

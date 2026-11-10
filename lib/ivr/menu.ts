@@ -188,6 +188,8 @@ export async function handleMenu(request: Request) {
     const answered = await answerPrograms(chosen.deviceId, {
       program: present(input.values.pikud_program),
       op: present(input.values.pikud_program_op),
+      slot: present(input.values.pikud_program_slot),
+      side: present(input.values.pikud_side),
       on: present(input.values.pikud_on),
       off: present(input.values.pikud_off),
     });

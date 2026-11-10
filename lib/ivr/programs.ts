@@ -1,10 +1,12 @@
 import { spokenClockTime, spokenDateWords, type MenuRead } from "@/lib/ivr/flow";
+import { sortSlots } from "@/lib/programs/slots";
 import { syncTenantPrograms } from "@/lib/programs/sync";
 import type { ProgramSlot, StoredProgram } from "@/lib/programs/types";
 import { getDevice, listPrograms, upsertProgram } from "@/lib/store";
 
 const WORDS = ["", "אחד", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה"];
 const SPOKEN_DAYS = ["יום ראשון", "יום שני", "יום שלישי", "יום רביעי", "יום חמישי", "יום שישי", "שבת"];
+const MAX_SPOKEN_SLOTS = 8;
 
 export type ProgramsDecision = MenuRead | { type: "say"; message: string };
 
@@ -13,6 +15,8 @@ export async function answerPrograms(
   input: {
     program?: string;
     op?: string;
+    slot?: string;
+    side?: string;
     on?: string;
     off?: string;
   },
@@ -44,32 +48,69 @@ export async function answerPrograms(
   }
 
   if (input.op === "2") {
-    const on = parsePhoneClock(input.on);
-    if (!on) {
-      return askOn(input.on ? "השעה לא תקינה, " : `${scheduleSpeech(item)}, `);
-    }
-    await saveTimes(item, on, primarySlot(item).offTime);
-    deferSync(device.tenantId);
-    return {
-      type: "say",
-      message: `תוכנית ${item.name}, שעת הדלקה עודכנה ל${spokenClockTime(on)}`,
-    };
-  }
-
-  if (input.op === "3") {
-    const off = parsePhoneClock(input.off);
-    if (!off) {
-      return askOff(input.off ? "השעה לא תקינה, " : `${scheduleSpeech(item)}, `);
-    }
-    await saveTimes(item, primarySlot(item).onTime, off);
-    deferSync(device.tenantId);
-    return {
-      type: "say",
-      message: `תוכנית ${item.name}, שעת כיבוי עודכנה ל${spokenClockTime(off)}`,
-    };
+    return editClockFlow(item, device.tenantId, input);
   }
 
   return detailMenu(item, "הבחירה לא קיימת");
+}
+
+async function editClockFlow(
+  program: StoredProgram,
+  tenantId: string,
+  input: { slot?: string; side?: string; on?: string; off?: string },
+): Promise<ProgramsDecision> {
+  const slots = programSlots(program);
+  if (!slots.length) {
+    return { type: "say", message: `לתוכנית ${program.name} אין עדיין שעות. אפשר להגדיר שעון באתר` };
+  }
+
+  let slotIndex = 0;
+  if (slots.length > 1) {
+    if (!input.slot) return pickSlotMenu(program, slots);
+    slotIndex = Number(input.slot) - 1;
+    if (!slots[slotIndex] || !Number.isInteger(slotIndex)) {
+      return pickSlotMenu(program, slots, "הבחירה לא קיימת");
+    }
+  }
+
+  const slot = slots[slotIndex]!;
+  const label = `שעון ${WORDS[slotIndex + 1] ?? String(slotIndex + 1)}`;
+
+  if (input.side !== "1" && input.side !== "2") {
+    return {
+      type: "read",
+      message: `${clockLine(slot, slotIndex, program, true)}. לעריכת שעת הדלקה של ${label} הקש אחד, לעריכת שעת כיבוי הקש שתיים`,
+      field: "pikud_side",
+      min: 1,
+      max: 1,
+      allowed: "12",
+      mode: "No",
+    };
+  }
+
+  if (input.side === "1") {
+    const on = parsePhoneClock(input.on);
+    if (!on) {
+      return askOn(input.on ? "השעה לא תקינה, " : `${label}, `);
+    }
+    await saveSlotTimes(program, slotIndex, on, slot.offTime);
+    deferSync(tenantId);
+    return {
+      type: "say",
+      message: `תוכנית ${program.name}, ${label}, שעת הדלקה עודכנה ל${spokenClockTime(on)}`,
+    };
+  }
+
+  const off = parsePhoneClock(input.off);
+  if (!off) {
+    return askOff(input.off ? "השעה לא תקינה, " : `${label}, `);
+  }
+  await saveSlotTimes(program, slotIndex, slot.onTime, off);
+  deferSync(tenantId);
+  return {
+    type: "say",
+    message: `תוכנית ${program.name}, ${label}, שעת כיבוי עודכנה ל${spokenClockTime(off)}`,
+  };
 }
 
 function emptyMessage(deviceName: string) {
@@ -84,7 +125,7 @@ function deferSync(tenantId: string) {
 
 function confirmToggle(program: StoredProgram, enabled: boolean) {
   if (!enabled) return `תוכנית ${program.name} כובתה`;
-  return `תוכנית ${program.name} הופעלה, ${scheduleSpeech(program)}`;
+  return `תוכנית ${program.name} הופעלה`;
 }
 
 function listMenu(programs: StoredProgram[], deviceName: string, prefix = ""): MenuRead {
@@ -109,16 +150,37 @@ function listMenu(programs: StoredProgram[], deviceName: string, prefix = ""): M
 
 function detailMenu(program: StoredProgram, prefix = ""): MenuRead {
   const state = program.enabled ? "פעילה כעת" : "כבויה כעת";
-  const head = prefix
+  const title = prefix
     ? `${prefix}. תוכנית ${program.name}, ${state}`
     : `תוכנית ${program.name}, ${state}`;
+  // Title, then every clock in order, then a short edit menu — each as its own sentence.
   return {
     type: "read",
-    message: `${head}, ${scheduleSpeech(program)}. להפעלה או כיבוי הקש אחד, לעריכת שעת הדלקה הקש שתיים, לעריכת שעת כיבוי הקש שלוש`,
+    message: `${title}. ${scheduleSpeech(program)}. להפעלה או כיבוי של כל התוכנית הקש אחד. לעריכת שעון בודד הקש שתיים`,
     field: "pikud_program_op",
     min: 1,
     max: 1,
-    allowed: "123",
+    allowed: "12",
+    mode: "No",
+  };
+}
+
+function pickSlotMenu(program: StoredProgram, slots: ProgramSlot[], prefix = ""): MenuRead {
+  const listed = slots.slice(0, MAX_SPOKEN_SLOTS);
+  const choices = listed
+    .map((slot, index) => {
+      const word = WORDS[index + 1] ?? String(index + 1);
+      return `ל${clockLine(slot, index, program, true)} הקש ${word}`;
+    })
+    .join(". ");
+  const head = prefix ? `${prefix}. איזה שעון לערוך בתוכנית ${program.name}` : `איזה שעון לערוך בתוכנית ${program.name}`;
+  return {
+    type: "read",
+    message: `${head}. ${choices}`,
+    field: "pikud_program_slot",
+    min: 1,
+    max: 1,
+    allowed: listed.map((_, index) => String(index + 1)).join(""),
     mode: "No",
   };
 }
@@ -145,44 +207,88 @@ function askOff(prefix: string): MenuRead {
   };
 }
 
+/** Full ordered reading of every on/off clock on the program. */
 export function scheduleSpeech(program: StoredProgram): string {
-  const when = speakWhen(program);
-  const slot = primarySlot(program);
+  const slots = programSlots(program);
+  if (!slots.length) {
+    const when = speakProgramDays(program);
+    return [when, "בלי שעות הדלקה וכיבוי"].filter(Boolean).join(". ");
+  }
+
+  const perSlotDays = slotsHaveOwnDays(slots);
+  const sharedDays = perSlotDays ? "" : speakProgramDays(program);
+  const listed = slots.slice(0, MAX_SPOKEN_SLOTS);
+  const lines = listed.map((slot, index) => clockLine(slot, index, program, perSlotDays));
+  const extra =
+    slots.length > MAX_SPOKEN_SLOTS ? `עוד ${slots.length - MAX_SPOKEN_SLOTS} שעונים מופיעים באתר` : "";
+  return [sharedDays ? `בימים: ${sharedDays}` : "", ...lines, extra].filter(Boolean).join(". ");
+}
+
+function clockLine(slot: ProgramSlot, index: number, program: StoredProgram, includeDay: boolean): string {
+  const word = WORDS[index + 1] ?? String(index + 1);
+  const day = includeDay ? speakSlotDays(slot, program) : "";
+  const times = speakSlotTimes(slot);
+  return [`שעון ${word}`, day, times].filter(Boolean).join(", ");
+}
+
+function speakSlotTimes(slot: ProgramSlot): string {
   const parts: string[] = [];
-  if (when) parts.push(when);
   if (slot.onTime) parts.push(`יידלק ב${spokenClockTime(slot.onTime)}`);
   if (slot.offTime) parts.push(`יכבה ב${spokenClockTime(slot.offTime)}`);
   if (slot.onTime && slot.offTime && slot.offTime <= slot.onTime) parts.push("הכיבוי למחרת");
-  if (!slot.onTime && !slot.offTime) parts.push("בלי שעות הדלקה וכיבוי");
+  if (!parts.length) return "בלי שעות הדלקה וכיבוי";
   return parts.join(", ");
 }
 
-function speakWhen(program: StoredProgram): string {
-  if (program.weekdays.length === 7) return "כל יום";
-  if (program.weekdays.length) {
-    const days = [...new Set(program.weekdays.filter((day) => day >= 0 && day <= 6))]
-      .sort((left, right) => left - right)
-      .map((day) => SPOKEN_DAYS[day]);
-    if (days.length === 1) return days[0] ?? "";
-    if (days.length === 2) return `${days[0]} ו${days[1]}`;
-    return `${days.slice(0, -1).join(", ")} ו${days[days.length - 1]}`;
-  }
+function speakSlotDays(slot: ProgramSlot, program: StoredProgram): string {
+  if (slot.weekdays?.length) return speakWeekdays(slot.weekdays);
+  return speakProgramDays(program);
+}
+
+function speakProgramDays(program: StoredProgram): string {
+  if (program.weekdays.length) return speakWeekdays(program.weekdays);
   if (program.days.length === 1) return `בתאריך ${spokenDateWords(program.days[0])}`;
   if (program.days.length) return `ב${program.days.length} ימים שנבחרו`;
   return "";
 }
 
-function primarySlot(program: StoredProgram): ProgramSlot {
-  if (program.slots[0]) return program.slots[0];
-  return { onTime: program.onTime, offTime: program.offTime };
+function speakWeekdays(weekdays: number[]): string {
+  const days = [...new Set(weekdays.filter((day) => day >= 0 && day <= 6))].sort((left, right) => left - right);
+  if (days.length === 7) return "כל יום";
+  if (days.join(",") === "0,1,2,3,4") return "כל יום חוץ משישי ושבת";
+  const names = days.map((day) => SPOKEN_DAYS[day] ?? "");
+  if (names.length === 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} ו${names[1]}`;
+  return `${names.slice(0, -1).join(", ")} ו${names[names.length - 1]}`;
 }
 
-async function saveTimes(program: StoredProgram, onTime: string | null, offTime: string | null) {
-  const slots =
-    program.slots.length > 0
-      ? program.slots.map((slot, index) => (index === 0 ? { ...slot, onTime, offTime } : slot))
-      : [{ onTime, offTime }];
-  await upsertProgram({ ...program, onTime, offTime, slots });
+function slotsHaveOwnDays(slots: ProgramSlot[]): boolean {
+  return slots.some((slot) => (slot.weekdays?.length ?? 0) > 0);
+}
+
+export function programSlots(program: StoredProgram): ProgramSlot[] {
+  if (program.slots.length) return sortSlots(program.slots);
+  if (program.onTime || program.offTime) {
+    return [{ onTime: program.onTime, offTime: program.offTime, weekdays: [] }];
+  }
+  return [];
+}
+
+async function saveSlotTimes(
+  program: StoredProgram,
+  slotIndex: number,
+  onTime: string | null,
+  offTime: string | null,
+) {
+  const base = programSlots(program);
+  const slots = base.map((slot, index) => (index === slotIndex ? { ...slot, onTime, offTime } : slot));
+  const first = slots[0];
+  await upsertProgram({
+    ...program,
+    onTime: first?.onTime ?? null,
+    offTime: first?.offTime ?? null,
+    slots,
+  });
 }
 
 function parsePhoneClock(value: string | undefined): string | null {

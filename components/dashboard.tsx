@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { Power, PowerOff, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { SocketCard } from "@/components/socket-card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ export function Dashboard() {
   const [audit, setAudit] = useState<AuditView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, RelayAction | null>>({});
+  const [bulkBusy, setBulkBusy] = useState<RelayAction | null>(null);
   const [live, setLive] = useState(false);
 
   const applyDevice = useCallback((next: DeviceView) => {
@@ -102,7 +103,7 @@ export function Dashboard() {
     return () => source.close();
   }, [applyDevice]);
 
-  async function command(device: DeviceView, action: RelayAction) {
+  async function command(device: DeviceView, action: RelayAction, options?: { quiet?: boolean }) {
     // Flip the switch color immediately so the tap feels instant.
     applyDevice({
       ...device,
@@ -117,16 +118,45 @@ export function Dashboard() {
         body: JSON.stringify({ action }),
       });
       applyDevice(result.device);
+      if (options?.quiet) return result.status;
       if (result.status === "SUCCESS") toast.success(action === "ON" ? "השקע הופעל" : "השקע כובה");
       else if (result.status === "SENT") toast.message("הפקודה נשלחה וממתינה לאישור");
       else toast.warning("הפקודה לא אושרה סופית. המצב שבכרטיס נקרא מהשקע");
+      return result.status;
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "הפקודה נכשלה");
-      await load(false);
+      if (!options?.quiet) toast.error(cause instanceof Error ? cause.message : "הפקודה נכשלה");
+      if (!options?.quiet) await load(false);
+      throw cause;
     } finally {
       setBusy((current) => ({ ...current, [device.deviceId]: null }));
-      void loadAudit();
+      if (!options?.quiet) void loadAudit();
     }
+  }
+
+  async function commandAll(action: RelayAction) {
+    const targets = (devices ?? []).filter((device) => {
+      if (device.frozen) return false;
+      return action === "ON" ? device.relayOn !== true : device.relayOn !== false;
+    });
+    if (!targets.length) {
+      toast.message(action === "ON" ? "כל השקעים כבר פועלים" : "כל השקעים כבר כבויים");
+      return;
+    }
+    setBulkBusy(action);
+    const results = await Promise.allSettled(targets.map((device) => command(device, action, { quiet: true })));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    const ok = results.length - failed;
+    if (failed === 0) {
+      toast.success(action === "ON" ? `הופעלו ${ok} שקעים` : `כובו ${ok} שקעים`);
+    } else if (ok === 0) {
+      toast.error(action === "ON" ? "ההפעלה לכולם נכשלה" : "הכיבוי לכולם נכשל");
+      await load(false);
+    } else {
+      toast.warning(action === "ON" ? `הופעלו ${ok}, נכשלו ${failed}` : `כובו ${ok}, נכשלו ${failed}`);
+      await load(false);
+    }
+    setBulkBusy(null);
+    void loadAudit();
   }
 
   async function chooseIcon(device: DeviceView, icon: DeviceIconKey) {
@@ -238,9 +268,38 @@ export function Dashboard() {
     </div>
   );
 
+  const anyBusy = bulkBusy !== null || Object.values(busy).some(Boolean);
   const socketsBlock = (
     <div className="min-w-0">
-      <h2 className="mb-4 text-[13px] font-medium tracking-[0.08em] text-muted-foreground uppercase">השקעים</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-[13px] font-medium tracking-[0.08em] text-muted-foreground uppercase">השקעים</h2>
+        {count > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-full px-3.5 text-[13px]"
+              disabled={anyBusy}
+              onClick={() => void commandAll("ON")}
+            >
+              <Power className="size-3.5 text-online" />
+              {bulkBusy === "ON" ? "מפעיל…" : "הפעל הכל"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-full px-3.5 text-[13px]"
+              disabled={anyBusy}
+              onClick={() => void commandAll("OFF")}
+            >
+              <PowerOff className="size-3.5 text-muted-foreground" />
+              {bulkBusy === "OFF" ? "מכבה…" : "כבה הכל"}
+            </Button>
+          </div>
+        ) : null}
+      </div>
       {devices === null && !error ? <div className="h-28 animate-pulse rounded-2xl bg-muted" /> : null}
       {devices && devices.length === 0 ? (
         <div className="rounded-2xl border border-border/60 bg-card p-6 text-start">

@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/client-api";
 import { formatIsrael } from "@/lib/time";
-import type { BridgeStatus, DeviceView, TenantView, UserView } from "@/lib/types";
+import type { BridgeStatus, CallerNumber, DeviceView, TenantView, UserView } from "@/lib/types";
 
 type IvrInfo = {
   token: string;
@@ -95,7 +95,14 @@ export function AdminConsole() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="tenants" className="min-w-0 pt-4">
-          <CustomerPanel actorId={actorId} tenants={tenants} users={users} devices={devices} onChange={load} />
+          <CustomerPanel
+            actorId={actorId}
+            tenants={tenants}
+            users={users}
+            devices={devices}
+            onChange={load}
+            onTenants={setTenants}
+          />
         </TabsContent>
         <TabsContent value="link" className="min-w-0 pt-4">
           <LinkPanel status={status} ivr={ivr} devices={devices} shellyUrl={shellyUrl} />
@@ -118,12 +125,14 @@ function CustomerPanel({
   users,
   devices,
   onChange,
+  onTenants,
 }: {
   actorId: string;
   tenants: TenantView[];
   users: UserView[];
   devices: DeviceView[];
   onChange: () => Promise<void>;
+  onTenants: (tenants: TenantView[]) => void;
 }) {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -355,6 +364,16 @@ function CustomerPanel({
         open={editing !== null}
         onClose={() => setEditing(null)}
         onSaved={onChange}
+        onPhones={(phones) => {
+          if (!editTenant) return;
+          onTenants(
+            tenants.map((item) =>
+              item.id === editTenant.id
+                ? { ...item, phones, phone: phones[0]?.phone ?? null }
+                : item,
+            ),
+          );
+        }}
       />
     </div>
   );
@@ -368,6 +387,7 @@ function CustomerEditor({
   open,
   onClose,
   onSaved,
+  onPhones,
 }: {
   actorId: string;
   user: UserView | null;
@@ -376,6 +396,7 @@ function CustomerEditor({
   open: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  onPhones: (phones: CallerNumber[]) => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
@@ -389,6 +410,7 @@ function CustomerEditor({
             devices={devices}
             onClose={onClose}
             onSaved={onSaved}
+            onPhones={onPhones}
           />
         ) : null}
       </DialogContent>
@@ -403,6 +425,7 @@ function CustomerEditorForm({
   devices,
   onClose,
   onSaved,
+  onPhones,
 }: {
   actorId: string;
   user: UserView | null;
@@ -410,6 +433,7 @@ function CustomerEditorForm({
   devices: DeviceView[];
   onClose: () => void;
   onSaved: () => Promise<void>;
+  onPhones: (phones: CallerNumber[]) => void;
 }) {
   const customer = user?.role !== "admin";
   const [name, setName] = useState(user?.name ?? tenant?.name ?? "");
@@ -621,9 +645,12 @@ function CustomerEditorForm({
               numbers={tenant.phones}
               onAdd={async (input) => {
                 try {
-                  await api(`/api/admin/tenants/${tenant.id}/phones`, { method: "POST", body: JSON.stringify(input) });
+                  const payload = await api<{ phones: CallerNumber[] }>(`/api/admin/tenants/${tenant.id}/phones`, {
+                    method: "POST",
+                    body: JSON.stringify(input),
+                  });
+                  onPhones(payload.phones);
                   toast.success("המספר נוסף");
-                  await onSaved();
                 } catch (cause) {
                   toast.error(cause instanceof Error ? cause.message : "ההוספה נכשלה");
                   throw cause;
@@ -631,12 +658,12 @@ function CustomerEditorForm({
               }}
               onUpdate={async (id, input) => {
                 try {
-                  await api(`/api/admin/tenants/${tenant.id}/phones/${id}`, {
+                  const payload = await api<{ phones: CallerNumber[] }>(`/api/admin/tenants/${tenant.id}/phones/${id}`, {
                     method: "PATCH",
                     body: JSON.stringify(input),
                   });
+                  onPhones(payload.phones);
                   toast.success("הכינוי עודכן");
-                  await onSaved();
                 } catch (cause) {
                   toast.error(cause instanceof Error ? cause.message : "עדכון הכינוי נכשל");
                   throw cause;
@@ -645,9 +672,11 @@ function CustomerEditorForm({
               onRemove={async (id) => {
                 if (!window.confirm("להסיר את המספר מהחיוג למערכת?")) return;
                 try {
-                  await api(`/api/admin/tenants/${tenant.id}/phones/${id}`, { method: "DELETE" });
+                  const payload = await api<{ phones: CallerNumber[] }>(`/api/admin/tenants/${tenant.id}/phones/${id}`, {
+                    method: "DELETE",
+                  });
+                  onPhones(payload.phones);
                   toast.success("המספר הוסר");
-                  await onSaved();
                 } catch (cause) {
                   toast.error(cause instanceof Error ? cause.message : "ההסרה נכשלה");
                 }

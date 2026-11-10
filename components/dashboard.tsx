@@ -119,9 +119,11 @@ export function Dashboard() {
       });
       applyDevice(result.device);
       if (options?.quiet) return result.status;
-      if (result.status === "SUCCESS") toast.success(action === "ON" ? "השקע הופעל" : "השקע כובה");
-      else if (result.status === "SENT") toast.message("הפקודה נשלחה וממתינה לאישור");
-      else toast.warning("הפקודה לא אושרה סופית. המצב שבכרטיס נקרא מהשקע");
+      const label = result.device.name?.trim() || device.name?.trim() || "השקע";
+      if (result.status === "SUCCESS") {
+        toast.success(action === "ON" ? `${label} הופעל בהצלחה` : `${label} נכבה בהצלחה`);
+      } else if (result.status === "SENT") toast.message(`הפקודה ל${label} נשלחה וממתינה לאישור`);
+      else toast.warning(`הפקודה ל${label} לא אושרה סופית. המצב שבכרטיס נקרא מההתקן`);
       return result.status;
     } catch (cause) {
       if (!options?.quiet) toast.error(cause instanceof Error ? cause.message : "הפקודה נכשלה");

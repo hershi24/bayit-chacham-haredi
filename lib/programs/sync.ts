@@ -28,17 +28,19 @@ export async function syncTenantPrograms(tenantId: string, now = new Date()) {
     bucket.push(clock);
     byProgram.set(clock.programId, bucket);
   }
-  for (const program of programs) {
-    const skipped = new Set(program.skippedDates ?? []);
-    const owned = program.programKey.startsWith("days:")
-      ? (byProgram.get(program.id) ?? []).filter((clock) => !skipped.has(clock.day))
-      : [];
-    const runs =
-      program.enabled && program.programKey.startsWith("days:")
-        ? [...runsFor(program.name, owned, allowed, now), ...runsForWeekdays(program, allowed, now)]
+  await Promise.all(
+    programs.map((program) => {
+      const skipped = new Set(program.skippedDates ?? []);
+      const owned = program.programKey.startsWith("days:")
+        ? (byProgram.get(program.id) ?? []).filter((clock) => !skipped.has(clock.day))
         : [];
-    await replaceProgramRuns(program.id, runs);
-  }
+      const runs =
+        program.enabled && program.programKey.startsWith("days:")
+          ? [...runsFor(program.name, owned, allowed, now), ...runsForWeekdays(program, allowed, now)]
+          : [];
+      return replaceProgramRuns(program.id, runs);
+    }),
+  );
   await replaceProgramRuns(looseId(tenantId), runsFor("שעון", loose, allowed, now));
   refreshed.set(tenantId, Date.now());
 }

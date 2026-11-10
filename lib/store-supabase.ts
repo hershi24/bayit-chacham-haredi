@@ -422,20 +422,51 @@ async function syncTenantPhone(tenantId: string) {
 
 export async function listCallerNumbers(tenantId: string): Promise<CallerNumber[]> {
   await ready();
-  const numbers = await loadCallerNumbers();
-  if (!numbers) {
+  type CallerRow = { id: unknown; phone: unknown; label?: unknown };
+  let rows: CallerRow[] | null = null;
+  const withLabel = await client()
+    .from("caller_numbers")
+    .select("id, phone, label, created_at")
+    .eq("tenant_id", tenantId)
+    .order("created_at");
+  if (withLabel.error && /label/i.test(withLabel.error.message)) {
+    const withoutLabel = await client()
+      .from("caller_numbers")
+      .select("id, phone, created_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at");
+    if (withoutLabel.error && missingRelation(withoutLabel.error)) {
+      const tenant = (await listTenants()).find((item) => item.id === tenantId);
+      return tenant?.phones ?? [];
+    }
+    if (withoutLabel.error) fail(withoutLabel.error, "לא ניתן לקרוא מספרים");
+    rows = (withoutLabel.data ?? []) as CallerRow[];
+  } else if (withLabel.error && missingRelation(withLabel.error)) {
     const tenant = (await listTenants()).find((item) => item.id === tenantId);
     return tenant?.phones ?? [];
+  } else if (withLabel.error) {
+    fail(withLabel.error, "לא ניתן לקרוא מספרים");
+  } else {
+    rows = (withLabel.data ?? []) as CallerRow[];
   }
-  return numbers.get(tenantId) ?? [];
+  return (rows ?? []).map((row) => {
+    const labelRaw = row.label;
+    return {
+      id: String(row.id),
+      phone: String(row.phone),
+      label: typeof labelRaw === "string" && labelRaw.trim() ? labelRaw.trim() : null,
+    };
+  });
 }
 
 export async function addCallerNumber(tenantId: string, phone: string, label: string | null = null): Promise<CallerNumber> {
   await ready();
-  const tenant = await client().from("tenants").select("id").eq("id", tenantId).maybeSingle();
+  const [tenant, taken] = await Promise.all([
+    client().from("tenants").select("id").eq("id", tenantId).maybeSingle(),
+    client().from("caller_numbers").select("tenant_id").eq("phone", phone).maybeSingle(),
+  ]);
   if (tenant.error) fail(tenant.error, "הלקוח לא נמצא");
   if (!tenant.data) throw new HttpError(404, "הלקוח לא נמצא");
-  const taken = await client().from("caller_numbers").select("tenant_id").eq("phone", phone).maybeSingle();
   if (taken.error && missingRelation(taken.error)) throw new HttpError(500, NUMBERS_SCHEMA);
   if (taken.error) fail(taken.error, "לא ניתן לבדוק את המספר");
   if (taken.data && String(taken.data.tenant_id) === tenantId) throw new HttpError(409, "המספר כבר ברשימה");
@@ -523,16 +554,22 @@ export async function createTenant(input: { name: string; phone: string | null }
     created_at: new Date().toISOString(),
   });
   if (result.error) fail(result.error, "יצירת לקוח נכשלה");
+  let phones: CallerNumber[] = [];
   if (input.phone) {
     try {
-      await addCallerNumber(id, input.phone);
+      phones = [await addCallerNumber(id, input.phone)];
     } catch (error) {
       if (!(error instanceof HttpError) || error.status !== 500) throw error;
     }
   }
-  const tenant = (await listTenants()).find((item) => item.id === id);
-  if (!tenant) throw new HttpError(500, "הלקוח נשמר אבל לא נקרא בחזרה");
-  return tenant;
+  return {
+    id,
+    name: input.name,
+    phone: phones[0]?.phone ?? input.phone,
+    phones,
+    deviceCount: 0,
+    userCount: 0,
+  };
 }
 
 export async function renameTenant(id: string, name: string) {

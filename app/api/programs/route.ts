@@ -140,8 +140,13 @@ export function POST(request: Request) {
       throw new HttpError(400, "פעולה לא מוכרת");
     }
 
-    await syncTenantPrograms(tenantId);
-    return Response.json(await presentPrograms(user, tenantId, viewed(body)));
+    // Calendar UI reads programs/clocks directly; scheduler runs sync in the background
+    // so the save confirmation is not blocked on regenerating every run row.
+    const payload = await presentPrograms(user, tenantId, viewed(body));
+    void syncTenantPrograms(tenantId).catch((error: unknown) => {
+      console.error("[pikud] program sync", error);
+    });
+    return Response.json(payload);
   });
 }
 

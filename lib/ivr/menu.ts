@@ -111,6 +111,34 @@ export async function handleMenu(request: Request) {
       adminAsk: present(input.values.pikud_admin_ask),
     });
     if (answered.type === "read") return reply(input.format, yemotRead(answered));
+    if (answered.type === "all") {
+      const actor = caller(input.phone);
+      const actionable = targets.filter((device) => {
+        if (device.frozen) return false;
+        return answered.action === "ON" ? device.relayOn !== true : device.relayOn !== false;
+      });
+      if (!actionable.length) {
+        const idle =
+          answered.action === "ON" ? "כל השקעים כבר פועלים" : "כל השקעים כבר כבויים";
+        const onlyFrozen = targets.length > 0 && targets.every((device) => device.frozen);
+        return reply(
+          input.format,
+          yemotSpeak(onlyFrozen ? "אין שקעים זמינים, כולם מוקפאים" : idle),
+        );
+      }
+      for (const device of actionable) sendCommand(device.deviceId, answered.action, actor);
+      const countWord =
+        actionable.length === 1
+          ? "שקע אחד"
+          : actionable.length === 2
+            ? "שני שקעים"
+            : `${actionable.length} שקעים`;
+      const message =
+        answered.action === "ON"
+          ? `כל השקעים הופעלו בהצלחה, ${countWord}`
+          : `כל השקעים כובו בהצלחה, ${countWord}`;
+      return reply(input.format, yemotSpeak(message));
+    }
     return reply(input.format, yemotSpeak(answered.message));
   }
 

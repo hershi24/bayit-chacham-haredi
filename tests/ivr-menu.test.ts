@@ -671,7 +671,11 @@ test("a clock time that already passed is scheduled for tomorrow in Israel", () 
 
 test("settings branch adds and removes a caller number and can ask for an admin callback", async () => {
   const menu = await phonePress({ ApiPhone: "035551001", pikud_device: "0" });
-  assert.match(await menu.text(), /להוספת מספר מורשה הקש אחד/);
+  const menuText = await menu.text();
+  assert.match(menuText, /להוספת מספר מורשה הקש אחד/);
+  assert.match(menuText, /להפעלת כל השקעים הקש חמש/);
+  assert.match(menuText, /לכיבוי כל השקעים הקש שש/);
+  assert.match(menuText, /,123456,/);
 
   const ask = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "1" });
   const askText = await ask.text();
@@ -718,6 +722,12 @@ test("settings branch adds and removes a caller number and can ask for an admin 
 
   const logs = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "3" });
   assert.match(await logs.text(), /פעולות אחרונות|אין פעולות ביומן/);
+
+  const allOn = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "5" });
+  assert.match(await allOn.text(), /כל השקעים הופעלו בהצלחה|כל השקעים כבר פועלים/);
+
+  const allOff = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "6" });
+  assert.match(await allOff.text(), /כל השקעים כובו בהצלחה|כל השקעים כבר כבויים/);
 
   // Cleanup if anything lingered from a previous failed run.
   for (const item of await listCallerNumbers(tenantId!)) {

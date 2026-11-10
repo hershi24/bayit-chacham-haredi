@@ -5,7 +5,10 @@ import { addAudit, addCallerNumber, listAudit, listCallerNumbers, removeCallerNu
 import { HttpError } from "@/lib/http-error";
 import type { AuditView, CallerNumber } from "@/lib/types";
 
-export type SettingsDecision = MenuRead | { type: "say"; message: string };
+export type SettingsDecision =
+  | MenuRead
+  | { type: "say"; message: string }
+  | { type: "all"; action: "ON" | "OFF" };
 
 const DIGIT = ["אפס", "אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע"];
 const INDEX = ["", "אחד", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע"];
@@ -20,11 +23,12 @@ export function speakPhone(phone: string) {
 function settingsMenu(): MenuRead {
   return {
     type: "read",
-    message: "להוספת מספר מורשה הקש אחד, להסרת מספר הקש שתיים, לשמיעת יומן פעולות הקש שלוש, לפניה למנהל המערכת הקש ארבע",
+    message:
+      "להוספת מספר מורשה הקש אחד, להסרת מספר הקש שתיים, לשמיעת יומן פעולות הקש שלוש, לפניה למנהל המערכת הקש ארבע, להפעלת כל השקעים הקש חמש, לכיבוי כל השקעים הקש שש",
     field: "pikud_settings",
     min: 1,
     max: 1,
-    allowed: "1234",
+    allowed: "123456",
     mode: "No",
   };
 }
@@ -183,6 +187,9 @@ export async function answerSettings(input: {
     });
     return { type: "say", message: "הפניה נשלחה למנהל המערכת, נחזור אליכם בהקדם" };
   }
+
+  if (input.settings === "5") return { type: "all", action: "ON" };
+  if (input.settings === "6") return { type: "all", action: "OFF" };
 
   return { ...settingsMenu(), message: `הבחירה לא קיימת, ${settingsMenu().message}` };
 }

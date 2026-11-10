@@ -61,7 +61,7 @@ test("november puts the parsha on saturday and keeps candle times as labels", as
   assert.equal(days[0]?.date, "2026-11-01");
 });
 
-test("the phone toggles a named program", async () => {
+test("the phone shows a program clock and can toggle or edit times", async () => {
   for (const program of await listPrograms("ten_yeshiva")) {
     if (program.programKey.startsWith("days:")) await deleteProgram("ten_yeshiva", program.id);
   }
@@ -75,10 +75,10 @@ test("the phone toggles a named program", async () => {
     startDate: "2026-12-01",
     endDate: "2026-12-02",
     days: ["2026-12-01", "2026-12-02"],
-    weekdays: [],
-    onTime: null,
-    offTime: null,
-    slots: [],
+    weekdays: [5],
+    onTime: "18:00",
+    offTime: "22:30",
+    slots: [{ onTime: "18:00", offTime: "22:30" }],
   });
   const menu = await handleMenu(
     new Request("http://127.0.0.1/api/ivr/menu", {
@@ -92,10 +92,10 @@ test("the phone toggles a named program", async () => {
   assert.equal(prompt.includes("פרשת"), false);
   assert.match(prompt, /תפריט תוכניות לשקע אולם/);
   assert.match(prompt, /תוכנית אחד, שבת חתן, כבויה כעת/);
-  assert.match(prompt, /להחלפת המצב הקש אחד/);
+  assert.match(prompt, /לבחירה הקש אחד/);
   assert.match(prompt, /read=/);
 
-  const built = await handleMenu(
+  const detail = await handleMenu(
     new Request("http://127.0.0.1/api/ivr/menu", {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
@@ -107,9 +107,55 @@ test("the phone toggles a named program", async () => {
       }),
     }),
   );
+  const detailSpeech = await detail.text();
+  assert.match(detailSpeech, /תוכנית שבת חתן, כבויה כעת/);
+  assert.match(detailSpeech, /יום שישי/);
+  assert.match(detailSpeech, /יידלק בשש בערב/);
+  assert.match(detailSpeech, /יכבה בעשר וחצי בלילה/);
+  assert.match(detailSpeech, /להפעלה או כיבוי הקש אחד/);
+  assert.match(detailSpeech, /לעריכת שעת הדלקה הקש שתיים/);
+  assert.match(detailSpeech, /לעריכת שעת כיבוי הקש שלוש/);
+  assert.match(detailSpeech, /pikud_program_op/);
+
+  const built = await handleMenu(
+    new Request("http://127.0.0.1/api/ivr/menu", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
+      body: new URLSearchParams({
+        ApiPhone: "035551001",
+        pikud_device: "1",
+        pikud_action: "4",
+        pikud_program: "1",
+        pikud_program_op: "1",
+      }),
+    }),
+  );
   const speech = await built.text();
-  assert.match(speech, /תוכנית שבת חתן הופעלה, והיא תפעל ב2 ימים שנבחרו/);
+  assert.match(speech, /תוכנית שבת חתן הופעלה/);
+  assert.match(speech, /יום שישי/);
   assert.match(speech, /go_to_folder=hangup/);
+
+  const editOn = await handleMenu(
+    new Request("http://127.0.0.1/api/ivr/menu", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
+      body: new URLSearchParams({
+        ApiPhone: "035551001",
+        pikud_device: "1",
+        pikud_action: "4",
+        pikud_program: "1",
+        pikud_program_op: "2",
+        pikud_on: "1730",
+      }),
+    }),
+  );
+  const onSpeech = await editOn.text();
+  assert.match(onSpeech, /שעת הדלקה עודכנה לחמש וחצי בערב/);
+  const saved = (await listPrograms("ten_yeshiva")).find((item) => item.programKey === "days:phone");
+  assert.equal(saved?.onTime, "17:30");
+  assert.equal(saved?.offTime, "22:30");
+  assert.equal(saved?.slots[0]?.onTime, "17:30");
+
   await deleteProgram("ten_yeshiva", programId("ten_yeshiva", "days:phone"));
 });
 

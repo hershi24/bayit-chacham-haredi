@@ -1,65 +1,66 @@
-import { upcomingPrograms } from "@/lib/hebrew/calendar";
 import { syncTenantPrograms } from "@/lib/programs/sync";
 import { weekdayPhrase } from "@/lib/programs/weekdays";
-import { getClock, getDevice, listPrograms, upsertProgram } from "@/lib/store";
+import { getDevice, listPrograms, upsertProgram } from "@/lib/store";
+import type { StoredProgram } from "@/lib/programs/types";
 
 const WORDS = ["", "אחד", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה"];
 
 export async function answerPrograms(deviceId: string, digit: string | undefined) {
   const device = await getDevice(deviceId);
   if (!device?.tenantId) return { type: "say" as const, message: "השקע לא נמצא" };
+  const deviceName = device.name.trim() || "השקע";
   const programs = (await listPrograms(device.tenantId))
     .filter((program) => program.programKey.startsWith("days:"))
+    .filter((program) => !program.deviceIds.length || program.deviceIds.includes(deviceId))
     .slice(0, 8);
+
   if (digit) {
     const index = Number(digit) - 1;
     const item = programs[index];
     if (!item || !Number.isInteger(index)) {
-      const intro = await parshaIntro(device.tenantId);
-      if (!programs.length) return { type: "say" as const, message: emptyMessage(intro) };
-      return { type: "read" as const, ...menu(programs, intro, "הבחירה לא קיימת") };
+      if (!programs.length) return { type: "say" as const, message: emptyMessage(deviceName) };
+      return { type: "read" as const, ...menu(programs, deviceName, "הבחירה לא קיימת") };
     }
     const enabled = !item.enabled;
     await upsertProgram({ ...item, enabled });
-    await syncTenantPrograms(device.tenantId);
-    const count = item.weekdays.length
-      ? weekdayPhrase(item.weekdays)
-      : item.days.length === 1
-        ? "יום אחד"
-        : `${item.days.length} ימים`;
-    return { type: "say" as const, message: enabled ? `${item.name} הופעלה, ${count}` : `${item.name} כובתה` };
+    void syncTenantPrograms(device.tenantId).catch((error: unknown) => {
+      console.error("[pikud] program sync after ivr toggle", error);
+    });
+    return { type: "say" as const, message: confirmToggle(item, enabled) };
   }
-  const intro = await parshaIntro(device.tenantId);
-  if (!programs.length) return { type: "say" as const, message: emptyMessage(intro) };
-  return { type: "read" as const, ...menu(programs, intro) };
+
+  if (!programs.length) return { type: "say" as const, message: emptyMessage(deviceName) };
+  return { type: "read" as const, ...menu(programs, deviceName) };
 }
 
-async function parshaIntro(tenantId: string) {
-  const settings = await getClock(tenantId);
-  const catalog = await upcomingPrograms(settings);
-  const windows = catalog.find((item) => item.key === "shabbat")?.windows ?? [];
-  const first = windows[0]?.parsha;
-  const second = windows[1]?.parsha;
-  if (first && second) return `השבת פרשת ${first}, בשבוע שאחריה ${second}`;
-  if (first) return `השבת פרשת ${first}`;
-  return "";
+function emptyMessage(deviceName: string) {
+  return `ל${deviceName} אין עדיין תוכניות. אפשר להגדיר תוכנית באתר`;
 }
 
-function emptyMessage(intro: string) {
-  return `${intro ? `${intro}. ` : ""}אין עדיין תוכניות. בשיחה הבאה, אחרי השקע, לשעון הקש ארבע`.replace(/\s+/g, " ").trim();
+function confirmToggle(program: StoredProgram, enabled: boolean) {
+  if (!enabled) return `תוכנית ${program.name} כובתה`;
+  const when = program.weekdays.length
+    ? weekdayPhrase(program.weekdays)
+    : program.days.length === 1
+      ? "ביום אחד שנבחר"
+      : `ב${program.days.length} ימים שנבחרו`;
+  return `תוכנית ${program.name} הופעלה, והיא תפעל ${when}`;
 }
 
-function menu(
-  programs: Array<{ name: string; enabled: boolean }>,
-  intro: string,
-  prefix = "",
-) {
+function menu(programs: Array<{ name: string; enabled: boolean }>, deviceName: string, prefix = "") {
+  // One clear sentence per program: number, name, state, then the key.
   const choices = programs
-    .map((program, index) => `ל${program.name}${program.enabled ? " פעילה" : ""} הקש ${WORDS[index + 1] ?? String(index + 1)}`)
-    .join(", ");
-  const message = `${prefix ? `${prefix}, ` : ""}${intro ? `${intro}. ` : ""}${choices}`.replace(/\s+/g, " ").trim();
+    .map((program, index) => {
+      const word = WORDS[index + 1] ?? String(index + 1);
+      const state = program.enabled ? "פעילה כעת" : "כבויה כעת";
+      return `תוכנית ${word}, ${program.name}, ${state}, להחלפת המצב הקש ${word}`;
+    })
+    .join(". ");
+  const head = prefix
+    ? `${prefix}. תפריט תוכניות ל${deviceName}`
+    : `תפריט תוכניות ל${deviceName}`;
   return {
-    message,
+    message: `${head}. ${choices}`.replace(/\s+/g, " ").trim(),
     field: "pikud_program" as const,
     min: 1,
     max: 1,

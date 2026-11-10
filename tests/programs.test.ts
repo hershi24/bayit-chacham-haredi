@@ -71,7 +71,7 @@ test("the phone toggles a named program", async () => {
     programKey: "days:phone",
     name: "שבת חתן",
     enabled: false,
-    deviceIds: [],
+    deviceIds: ["rct063285302"],
     startDate: "2026-12-01",
     endDate: "2026-12-02",
     days: ["2026-12-01", "2026-12-02"],
@@ -89,9 +89,10 @@ test("the phone toggles a named program", async () => {
   );
   const prompt = await menu.text();
   assert.equal(prompt.includes("אין הרשאה"), false);
-  assert.match(prompt, /פרשת/);
-  assert.match(prompt, /בשבוע שאחריה/);
-  assert.match(prompt, /שבת חתן/);
+  assert.equal(prompt.includes("פרשת"), false);
+  assert.match(prompt, /תפריט תוכניות לשקע אולם/);
+  assert.match(prompt, /תוכנית אחד, שבת חתן, כבויה כעת/);
+  assert.match(prompt, /להחלפת המצב הקש אחד/);
   assert.match(prompt, /read=/);
 
   const built = await handleMenu(
@@ -107,7 +108,7 @@ test("the phone toggles a named program", async () => {
     }),
   );
   const speech = await built.text();
-  assert.match(speech, /שבת חתן הופעלה, 2 ימים/);
+  assert.match(speech, /תוכנית שבת חתן הופעלה, והיא תפעל ב2 ימים שנבחרו/);
   assert.match(speech, /go_to_folder=hangup/);
   await deleteProgram("ten_yeshiva", programId("ten_yeshiva", "days:phone"));
 });

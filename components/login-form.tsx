@@ -10,12 +10,6 @@ import { Label } from "@/components/ui/label";
 import { api } from "@/lib/client-api";
 import type { SessionUser } from "@/lib/types";
 
-const accounts = [
-  ["מנהל", "admin", "pikud-admin"],
-  ["ישיבה", "yeshiva", "yeshiva-1"],
-  ["בית כנסת", "shul", "shul-2"],
-];
-
 export function LoginForm({ fontClass }: { fontClass: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -82,18 +76,6 @@ export function LoginForm({ fontClass }: { fontClass: string }) {
               {pending ? "נכנסים" : "כניסה"}
             </Button>
           </form>
-          <div className="text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">חשבונות הדגמה</p>
-            <ul className="mt-1 grid gap-1">
-              {accounts.map(([label, user, pass]) => (
-                <li key={user}>
-                  {label}: <span className="font-mono text-foreground" dir="ltr">{user}</span>
-                  {" / "}
-                  <span className="font-mono text-foreground" dir="ltr">{pass}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
         </DialogContent>
       </Dialog>
     </>

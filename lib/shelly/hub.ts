@@ -37,6 +37,7 @@ export function getShellyHub() {
 class ShellyHub {
   private readonly sockets = new Map<string, Socket>();
   private readonly pending = new Map<string, Pending>();
+  private readonly polls = new Map<string, Promise<boolean>>();
   private nextId = 1;
   private mockOnline = new Set<string>();
   private mockState = new Map<string, boolean>();
@@ -138,6 +139,62 @@ class ShellyHub {
     if (this.mockOnline.has(shellyId)) return true;
     const socket = this.sockets.get(shellyId);
     return Boolean(socket && socket.readyState === socket.OPEN);
+  }
+
+  /**
+   * Ask the unit for live switch state (or mark offline). Concurrent callers for
+   * the same physical Shelly share one GetStatus round-trip.
+   */
+  async refreshPresence(shellyId: string): Promise<boolean> {
+    if (this.mockOnline.has(shellyId)) {
+      const devices = await findShellyDevices(shellyId);
+      const at = new Date().toISOString();
+      for (const device of devices) {
+        const on = this.mockState.get(device.deviceId);
+        const view = await updateDeviceState(device.deviceId, {
+          connectivity: "ONLINE",
+          ...(typeof on === "boolean" ? { relayOn: on } : {}),
+          stateUpdatedAt: at,
+          lastError: null,
+        });
+        if (view) publishDevice(view);
+      }
+      return true;
+    }
+
+    const existing = this.polls.get(shellyId);
+    if (existing) return existing;
+
+    const job = this.pollPresence(shellyId).finally(() => {
+      this.polls.delete(shellyId);
+    });
+    this.polls.set(shellyId, job);
+    return job;
+  }
+
+  private async pollPresence(shellyId: string): Promise<boolean> {
+    const socket = this.sockets.get(shellyId);
+    if (!socket || socket.readyState !== socket.OPEN) {
+      await this.markOffline(shellyId);
+      return false;
+    }
+    const id = this.nextId++;
+    try {
+      const result = await this.request(socket, id, getStatusCall(id));
+      socket.__pikudAlive = true;
+      await this.applyStatus(shellyId, result);
+      // Connectivity even when status payload has no switch keys yet.
+      await this.markOnline(shellyId);
+      return true;
+    } catch {
+      try {
+        socket.terminate();
+      } catch {
+        // ignore
+      }
+      this.forgetSocket(socket, true);
+      return false;
+    }
   }
 
   private ensureWatchdog() {

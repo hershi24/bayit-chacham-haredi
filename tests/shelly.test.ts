@@ -112,6 +112,44 @@ test("creating a Shelly Pro 3 registers three separate channels for a tenant", a
   }
 });
 
+test("Shelly refreshPresence updates connectivity from the live hub", async () => {
+  const tenant = await createTenant({ name: `Shelly refresh ${Date.now()}`, phone: null });
+  const shellyId = `shellypro3g3-rf${String(Date.now()).slice(-6)}`;
+  try {
+    await createShellyPro3({
+      shellyId,
+      tenantId: tenant.id,
+      kind: "panel",
+      channels: ["רענון א", "רענון ב", "רענון ג"],
+    });
+    await updateDeviceState(`${shellyId}_ch0`, { connectivity: "OFFLINE", relayOn: false });
+    getShellyHub().mockConnect(shellyId, [
+      { channel: 0, on: true },
+      { channel: 1, on: false },
+      { channel: 2, on: false },
+    ]);
+    const online = await getShellyHub().refreshPresence(shellyId);
+    assert.equal(online, true);
+    assert.equal((await getDevice(`${shellyId}_ch0`))?.connectivity, "ONLINE");
+    assert.equal((await getDevice(`${shellyId}_ch0`))?.relayOn, true);
+
+    getShellyHub().mockDisconnect(shellyId);
+    const offline = await getShellyHub().refreshPresence(shellyId);
+    assert.equal(offline, false);
+    assert.equal((await getDevice(`${shellyId}_ch0`))?.connectivity, "OFFLINE");
+  } finally {
+    getShellyHub().mockDisconnect(shellyId);
+    for (const channel of [0, 1, 2]) {
+      try {
+        await deleteDevice(`${shellyId}_ch${channel}`);
+      } catch {
+        // ignore
+      }
+    }
+    await deleteTenant(tenant.id);
+  }
+});
+
 test("a missed Shelly heartbeat marks channels offline without waiting for TCP timeout", async () => {
   const tenant = await createTenant({ name: `Shelly HB ${Date.now()}`, phone: null });
   const shellyId = `shellypro3g3-hb${String(Date.now()).slice(-6)}`;

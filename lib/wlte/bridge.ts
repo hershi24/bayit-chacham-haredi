@@ -169,15 +169,16 @@ class Bridge {
     const before = await getDevice(deviceId);
     if (!before) return null;
     if (before.vendor === "shelly" || isShellyChannelId(deviceId)) {
-      const online = before.externalId ? getShellyHub().isOnline(before.externalId) : false;
-      const view = await updateDeviceState(deviceId, {
-        connectivity: online ? "ONLINE" : "OFFLINE",
-        stateUpdatedAt: new Date().toISOString(),
-        lastError: null,
-      });
-      const next = view ?? (await getDevice(deviceId));
-      if (next) publishDevice(next);
-      return next;
+      if (before.externalId) {
+        await getShellyHub().refreshPresence(before.externalId);
+      } else {
+        const view = await updateDeviceState(deviceId, {
+          connectivity: "OFFLINE",
+          stateUpdatedAt: new Date().toISOString(),
+        });
+        if (view) publishDevice(view);
+      }
+      return getDevice(deviceId);
     }
     const snapshot = await this.gateway.read(deviceId);
     const view = await updateDeviceState(

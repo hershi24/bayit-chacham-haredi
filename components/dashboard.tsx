@@ -23,6 +23,7 @@ export function Dashboard() {
   const [busy, setBusy] = useState<Record<string, RelayAction | null>>({});
   const [bulkBusy, setBulkBusy] = useState<RelayAction | null>(null);
   const [live, setLive] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const applyDevice = useCallback((next: DeviceView) => {
     setDevices((current) => {
@@ -68,8 +69,9 @@ export function Dashboard() {
     }
   }, []);
 
-  const load = useCallback(async (refresh: boolean) => {
+  const load = useCallback(async (refresh: boolean, options?: { fromButton?: boolean }) => {
     void loadAudit();
+    if (options?.fromButton) setRefreshing(true);
     try {
       const [session, board] = await Promise.all([
         api<{ user: SessionUser }>("/api/auth/me"),
@@ -80,8 +82,13 @@ export function Dashboard() {
       setDevices(board.devices);
       setStatus(board.status);
       setError(null);
+      if (options?.fromButton) toast.success("מצב ההתקנים עודכן");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "טעינת הלוח נכשלה");
+      const message = cause instanceof Error ? cause.message : "טעינת הלוח נכשלה";
+      setError(message);
+      if (options?.fromButton) toast.error(message);
+    } finally {
+      if (options?.fromButton) setRefreshing(false);
     }
   }, [loadAudit]);
 
@@ -334,9 +341,16 @@ export function Dashboard() {
     <section className="w-full min-w-0">
       <div className="mb-6 flex items-center justify-between gap-3">
         <p className="min-w-0 truncate text-[13px] text-muted-foreground">{todayLabel()}</p>
-        <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 rounded-xl px-3 text-[13px] text-muted-foreground" onClick={() => void load(true)}>
-          <RefreshCw className="size-3.5" />
-          רענון
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={refreshing}
+          className="h-8 shrink-0 rounded-xl px-3 text-[13px] text-muted-foreground"
+          onClick={() => void load(true, { fromButton: true })}
+        >
+          <RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? "מרענן…" : "רענון"}
           <span className={`size-1.5 rounded-full ${live ? "bg-online" : "bg-muted-foreground/50"}`} aria-label={live ? "מחובר" : "מתחבר"} />
         </Button>
       </div>

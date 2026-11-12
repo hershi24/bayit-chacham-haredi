@@ -150,13 +150,20 @@ describe("token and retries", () => {
     assert.equal((await manager.get()).accessToken, "token-1");
     now += 60 * 1000;
     assert.equal((await manager.get()).accessToken, "token-2");
+    assert.equal((await manager.get(true)).accessToken, "token-3");
+    assert.equal(calls, 3);
     assert.deepEqual(manager.status().missingScopes, []);
   });
 
   it("reuses the same attempt after a lost response and refreshes once on 401", async () => {
     assert.equal(retryDecision({ networkError: true, refreshed: false, retries: 0 }), "retry-same-key");
     assert.equal(retryDecision({ status: 401, networkError: false, refreshed: false, retries: 0 }), "refresh-then-retry");
+    assert.equal(retryDecision({ status: 401, code: "AUTH_EXPIRED", networkError: false, refreshed: false, retries: 0 }), "refresh-then-retry");
     assert.equal(retryDecision({ status: 401, networkError: false, refreshed: true, retries: 0 }), "return");
+    assert.equal(retryDecision({ status: 403, code: "AUTH_EXPIRED", networkError: false, refreshed: false, retries: 0 }), "refresh-then-retry");
+    assert.equal(retryDecision({ status: 403, code: "AUTH_SCOPE_DENIED", networkError: false, refreshed: false, retries: 0 }), "refresh-then-retry");
+    assert.equal(retryDecision({ status: 403, code: "AUTH_EXPIRED", networkError: false, refreshed: true, retries: 0 }), "return");
+    assert.equal(retryDecision({ status: 400, code: "AUTH_INVALID", networkError: false, refreshed: false, retries: 0 }), "refresh-then-retry");
     assert.equal(retryDecision({ status: 422, code: "DEVICE_OFFLINE", networkError: false, refreshed: false, retries: 0 }), "return");
 
     const keys: string[] = [];

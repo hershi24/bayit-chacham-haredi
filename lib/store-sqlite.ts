@@ -252,7 +252,17 @@ function ensureAccessTables(database: DatabaseSync) {
     "INSERT OR IGNORE INTO caller_numbers (id, tenant_id, phone, created_at) VALUES (?, ?, ?, ?)",
   );
   for (const row of rows) {
-    insert.run(`ph_${text(row, "id")}`, text(row, "id"), text(row, "phone"), text(row, "created_at") || new Date().toISOString());
+    try {
+      insert.run(
+        `ph_${text(row, "id")}`,
+        text(row, "id"),
+        text(row, "phone"),
+        text(row, "created_at") || new Date().toISOString(),
+      );
+    } catch (error) {
+      // Another test process can delete the tenant between the read and this insert.
+      if (!(error instanceof Error) || !error.message.includes("FOREIGN KEY")) throw error;
+    }
   }
   addCallerColumn(database, "label", "label TEXT");
 }

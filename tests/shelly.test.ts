@@ -12,6 +12,7 @@ import {
   findShellyDevices,
   getDevice,
   listDevicesByExternalId,
+  updateDeviceState,
 } from "../lib/store";
 
 test("shelly channel ids round-trip", () => {
@@ -99,6 +100,53 @@ test("creating a Shelly Pro 3 registers three separate channels for a tenant", a
     assert.equal(removed.length, 3);
     assert.equal(await getDevice(`${shellyId}_ch1`), null);
     assert.equal((await listDevicesByExternalId(shellyId)).length, 0);
+  } finally {
+    for (const channel of [0, 1, 2]) {
+      try {
+        await deleteDevice(`${shellyId}_ch${channel}`);
+      } catch {
+        // ignore
+      }
+    }
+    await deleteTenant(tenant.id);
+  }
+});
+
+test("a missed Shelly heartbeat marks channels offline without waiting for TCP timeout", async () => {
+  const tenant = await createTenant({ name: `Shelly HB ${Date.now()}`, phone: null });
+  const shellyId = `shellypro3g3-hb${String(Date.now()).slice(-6)}`;
+  try {
+    await createShellyPro3({
+      shellyId,
+      tenantId: tenant.id,
+      kind: "panel",
+      channels: ["ערוץ א", "ערוץ ב", "ערוץ ג"],
+    });
+    const at = new Date().toISOString();
+    for (const channel of [0, 1, 2]) {
+      await updateDeviceState(`${shellyId}_ch${channel}`, { connectivity: "ONLINE", stateUpdatedAt: at });
+    }
+    assert.equal((await getDevice(`${shellyId}_ch0`))?.connectivity, "ONLINE");
+
+    let terminated = false;
+    const fake = {
+      OPEN: 1,
+      readyState: 1,
+      ping() {},
+      terminate() {
+        terminated = true;
+        this.readyState = 3;
+      },
+    };
+
+    // Same path as power-cut: socket still "open", but no pong → drop and mark OFFLINE.
+    getShellyHub().testHeartbeat(shellyId, fake as never, false);
+    assert.equal(terminated, true);
+    assert.equal(getShellyHub().isOnline(shellyId), false);
+    // markOffline is async; wait a tick for store + SSE publish.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal((await getDevice(`${shellyId}_ch0`))?.connectivity, "OFFLINE");
+    assert.equal((await getDevice(`${shellyId}_ch1`))?.connectivity, "OFFLINE");
   } finally {
     for (const channel of [0, 1, 2]) {
       try {

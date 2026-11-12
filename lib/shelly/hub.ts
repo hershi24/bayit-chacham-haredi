@@ -12,13 +12,20 @@ import {
 } from "@/lib/shelly/rpc";
 import type { RelayAction } from "@/lib/types";
 
-type Socket = WebSocket & { __pikudShellyId?: string };
+type Socket = WebSocket & {
+  __pikudShellyId?: string;
+  /** Cleared before each ping; set again on pong / any message. */
+  __pikudAlive?: boolean;
+};
 
 type Pending = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 };
+
+/** How often we probe connected Shellies. Missed pong → offline within about 2 intervals. */
+export const SHELLY_HEARTBEAT_MS = 8_000;
 
 const globalHub = globalThis as unknown as { __pikudShellyHub?: ShellyHub };
 
@@ -33,6 +40,7 @@ class ShellyHub {
   private nextId = 1;
   private mockOnline = new Set<string>();
   private mockState = new Map<string, boolean>();
+  private watchdog: ReturnType<typeof setInterval> | null = null;
 
   /** Test helper: pretend a Shelly is connected without a real socket. */
   mockConnect(shellyId: string, channels: Array<{ channel: ShellyChannel; on?: boolean }> = []) {
@@ -48,32 +56,43 @@ class ShellyHub {
     void this.markOffline(shellyId);
   }
 
+  /**
+   * Test helper: put a duck-typed socket on the hub and run one heartbeat tick.
+   * With `alive: false` the next tick marks the unit offline (same path as a missed pong).
+   */
+  testHeartbeat(shellyId: string, socket: Socket, alive: boolean) {
+    socket.__pikudShellyId = shellyId;
+    socket.__pikudAlive = alive;
+    this.sockets.set(shellyId, socket);
+    this.ensureWatchdog();
+    this.tickWatchdog();
+  }
+
   attach(socket: Socket) {
-    let nextInfoAt = Date.now();
+    socket.__pikudAlive = true;
+    socket.on("pong", () => {
+      socket.__pikudAlive = true;
+    });
     socket.on("message", (data) => {
+      socket.__pikudAlive = true;
       const text = typeof data === "string" ? data : Buffer.isBuffer(data) ? data.toString("utf8") : String(data);
       void this.onMessage(socket, text).catch((error) => {
         console.error("[shelly] message", error);
       });
     });
     socket.on("close", () => {
-      const id = socket.__pikudShellyId;
-      if (id && this.sockets.get(id) === socket) {
-        this.sockets.delete(id);
-        void this.markOffline(id);
-      }
+      this.forgetSocket(socket, true);
     });
     socket.on("error", (error) => {
       console.error("[shelly] socket", error);
     });
     // Ask for identity once the socket is open.
     const ask = () => {
-      if (Date.now() < nextInfoAt) return;
-      nextInfoAt = Date.now() + 5_000;
       this.sendRaw(socket, getDeviceInfoCall(this.nextId++));
     };
     if (socket.readyState === socket.OPEN) ask();
     else socket.once("open", ask);
+    this.ensureWatchdog();
   }
 
   async command(deviceId: string, action: RelayAction): Promise<{ status: "SUCCESS" | "FAILED"; message?: string }> {
@@ -119,6 +138,51 @@ class ShellyHub {
     if (this.mockOnline.has(shellyId)) return true;
     const socket = this.sockets.get(shellyId);
     return Boolean(socket && socket.readyState === socket.OPEN);
+  }
+
+  private ensureWatchdog() {
+    if (this.watchdog) return;
+    this.watchdog = setInterval(() => this.tickWatchdog(), SHELLY_HEARTBEAT_MS);
+    this.watchdog.unref?.();
+  }
+
+  private tickWatchdog() {
+    const unique = new Set<Socket>();
+    for (const socket of this.sockets.values()) unique.add(socket);
+    for (const socket of unique) {
+      if (socket.readyState !== socket.OPEN) {
+        this.forgetSocket(socket, true);
+        continue;
+      }
+      // Power cut leaves a half-open TCP socket; without a pong we never get `close`.
+      if (socket.__pikudAlive === false) {
+        try {
+          socket.terminate();
+        } catch {
+          // ignore
+        }
+        this.forgetSocket(socket, true);
+        continue;
+      }
+      socket.__pikudAlive = false;
+      try {
+        socket.ping();
+      } catch {
+        this.forgetSocket(socket, true);
+      }
+    }
+  }
+
+  private forgetSocket(socket: Socket, markOffline: boolean) {
+    const id = socket.__pikudShellyId;
+    let removed = false;
+    for (const [key, value] of this.sockets) {
+      if (value === socket) {
+        this.sockets.delete(key);
+        removed = true;
+      }
+    }
+    if (markOffline && id && removed) void this.markOffline(id);
   }
 
   private sendRaw(socket: Socket, payload: string) {

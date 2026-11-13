@@ -24,6 +24,8 @@ export function Dashboard() {
   const [bulkBusy, setBulkBusy] = useState<RelayAction | null>(null);
   const [live, setLive] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  const [refreshingIds, setRefreshingIds] = useState<string[]>([]);
 
   const applyDevice = useCallback((next: DeviceView) => {
     setDevices((current) => {
@@ -69,9 +71,8 @@ export function Dashboard() {
     }
   }, []);
 
-  const load = useCallback(async (refresh: boolean, options?: { fromButton?: boolean }) => {
+  const load = useCallback(async (refresh: boolean) => {
     void loadAudit();
-    if (options?.fromButton) setRefreshing(true);
     try {
       const [session, board] = await Promise.all([
         api<{ user: SessionUser }>("/api/auth/me"),
@@ -82,15 +83,84 @@ export function Dashboard() {
       setDevices(board.devices);
       setStatus(board.status);
       setError(null);
-      if (options?.fromButton) toast.success("מצב ההתקנים עודכן");
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "טעינת הלוח נכשלה";
-      setError(message);
-      if (options?.fromButton) toast.error(message);
-    } finally {
-      if (options?.fromButton) setRefreshing(false);
+      setError(cause instanceof Error ? cause.message : "טעינת הלוח נכשלה");
     }
   }, [loadAudit]);
+
+  const refreshBoard = useCallback(async () => {
+    setRefreshing(true);
+    setRefreshNote("מתחיל לסנכרן את השקעים…");
+    void loadAudit();
+    try {
+      let list = devices;
+      if (!list) {
+        const board = await api<Payload>("/api/devices");
+        list = board.devices;
+        setDevices(board.devices);
+        setStatus(board.status);
+      }
+      if (!list.length) {
+        toast.message("אין שקעים לרענון");
+        return;
+      }
+
+      const total = list.length;
+      let done = 0;
+      const active = new Map<string, string>();
+
+      const paint = () => {
+        const names = [...active.values()];
+        setRefreshingIds([...active.keys()]);
+        if (!names.length) {
+          setRefreshNote(done >= total ? "מסיים את העדכון…" : `עודכנו ${done} מתוך ${total}`);
+          return;
+        }
+        const head = names[0] ?? "שקע";
+        const more = names.length > 1 ? ` ועוד ${names.length - 1}` : "";
+        setRefreshNote(
+          done === 0 ? `מרענן את ${head}${more}…` : `מרענן את ${head}${more} · ${done} מתוך ${total}`,
+        );
+      };
+      paint();
+
+      await Promise.all(
+        list.map(async (device) => {
+          const label = device.name.trim() || "שקע";
+          active.set(device.deviceId, label);
+          paint();
+          try {
+            const result = await api<{ device: DeviceView }>(
+              `/api/devices/${encodeURIComponent(device.deviceId)}/refresh`,
+              { method: "POST" },
+            );
+            applyDevice(result.device);
+          } catch {
+            // Continue other sockets; final list reload reconciles.
+          } finally {
+            active.delete(device.deviceId);
+            done += 1;
+            paint();
+          }
+        }),
+      );
+
+      setRefreshNote("מעדכן את הלוח…");
+      const board = await api<Payload>("/api/devices");
+      setDevices(board.devices);
+      setStatus(board.status);
+      setError(null);
+      toast.success("מצב ההתקנים עודכן");
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "הרענון נכשל";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setRefreshing(false);
+      setRefreshNote(null);
+      setRefreshingIds([]);
+    }
+  }, [applyDevice, devices, loadAudit]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(true), 0);
@@ -319,18 +389,26 @@ export function Dashboard() {
       {devices && devices.length > 0 ? (
         <div className={deviceGrid}>
           {devices.map((device) => (
-            <SocketCard
+            <div
               key={device.deviceId}
-              device={device}
-              busy={busy[device.deviceId] ?? null}
-              showTenant={role === "admin"}
-              mockMode={status?.mode === "mock" && role === "admin"}
-              onCommand={(action) => void command(device, action)}
-              onSimulate={(patch) => void simulate(device, patch)}
-              onIcon={(icon) => chooseIcon(device, icon)}
-              onName={(name) => renameDevice(device, name)}
-              onTimer={(input) => armTimer(device, input)}
-            />
+              className={
+                refreshingIds.includes(device.deviceId)
+                  ? "rounded-2xl ring-1 ring-primary/25 transition-shadow duration-300"
+                  : "transition-shadow duration-300"
+              }
+            >
+              <SocketCard
+                device={device}
+                busy={busy[device.deviceId] ?? null}
+                showTenant={role === "admin"}
+                mockMode={status?.mode === "mock" && role === "admin"}
+                onCommand={(action) => void command(device, action)}
+                onSimulate={(patch) => void simulate(device, patch)}
+                onIcon={(icon) => chooseIcon(device, icon)}
+                onName={(name) => renameDevice(device, name)}
+                onTimer={(input) => armTimer(device, input)}
+              />
+            </div>
           ))}
         </div>
       ) : null}
@@ -339,20 +417,27 @@ export function Dashboard() {
 
   return (
     <section className="w-full min-w-0">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-[13px] text-muted-foreground">{todayLabel()}</p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={refreshing}
-          className="h-8 shrink-0 rounded-xl px-3 text-[13px] text-muted-foreground"
-          onClick={() => void load(true, { fromButton: true })}
-        >
-          <RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          {refreshing ? "מרענן…" : "רענון"}
-          <span className={`size-1.5 rounded-full ${live ? "bg-online" : "bg-muted-foreground/50"}`} aria-label={live ? "מחובר" : "מתחבר"} />
-        </Button>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <p className="min-w-0 truncate pt-1.5 text-[13px] text-muted-foreground">{todayLabel()}</p>
+        <div className="flex max-w-[min(100%,16rem)] flex-col items-end gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={refreshing}
+            className="h-8 shrink-0 rounded-xl px-3 text-[13px] text-muted-foreground"
+            onClick={() => void refreshBoard()}
+          >
+            <RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            {refreshing ? "מרענן…" : "רענון"}
+            <span className={`size-1.5 rounded-full ${live ? "bg-online" : "bg-muted-foreground/50"}`} aria-label={live ? "מחובר" : "מתחבר"} />
+          </Button>
+          {refreshing && refreshNote ? (
+            <p className="text-end text-[12px] leading-4 text-muted-foreground" aria-live="polite">
+              <span className="inline-block animate-pulse">{refreshNote}</span>
+            </p>
+          ) : null}
+        </div>
       </div>
       <div>
         <h1 className="text-[28px] leading-9 font-semibold tracking-tight text-balance sm:text-[32px]">

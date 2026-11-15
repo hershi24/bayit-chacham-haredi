@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { boardLine } from "@/lib/board-summary";
 import { api } from "@/lib/client-api";
 import type { DeviceIconKey } from "@/lib/devices/icons";
-import { planWhen } from "@/lib/time";
+import { planWhen, seenWhen } from "@/lib/time";
 import type { AuditView, BridgeStatus, DeviceView, RelayAction, SessionUser } from "@/lib/types";
 type Payload = { devices: DeviceView[]; status: BridgeStatus; user?: SessionUser };
 
@@ -26,6 +26,7 @@ export function Dashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [refreshingIds, setRefreshingIds] = useState<string[]>([]);
+  const [focusTenant, setFocusTenant] = useState<string | null>(null);
 
   const applyDevice = useCallback((next: DeviceView) => {
     setDevices((current) => {
@@ -100,6 +101,7 @@ export function Dashboard() {
         setDevices(board.devices);
         setStatus(board.status);
       }
+      if (focusTenant) list = list.filter((device) => device.tenantId === focusTenant);
       if (!list.length) {
         toast.message("אין שקעים לרענון");
         return;
@@ -160,7 +162,7 @@ export function Dashboard() {
       setRefreshNote(null);
       setRefreshingIds([]);
     }
-  }, [applyDevice, devices, loadAudit]);
+  }, [applyDevice, devices, focusTenant, loadAudit]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(true), 0);
@@ -213,7 +215,8 @@ export function Dashboard() {
   }
 
   async function commandAll(action: RelayAction) {
-    const targets = (devices ?? []).filter((device) => {
+    const pool = focusTenant ? (devices ?? []).filter((device) => device.tenantId === focusTenant) : devices ?? [];
+    const targets = pool.filter((device) => {
       if (device.frozen) return false;
       return action === "ON" ? device.relayOn !== true : device.relayOn !== false;
     });
@@ -280,10 +283,13 @@ export function Dashboard() {
     }
   }
 
-  const count = devices?.length ?? 0;
-  const connected = devices?.filter((device) => device.connectivity === "ONLINE").length ?? 0;
-  const running = devices?.filter((device) => device.relayOn === true).length ?? 0;
-  const upcoming = (devices ?? [])
+  const boardDevices =
+    role === "admin" && focusTenant ? (devices ?? []).filter((device) => device.tenantId === focusTenant) : devices;
+  const focusName = boardDevices?.[0]?.tenantName ?? "";
+  const count = boardDevices?.length ?? 0;
+  const connected = boardDevices?.filter((device) => device.connectivity === "ONLINE").length ?? 0;
+  const running = boardDevices?.filter((device) => device.relayOn === true).length ?? 0;
+  const upcoming = (boardDevices ?? [])
     .filter((device): device is DeviceView & { next: NonNullable<DeviceView["next"]> } => Boolean(device.next))
     .sort((a, b) => Date.parse(a.next.at) - Date.parse(b.next.at))
     .slice(0, 5);
@@ -380,15 +386,15 @@ export function Dashboard() {
         ) : null}
       </div>
       {devices === null && !error ? <div className="h-28 animate-pulse rounded-2xl bg-muted" /> : null}
-      {devices && devices.length === 0 ? (
+      {boardDevices && boardDevices.length === 0 ? (
         <div className="rounded-2xl border border-border/60 bg-card p-6 text-start">
           <h3 className="font-medium">אין שקעים משויכים לחשבון הזה</h3>
           <p className="mt-1 text-sm text-muted-foreground">מנהל המערכת יכול לשייך שקע ללקוח מתוך מסך הניהול.</p>
         </div>
       ) : null}
-      {devices && devices.length > 0 ? (
+      {boardDevices && boardDevices.length > 0 ? (
         <div className={deviceGrid}>
-          {devices.map((device) => (
+          {(boardDevices ?? []).map((device) => (
             <div
               key={device.deviceId}
               className={
@@ -400,7 +406,7 @@ export function Dashboard() {
               <SocketCard
                 device={device}
                 busy={busy[device.deviceId] ?? null}
-                showTenant={role === "admin"}
+                showTenant={false}
                 mockMode={status?.mode === "mock" && role === "admin"}
                 onCommand={(action) => void command(device, action)}
                 onSimulate={(patch) => void simulate(device, patch)}
@@ -440,11 +446,25 @@ export function Dashboard() {
         </div>
       </div>
       <div>
+        {role === "admin" && focusTenant ? (
+          <button type="button" className="mb-2 text-[13px] font-medium text-primary" onClick={() => setFocusTenant(null)}>
+            ← כל הלקוחות
+          </button>
+        ) : null}
         <h1 className="text-[28px] leading-9 font-semibold tracking-tight text-balance sm:text-[32px]">
-          {greeting()}
-          {name ? `, ${name}` : ""}
+          {role === "admin" && !focusTenant
+            ? "סקירת מערכת"
+            : role === "admin" && focusTenant
+              ? focusName || "לקוח"
+              : `${greeting()}${name ? `, ${name}` : ""}`}
         </h1>
-        <p className="mt-1 text-[15px] text-muted-foreground">{devices ? boardLine(connected, running) : "טוען את מצב השקעים"}</p>
+        <p className="mt-1 text-[15px] text-muted-foreground">
+          {role === "admin" && !focusTenant
+            ? "לקוחות, חיבורים, ומה שדורש טיפול. שקעים נפתחים לפי לקוח."
+            : devices
+              ? boardLine(connected, running)
+              : "טוען את מצב השקעים"}
+        </p>
       </div>
       {status?.lastError ? <p className="mt-4 text-sm text-destructive">{status.lastError}</p> : null}
       {status?.token.missingScopes.length ? (
@@ -461,7 +481,11 @@ export function Dashboard() {
         </div>
       ) : null}
 
-      {compactBoard ? (
+      {role === "admin" && !focusTenant ? (
+        <div className="mt-8">
+          {devices ? <AdminOverview devices={devices} onOpen={setFocusTenant} /> : <div className="h-28 animate-pulse rounded-2xl bg-muted" />}
+        </div>
+      ) : compactBoard ? (
         <div className="mt-8 grid min-w-0 items-start gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(17rem,0.9fr)]">
           {socketsBlock}
           <aside className="grid min-w-0 gap-8">{upcomingBlock}{recentBlock}</aside>
@@ -507,4 +531,99 @@ function greeting() {
 
 function todayLabel() {
   return new Intl.DateTimeFormat("he-IL", { timeZone: "Asia/Jerusalem", weekday: "long", day: "numeric", month: "long" }).format(new Date());
+}
+
+function AdminOverview({ devices, onOpen }: { devices: DeviceView[]; onOpen: (tenantId: string) => void }) {
+  const [query, setQuery] = useState("");
+  const groups = new Map<string, { name: string; devices: DeviceView[] }>();
+  for (const device of devices) {
+    const group = groups.get(device.tenantId) ?? { name: device.tenantName || "לקוח", devices: [] };
+    group.devices.push(device);
+    groups.set(device.tenantId, group);
+  }
+  const needle = query.trim();
+  const customers = [...groups.entries()]
+    .map(([id, group]) => ({ id, ...group }))
+    .filter((group) => !needle || group.name.includes(needle))
+    .sort((left, right) => {
+      const leftOff = left.devices.filter((device) => device.connectivity !== "ONLINE").length;
+      const rightOff = right.devices.filter((device) => device.connectivity !== "ONLINE").length;
+      if (leftOff !== rightOff) return rightOff - leftOff;
+      return left.name.localeCompare(right.name, "he");
+    });
+  const offline = devices.filter((device) => device.connectivity !== "ONLINE").slice(0, 8);
+  const online = devices.filter((device) => device.connectivity === "ONLINE").length;
+  const running = devices.filter((device) => device.relayOn === true).length;
+
+  return (
+    <div className="grid gap-8">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="לקוחות" value={String(groups.size)} />
+        <Stat label="מחוברים" value={String(online)} />
+        <Stat label="לא מחוברים" value={String(devices.length - online)} />
+        <Stat label="פועלים עכשיו" value={String(running)} />
+      </div>
+      {offline.length ? (
+        <div>
+          <h2 className="mb-3 text-[13px] font-medium text-muted-foreground">דורש תשומת לב</h2>
+          <ul className="overflow-hidden rounded-2xl border border-border/60 bg-card">
+            {offline.map((device) => (
+              <li key={device.deviceId} className="border-b border-border/50 last:border-b-0">
+                <button type="button" className="flex w-full items-center gap-3 px-4 py-3 text-start" onClick={() => onOpen(device.tenantId)}>
+                  <span className="size-2 shrink-0 rounded-full bg-destructive" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[15px] font-medium">{device.name}</span>
+                    <span className="block truncate text-[13px] text-muted-foreground">
+                      {device.tenantName} · נראה לאחרונה {seenWhen(device.lastOnlineAt ?? device.stateUpdatedAt)}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="rounded-2xl border border-border/60 bg-card px-4 py-3 text-[14px] text-muted-foreground">כל ההתקנים מחוברים.</p>
+      )}
+      <div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-[13px] font-medium text-muted-foreground">לקוחות</h2>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="חיפוש לקוח"
+            className="h-9 w-full max-w-xs rounded-xl border border-border bg-card px-3 text-[14px]"
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {customers.map((customer) => {
+            const up = customer.devices.filter((device) => device.connectivity === "ONLINE").length;
+            const on = customer.devices.filter((device) => device.relayOn === true).length;
+            return (
+              <button
+                key={customer.id}
+                type="button"
+                className="rounded-2xl border border-border/60 bg-card px-4 py-4 text-start hover:border-primary/40"
+                onClick={() => onOpen(customer.id)}
+              >
+                <span className="block truncate text-[16px] font-semibold">{customer.name}</span>
+                <span className="mt-1 block text-[13px] text-muted-foreground">
+                  {customer.devices.length} התקנים · {up} מחוברים · {on} פועלים
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card px-4 py-3">
+      <p className="text-[12px] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-[22px] font-semibold tabular-nums">{value}</p>
+    </div>
+  );
 }

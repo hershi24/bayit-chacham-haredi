@@ -31,6 +31,10 @@ export type DeviceView = {
   connectivity: Connectivity;
   relayOn: boolean | null;
   stateUpdatedAt: string | null;
+  /** Last time the device was actually online. Kept after it disconnects. */
+  lastOnlineAt?: string | null;
+  /** When the device was added in admin. */
+  createdAt?: string | null;
   deviceType: string | null;
   sensorSummary: string | null;
   lastError: string | null;

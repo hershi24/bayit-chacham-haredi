@@ -37,6 +37,7 @@ create table if not exists device_state (
   connectivity text not null,
   relay_on boolean,
   state_updated_at text,
+  last_online_at text,
   device_type text,
   api_name text,
   sensor_summary text,

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { DEVICE_ICONS, isDeviceIcon, suggestIcon, type DeviceIconKey } from "@/lib/devices/icons";
 import "./power-switch.css";
-import { planWhen } from "@/lib/time";
+import { planWhen, seenWhen } from "@/lib/time";
 import type { DeviceView, RelayAction } from "@/lib/types";
 
 const PRESETS = [
@@ -163,6 +163,9 @@ export function SocketCard({
     <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[14px] text-muted-foreground">
       <span className={`size-2 rounded-full ${offline ? "bg-destructive" : device.connectivity === "ONLINE" ? "bg-online" : "bg-muted-foreground"}`} />
       <span className={offline ? "text-destructive" : ""}>{link}</span>
+      {device.connectivity === "ONLINE" ? null : (
+        <span className="text-[13px]">· נראה לאחרונה {seenWhen(device.lastOnlineAt ?? device.stateUpdatedAt)}</span>
+      )}
     </p>
   );
 

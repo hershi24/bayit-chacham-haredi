@@ -18,8 +18,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/client-api";
-import { formatIsrael } from "@/lib/time";
-import type { BridgeStatus, CallerNumber, DeviceView, TenantView, UserView } from "@/lib/types";
+import { formatIsrael, seenWhen } from "@/lib/time";
+import type { AuditView, BridgeStatus, CallerNumber, DeviceView, TenantView, UserView } from "@/lib/types";
 
 type IvrInfo = {
   token: string;
@@ -450,6 +450,8 @@ function CustomerEditorForm({
   const [channelNames, setChannelNames] = useState(["לוח ערוץ 1", "לוח ערוץ 2", "לוח ערוץ 3"]);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [addKind, setAddKind] = useState<"wlte" | "shelly" | null>(null);
+  const [logId, setLogId] = useState<string | null>(null);
   const tenantDevices = devices.filter((device) => device.tenantId === tenant?.id);
 
   function toggleDevice(deviceId: string) {
@@ -731,14 +733,20 @@ function CustomerEditorForm({
                             {device.vendor === "shelly"
                               ? `Shelly · ${device.kind === "panel" ? "לוח חשמל" : "שקע"} · ערוץ ${(device.channel ?? 0) + 1}`
                               : "WLTE · שקע"}
+                            {device.connectivity === "ONLINE" ? " · מחובר" : ` · מנותק, נראה לאחרונה ${seenWhen(device.lastOnlineAt ?? device.stateUpdatedAt)}`}
                           </span>
+                          <span className="block text-xs text-muted-foreground">נוסף למערכת {device.createdAt ? formatIsrael(device.createdAt) : "—"}</span>
                           <span dir="ltr" className="block truncate text-left font-mono text-xs text-muted-foreground">
                             {device.deviceId}
                           </span>
+                          {logId === device.deviceId ? <DeviceChangeLog deviceId={device.deviceId} /> : null}
                         </span>
                         <span className="flex shrink-0 flex-wrap justify-end gap-1">
                           <Button type="button" variant="outline" size="sm" disabled={socketBusy !== null} onClick={() => startRename(device)}>
                             כינוי
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setLogId((current) => (current === device.deviceId ? null : device.deviceId))}>
+                            {logId === device.deviceId ? "סגירת יומן" : "יומן"}
                           </Button>
                           <Button type="button" variant="outline" size="sm" disabled={socketBusy !== null} onClick={() => void freezeSocket(device)}>
                             {device.frozen ? "שחרור" : "הקפאה"}
@@ -755,6 +763,20 @@ function CustomerEditorForm({
             ) : (
               <p className="text-sm text-muted-foreground">ללקוח הזה אין עדיין שקעים.</p>
             )}
+            <div className="grid gap-3 rounded-xl border border-border p-3">
+              <p className="text-sm font-medium">הוספת התקן</p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant={addKind === "wlte" ? "default" : "outline"} onClick={() => setAddKind("wlte")}>
+                  שקע WLTE
+                </Button>
+                <Button type="button" size="sm" variant={addKind === "shelly" ? "default" : "outline"} onClick={() => setAddKind("shelly")}>
+                  Shelly Pro 3
+                </Button>
+              </div>
+              {addKind === null ? (
+                <p className="text-xs text-muted-foreground">בחרו סוג התקן. רק הטופס של הסוג שנבחר נפתח.</p>
+              ) : null}
+            {addKind === "wlte" ? (
             <div
               className="grid gap-2"
               onKeyDown={(event) => {
@@ -771,8 +793,10 @@ function CustomerEditorForm({
                 הוספת שקע WLTE
               </Button>
             </div>
-            <div className="mt-4 grid gap-2 rounded-xl border border-dashed border-border p-3">
-              <p className="text-sm font-medium">Shelly Pro 3 · שלושה ערוצים</p>
+            ) : null}
+            {addKind === "shelly" ? (
+            <div className="grid gap-2">
+              <p className="text-sm font-medium">שלושה ערוצים</p>
               <Label htmlFor="shelly-id">מזהה Shelly</Label>
               <Input
                 id="shelly-id"
@@ -823,6 +847,8 @@ function CustomerEditorForm({
                 הוספת Shelly Pro 3
               </Button>
             </div>
+            ) : null}
+            </div>
           </div>
           {user ? (
             <fieldset className="grid gap-2">
@@ -864,6 +890,27 @@ function CustomerEditorForm({
         <Button type="submit" disabled={pending}>{pending ? "שומר…" : "שמירה"}</Button>
       </DialogFooter>
     </form>
+  );
+}
+
+function DeviceChangeLog({ deviceId }: { deviceId: string }) {
+  const [entries, setEntries] = useState<AuditView[] | null>(null);
+  useEffect(() => {
+    void api<{ entries: AuditView[] }>("/api/audit")
+      .then((payload) => setEntries(payload.entries.filter((entry) => entry.deviceId === deviceId).slice(0, 8)))
+      .catch(() => setEntries([]));
+  }, [deviceId]);
+  if (!entries) return <p className="text-xs text-muted-foreground">טוען יומן…</p>;
+  if (!entries.length) return <p className="text-xs text-muted-foreground">אין שינויים אחרונים ביומן של ההתקן.</p>;
+  return (
+    <ul className="grid gap-1 rounded-lg bg-muted/60 px-2 py-2">
+      {entries.map((entry) => (
+        <li key={entry.id} className="text-xs text-muted-foreground">
+          <span dir="ltr">{formatIsrael(entry.at)}</span>
+          {` · ${entry.actor} · ${entry.action}${entry.detail ? ` · ${entry.detail}` : ""}`}
+        </li>
+      ))}
+    </ul>
   );
 }
 

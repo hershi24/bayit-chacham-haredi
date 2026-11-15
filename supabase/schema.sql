@@ -141,6 +141,7 @@ alter table programs add column if not exists skipped_dates text not null defaul
 
 alter table devices add column if not exists icon text;
 alter table devices add column if not exists frozen integer not null default 0;
+alter table devices add column if not exists sort_order integer not null default 0;
 
 create table if not exists clocks (
   id text primary key,

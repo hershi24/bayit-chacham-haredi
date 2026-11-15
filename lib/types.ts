@@ -40,6 +40,8 @@ export type DeviceView = {
   lastError: string | null;
   icon: string | null;
   frozen: boolean;
+  /** Lower comes first in the dashboard and the phone menu. */
+  sortOrder: number;
   vendor: DeviceVendor;
   kind: DeviceKind;
   externalId: string | null;

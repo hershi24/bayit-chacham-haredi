@@ -5,6 +5,7 @@ import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { HttpError } from "@/lib/http-error";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { compareDevices } from "@/lib/devices/order";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import { resolveDateClocks } from "@/lib/programs/dates";
@@ -36,6 +37,7 @@ type DeviceRow = {
   tenant_id: string;
   icon?: string | null;
   frozen?: boolean | number | null;
+  sort_order?: number | null;
   vendor?: string | null;
   kind?: string | null;
   external_id?: string | null;
@@ -257,6 +259,7 @@ function mapDevice(row: DeviceRow): DeviceView & { phone: string | null } {
     lastError: state?.last_error ?? null,
     icon: row.icon ?? null,
     frozen: row.frozen === true || row.frozen === 1,
+    sortOrder: Number(row.sort_order) || 0,
     vendor: row.vendor === "shelly" ? "shelly" : "wlte",
     kind: row.kind === "panel" ? "panel" : "socket",
     externalId: row.external_id ?? null,
@@ -266,7 +269,7 @@ function mapDevice(row: DeviceRow): DeviceView & { phone: string | null } {
 
 const deviceColumnsPlain =
   "device_id, name, tenant_id, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)";
-let deviceColumns = `device_id, name, tenant_id, icon, frozen, vendor, kind, external_id, channel, created_at, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, last_online_at, device_type, sensor_summary, last_error)`;
+let deviceColumns = `device_id, name, tenant_id, icon, frozen, sort_order, vendor, kind, external_id, channel, created_at, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, last_online_at, device_type, sensor_summary, last_error)`;
 
 function iconColumnMissing(error: DbError) {
   return deviceColumns.includes("icon") && (error.code === "42703" || error.code === "PGRST204" || /icon/i.test(error.message));
@@ -282,6 +285,12 @@ async function deviceRows(tenantId?: string | null): Promise<DeviceRow[]> {
   let result = await query;
   if (result.error && frozenColumnMissing(result.error)) {
     deviceColumns = deviceColumns.replace(", frozen", "");
+    query = client().from("devices").select(deviceColumns);
+    if (tenantId) query = query.eq("tenant_id", tenantId);
+    result = await query;
+  }
+  if (result.error && sortOrderColumnMissing(result.error)) {
+    deviceColumns = deviceColumns.replace(", sort_order", "");
     query = client().from("devices").select(deviceColumns);
     if (tenantId) query = query.eq("tenant_id", tenantId);
     result = await query;
@@ -303,11 +312,11 @@ async function deviceRows(tenantId?: string | null): Promise<DeviceRow[]> {
 }
 
 function sortDevices(rows: Array<DeviceView & { phone: string | null }>, byTenant: boolean) {
-  return rows.sort((left, right) => {
-    if (byTenant && left.tenantName !== right.tenantName) return left.tenantName < right.tenantName ? -1 : 1;
-    if (left.name === right.name) return 0;
-    return left.name < right.name ? -1 : 1;
-  });
+  return rows.sort((left, right) => compareDevices(left, right, byTenant));
+}
+
+function sortOrderColumnMissing(error: DbError) {
+  return deviceColumns.includes("sort_order") && (error.code === "42703" || error.code === "PGRST204" || /sort_order/i.test(error.message));
 }
 
 export async function listDevices(user: { id?: string; role: Role; tenantId: string | null }): Promise<DeviceView[]> {
@@ -337,6 +346,10 @@ export async function getDevice(deviceId: string): Promise<(DeviceView & { phone
   let result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
   if (result.error && frozenColumnMissing(result.error)) {
     deviceColumns = deviceColumns.replace(", frozen", "");
+    result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
+  }
+  if (result.error && sortOrderColumnMissing(result.error)) {
+    deviceColumns = deviceColumns.replace(", sort_order", "");
     result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
   }
   if (result.error && iconColumnMissing(result.error)) {
@@ -848,7 +861,7 @@ export async function createShellyPro3(input: {
 export async function listDevicesByExternalId(externalId: string): Promise<DeviceView[]> {
   await ready();
   const id = externalId.trim().toLowerCase();
-  let result = await client().from("devices").select(deviceColumns).ilike("external_id", id);
+  const result = await client().from("devices").select(deviceColumns).ilike("external_id", id);
   if (result.error && /external_id/i.test(result.error.message)) return [];
   if (result.error) fail(result.error, "לא ניתן לקרוא התקני Shelly");
   return ((result.data ?? []) as unknown as DeviceRow[]).map(mapDevice).map(presentDevice);
@@ -1033,6 +1046,29 @@ export async function listAudit(user: { role: Role; tenantId: string | null }, l
     result: String(row.result),
     detail: row.detail == null ? null : String(row.detail),
   }));
+}
+
+export async function saveDeviceOrder(tenantId: string, deviceIds: string[]): Promise<DeviceView[]> {
+  await ready();
+  const owned = sortDevices((await deviceRows(tenantId)).map(mapDevice), false);
+  const allowed = new Set(owned.map((device) => device.deviceId));
+  const ordered = [...new Set(deviceIds.filter((id) => allowed.has(id)))];
+  for (const device of owned) {
+    if (!ordered.includes(device.deviceId)) ordered.push(device.deviceId);
+  }
+  for (const [index, deviceId] of ordered.entries()) {
+    const result = await client().from("devices").update({ sort_order: index }).eq("device_id", deviceId).eq("tenant_id", tenantId);
+    if (result.error) {
+      if (result.error.code === "42703" || result.error.code === "PGRST204" || /sort_order/i.test(result.error.message)) {
+        throw new HttpError(
+          500,
+          "עמודת סדר ההתקנים חסרה. הריצו: alter table devices add column if not exists sort_order integer not null default 0;",
+        );
+      }
+      fail(result.error, "שמירת סדר ההתקנים נכשלה");
+    }
+  }
+  return sortDevices((await deviceRows(tenantId)).map(mapDevice), false).map(presentDevice);
 }
 
 export async function setDeviceFrozen(deviceId: string, frozen: boolean): Promise<DeviceView | null> {

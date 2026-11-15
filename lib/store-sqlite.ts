@@ -61,11 +61,13 @@ function db(): DatabaseSync {
     ensureDayClocks(globalDb.__pikudDb);
     addDeviceColumn(globalDb.__pikudDb, "icon", "icon TEXT");
     addDeviceColumn(globalDb.__pikudDb, "frozen", "frozen INTEGER NOT NULL DEFAULT 0");
+    addDeviceColumn(globalDb.__pikudDb, "sort_order", "sort_order INTEGER NOT NULL DEFAULT 0");
     ensureAccessTables(globalDb.__pikudDb);
     dayClocksReady = true;
   }
   addDeviceColumn(globalDb.__pikudDb, "frozen", "frozen INTEGER NOT NULL DEFAULT 0");
   addDeviceColumn(globalDb.__pikudDb, "vendor", "vendor TEXT NOT NULL DEFAULT 'wlte'");
+  addDeviceColumn(globalDb.__pikudDb, "sort_order", "sort_order INTEGER NOT NULL DEFAULT 0");
   addDeviceColumn(globalDb.__pikudDb, "kind", "kind TEXT NOT NULL DEFAULT 'socket'");
   addDeviceColumn(globalDb.__pikudDb, "external_id", "external_id TEXT");
   addDeviceColumn(globalDb.__pikudDb, "channel", "channel INTEGER");
@@ -238,6 +240,7 @@ function migrate(database: DatabaseSync) {
   `);
   addDeviceColumn(database, "icon", "icon TEXT");
   addDeviceColumn(database, "frozen", "frozen INTEGER NOT NULL DEFAULT 0");
+  addDeviceColumn(database, "sort_order", "sort_order INTEGER NOT NULL DEFAULT 0");
   ensureAccessTables(database);
 }
 
@@ -307,7 +310,7 @@ function seed(database: DatabaseSync) {
 
 function deviceSelect() {
   return `
-    SELECT d.device_id, d.name, d.icon, d.frozen, d.vendor, d.kind, d.external_id, d.channel, d.tenant_id, d.created_at,
+    SELECT d.device_id, d.name, d.icon, d.frozen, d.sort_order, d.vendor, d.kind, d.external_id, d.channel, d.tenant_id, d.created_at,
       t.name AS tenant_name, t.phone AS tenant_phone,
       s.connectivity, s.relay_on, s.state_updated_at, s.last_online_at, s.device_type, s.sensor_summary, s.last_error
     FROM devices d
@@ -344,6 +347,7 @@ function mapDevice(row: Row): DeviceView & { phone: string | null } {
     lastError: textOrNull(row, "last_error"),
     icon: textOrNull(row, "icon"),
     frozen: Number(row.frozen) === 1,
+    sortOrder: Number(row.sort_order) || 0,
     vendor: vendorOf(row),
     kind: kindOf(row),
     externalId: textOrNull(row, "external_id"),
@@ -367,6 +371,7 @@ export function presentDevice(device: DeviceView & { phone?: string | null }): D
     lastError: device.lastError,
     icon: device.icon ?? null,
     frozen: device.frozen === true,
+    sortOrder: Number(device.sortOrder) || 0,
     vendor: device.vendor === "shelly" ? "shelly" : "wlte",
     kind: device.kind === "panel" ? "panel" : "socket",
     externalId: device.externalId ?? null,
@@ -391,8 +396,8 @@ export function grantsFor(userId: string): string[] | null {
 export function listDevices(user: { id?: string; role: Role; tenantId: string | null }): DeviceView[] {
   const rows =
     user.role === "admin"
-      ? (db().prepare(`${deviceSelect()} ORDER BY t.name, d.name`).all() as Row[])
-      : (db().prepare(`${deviceSelect()} WHERE d.tenant_id = ? ORDER BY d.name`).all(user.tenantId) as Row[]);
+      ? (db().prepare(`${deviceSelect()} ORDER BY t.name, d.sort_order, d.name`).all() as Row[])
+      : (db().prepare(`${deviceSelect()} WHERE d.tenant_id = ? ORDER BY d.sort_order, d.name`).all(user.tenantId) as Row[]);
   const views = rows.map((row) => presentDevice(mapDevice(row)));
   if (user.role === "admin" || !user.id) return views;
   const granted = grantsFor(user.id);
@@ -402,7 +407,7 @@ export function listDevices(user: { id?: string; role: Role; tenantId: string | 
 
 export function listIvrTargets(): Array<DeviceView & { phone: string | null; phones: string[] }> {
   const phones = callerNumbersByTenant();
-  return (db().prepare(`${deviceSelect()} ORDER BY d.name`).all() as Row[]).map((row) => {
+  return (db().prepare(`${deviceSelect()} ORDER BY d.sort_order, d.name`).all() as Row[]).map((row) => {
     const device = mapDevice(row);
     const listed = phones.get(device.tenantId)?.map((item) => item.phone) ?? [];
     const all = listed.length ? listed : device.phone ? [device.phone] : [];
@@ -984,6 +989,22 @@ function mapSchedule(row: Row): PendingSchedule {
   };
 }
 
+
+export function saveDeviceOrder(tenantId: string, deviceIds: string[]): DeviceView[] {
+  const owned = (db().prepare(`${deviceSelect()} WHERE d.tenant_id = ?`).all(tenantId) as Row[]).map(mapDevice);
+  const allowed = new Set(owned.map((device) => device.deviceId));
+  const ordered = [...new Set(deviceIds.filter((id) => allowed.has(id)))];
+  for (const device of owned) {
+    if (!ordered.includes(device.deviceId)) ordered.push(device.deviceId);
+  }
+  const update = db().prepare("UPDATE devices SET sort_order = ? WHERE device_id = ? AND tenant_id = ?");
+  ordered.forEach((id, index) => update.run(index, id, tenantId));
+  return ordered
+    .map((id) => getDevice(id))
+    .filter((device): device is NonNullable<typeof device> => Boolean(device))
+    .map((device) => presentDevice(device));
+}
+
 export function setDeviceIcon(deviceId: string, icon: string): DeviceView | null {
   const result = db().prepare("UPDATE devices SET icon = ? WHERE device_id = ?").run(icon, deviceId);
   if (Number(result.changes) === 0) return null;
@@ -1070,7 +1091,7 @@ export function failSchedule(id: string, detail: string) {
 }
 
 export function listTenantDevices(tenantId: string): DeviceView[] {
-  return (db().prepare(`${deviceSelect()} WHERE d.tenant_id = ? ORDER BY d.name`).all(tenantId) as Row[]).map((row) =>
+  return (db().prepare(`${deviceSelect()} WHERE d.tenant_id = ? ORDER BY d.sort_order, d.name`).all(tenantId) as Row[]).map((row) =>
     presentDevice(mapDevice(row)),
   );
 }

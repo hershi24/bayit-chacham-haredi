@@ -97,6 +97,7 @@ test("a published socket keeps its next event and drops the phone", () => {
     lastError: null,
     icon: "ac",
     frozen: false,
+    sortOrder: 0,
     vendor: "wlte",
     kind: "socket",
     externalId: null,

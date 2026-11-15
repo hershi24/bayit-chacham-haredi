@@ -86,6 +86,7 @@ export async function handleMenu(request: Request) {
   if (!input.phone) return reply(input.format, yemotSpeak("לא זוהה מספר הטלפון"));
   const targets = devicesForPhone(await listIvrTargets(), input.phone);
   const frozen = new Set(targets.filter((device) => device.frozen).map((device) => device.deviceId));
+  // Keep the customer's chosen order (sort_order). listIvrTargets already sorts that way.
   const devices: MenuDevice[] = targets
     .map((device) => ({
       deviceId: device.deviceId,
@@ -93,7 +94,6 @@ export async function handleMenu(request: Request) {
       relayOn: device.relayOn,
       connectivity: device.connectivity,
     }))
-    .sort((left, right) => left.name.localeCompare(right.name, "he"))
     .slice(0, 9);
   if (!devices.length) return reply(input.format, yemotSpeak("המספר הזה לא משויך לשקע"));
 
@@ -104,10 +104,12 @@ export async function handleMenu(request: Request) {
       tenantId,
       actorPhone: input.phone,
       deviceIds: targets.map((device) => device.deviceId),
+      devices: targets.map((device) => ({ deviceId: device.deviceId, name: device.name })),
       settings: present(input.values.pikud_settings),
       newPhone: present(input.values.pikud_new_phone),
       delPhone: present(input.values.pikud_del_phone),
       adminAsk: present(input.values.pikud_admin_ask),
+      orderValues: input.values,
     });
     if (answered.type === "read") return reply(input.format, yemotRead(answered));
     if (answered.type === "all") {
@@ -120,9 +122,22 @@ export async function handleMenu(request: Request) {
         const onlyFrozen = targets.length > 0 && targets.every((device) => device.frozen);
         return reply(input.format, yemotSpeak(allIdleMessage(answered.action, onlyFrozen)));
       }
-      for (const device of actionable) sendCommand(device.deviceId, answered.action, actor);
-      const message = allDoneMessage(answered.action, actionable.length);
-      return reply(input.format, yemotSpeak(message));
+      // Skip known-offline sockets entirely so they cannot delay or starve the rest.
+      const reachable = actionable.filter((device) => device.connectivity !== "OFFLINE");
+      if (!reachable.length) {
+        return reply(
+          input.format,
+          yemotSpeak(
+            answered.action === "ON" ? "אין שקעים מחוברים להפעלה כעת" : "אין שקעים מחוברים לכיבוי כעת",
+          ),
+        );
+      }
+      const ordered = [...reachable].sort((left, right) => {
+        const rank = (device: (typeof reachable)[number]) => (device.connectivity === "ONLINE" ? 0 : 1);
+        return rank(left) - rank(right);
+      });
+      for (const device of ordered) sendCommand(device.deviceId, answered.action, actor);
+      return reply(input.format, yemotSpeak(allDoneMessage(answered.action, ordered.length)));
     }
     return reply(input.format, yemotSpeak(answered.message));
   }

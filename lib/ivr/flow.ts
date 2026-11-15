@@ -26,25 +26,7 @@ export type MenuValues = {
 export type MenuRead = {
   type: "read";
   message: string;
-  field:
-    | "pikud_device"
-    | "pikud_action"
-    | "pikud_minutes"
-    | "pikud_repeat"
-    | "pikud_week"
-    | "pikud_date"
-    | "pikud_side"
-    | "pikud_on"
-    | "pikud_off"
-    | "pikud_more"
-    | "pikud_sockets"
-    | "pikud_settings"
-    | "pikud_new_phone"
-    | "pikud_del_phone"
-    | "pikud_admin_ask"
-    | "pikud_program"
-    | "pikud_program_op"
-    | "pikud_program_slot";
+  field: string;
   min: number;
   max: number;
   allowed?: string;

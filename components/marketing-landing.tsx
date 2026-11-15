@@ -41,25 +41,25 @@ function Glyph({ name }: { name: keyof typeof icons }) {
 }
 
 const features: Array<{ icon: keyof typeof icons; title: string; text: string }> = [
-  { icon: "phone", title: "שליטה מהפלאפון הכשר", text: "מתקשרים למערכת ומפעילים או מכבים את השקע באמצעות מקשי הטלפון. בלי סמארטפון ובלי אפליקציה." },
-  { icon: "monitor", title: "וגם דרך האתר", text: "מעדיפים מסך? נכנסים למערכת הניהול ורואים את השקעים שלכם במקום אחד." },
-  { icon: "plug", title: "בלי להזמין חשמלאי", text: "בדגם השקע: מחברים לשקע חשמל קיים, מבצעים את ההגדרה הראשונית ומתחילים להשתמש. אין צורך בעבודות חשמל." },
-  { icon: "globe", title: "שליטה מכל מקום", text: "לא חייבים להיות ליד המכשיר. אפשר לשלוט בו מרחוק דרך שיחת טלפון או ממשק הניהול." },
-  { icon: "layout", title: "ממשק ברור ונוח", text: "רשימת מכשירים, שמות ברורים וכפתורי הפעלה וכיבוי — בלי תפריטים מסובכים." },
-  { icon: "layers", title: "פתרון שנבנה קדימה", text: "מתחילים בשקע חכם פשוט, עם חזון להרחבת המערכת למוצרי שליטה נוספים בעתיד." },
+  { icon: "phone", title: "שליטה מהפלאפון הכשר", text: "מתקשרים למערכת ומפעילים או מכבים שקע או ערוץ Shelly במקשי הטלפון. בלי סמארטפון ובלי אפליקציה." },
+  { icon: "monitor", title: "וגם דרך האתר", text: "נכנסים למערכת ורואים את השקעים ואת ערוצי ה־Shelly במקום אחד, כולל תוכניות ושעונים." },
+  { icon: "plug", title: "שקע בלי חשמלאי", text: "בדגם השקע: מחברים לשקע חשמל קיים, משייכים לחשבון ומתחילים. אין צורך בעבודות חשמל." },
+  { icon: "globe", title: "שליטה מכל מקום", text: "לא חייבים להיות ליד המכשיר. שולטים מרחוק בשיחת טלפון או באתר, גם על שקע וגם על Shelly." },
+  { icon: "layout", title: "ממשק ברור ונוח", text: "שם לכל ערוץ, מצב מחובר או מנותק, וכפתור הפעלה וכיבוי. בלי תפריטים מסובכים." },
+  { icon: "layers", title: "גם Shelly Pro 3", text: "שלושה ערוצים נפרדים, כשקע או כלוח חשמל. כל ערוץ נשלט מהטלפון ומהאתר כמו שקע רגיל." },
 ];
 
 const steps = [
-  { title: "מחברים לחשמל", text: "מכניסים את השקע החכם לשקע הקיים ומחברים אליו מכשיר מתאים, בהתאם להוראות ולמגבלות ההספק." },
-  { title: "מגדירים ומשייכים", text: "מבצעים את ההגדרה הראשונית ומשייכים את השקע לחשבון שלכם." },
-  { title: "שולטים בדרך שלכם", text: "מפעילים ומכבים בשיחת טלפון מהפלאפון הכשר, או דרך מערכת הניהול באתר." },
+  { title: "מחברים את ההתקן", text: "שקע חכם נכנס לשקע הקיים. Shelly Pro 3 מותקן כשקע או בלוח החשמל, לפי סוג ההתקנה." },
+  { title: "משייכים לחשבון", text: "נותנים שם לכל שקע או ערוץ. ב־Shelly Pro 3 מקבלים שלושה ערוצים נפרדים באותו חשבון." },
+  { title: "שולטים בדרך שלכם", text: "מפעילים ומכבים בשיחה מהפלאפון הכשר, או באתר: גם מיידית, גם בטיימר, וגם בתוכנית." },
 ];
 
 const questions = [
-  ["אפשר לשלוט בשקע בלי סמארטפון?", "כן. השליטה מיועדת לעבוד באמצעות שיחה רגילה מהפלאפון הכשר, באמצעות מקשי הטלפון."],
-  ["אפשר לשלוט גם מהמחשב?", "כן. מערכת הניהול באתר מיועדת לאפשר ניהול השקעים דרך הדפדפן."],
-  ["צריך חשמלאי?", "לא עבור חיבור דגם השקע לשקע חשמל קיים ותקין. יש להשתמש במכשירים תואמים ולעמוד בהוראות הבטיחות. התקנות של מוצרים חשמליים אחרים עשויות לדרוש חשמלאי מוסמך."],
-  ["האם מוצרי Shelly כבר נתמכים?", "עדיין לא. שילוב עם מוצרי Shelly הוא כיוון לפיתוח עתידי, ויוצג כשיהיה זמין."],
+  ["אפשר לשלוט בלי סמארטפון?", "כן. שיחה רגילה מהפלאפון הכשר, ומקשי הטלפון מפעילים או מכבים שקע או ערוץ Shelly."],
+  ["אפשר לשלוט גם מהמחשב?", "כן. באתר רואים את ההתקנים, מדליקים ומכבים, ומגדירים תוכניות ושעונים."],
+  ["צריך חשמלאי?", "לא עבור חיבור דגם השקע לשקע חשמל קיים ותקין. התקנת Shelly בלוח חשמל נעשית על ידי חשמלאי מוסמך."],
+  ["האם Shelly נתמך?", "כן. Shelly Pro 3 נתמך במלואו: שלושה ערוצים, שליטה מהטלפון ומהאתר, תוכניות ושעונים. אפשר להתקין אותו כשקע או כלוח חשמל."],
 ];
 
 export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; onLogin: () => void }) {
@@ -145,7 +145,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           <a href="#benefits">היתרונות</a>
           <a href="#how">איך זה עובד</a>
           <a href="#control">הדגמה</a>
-          <a href="#future">מה בהמשך</a>
+          <a href="#devices">ההתקנים</a>
           <a className="btn primary" href="#login" onClick={enter}>
             כניסה למערכת ←
           </a>
@@ -173,17 +173,17 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                 <em>במרחק שיחת טלפון.</em>
               </h1>
               <p>
-                מדליקים ומכבים מכשירי חשמל מכל מקום — <strong>מהפלאפון הכשר בשיחה רגילה, וגם דרך האתר.</strong> בלי אפליקציה בטלפון. בלי להסתבך.
+                מדליקים ומכבים שקעים והתקני Shelly מכל מקום — <strong>מהפלאפון הכשר בשיחה רגילה, וגם דרך האתר.</strong> בלי אפליקציה בטלפון. בלי להסתבך.
               </p>
               <div className="actions">
                 <a className="btn primary" href="#how">
                   גלו איך זה עובד ←
                 </a>
                 <a className="btn outline" href="#login" onClick={enter}>
-                  כניסה לניהול השקעים
+                  כניסה לניהול
                 </a>
               </div>
-              <div className="tiny">✓ שליטה בשיחה רגילה &nbsp; ✓ ניהול דרך האתר &nbsp; ✓ שקע שמתחבר ללא חשמלאי</div>
+              <div className="tiny">✓ שליטה בשיחה רגילה &nbsp; ✓ ניהול באתר &nbsp; ✓ שקע ללא חשמלאי &nbsp; ✓ Shelly Pro 3</div>
             </div>
             <div className="product-stage">
               <div className="product-glow" />
@@ -230,7 +230,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                 <br />
                 או לחיצה בטלפון.
               </h2>
-              <p className="lead">שתי דרכים לשלוט באותו שקע. בחרו את הדרך הנוחה לכם. נסו להדליק ולכבות את השקע בהדגמה — ותראו כמה פשוט זה יכול להיות.</p>
+              <p className="lead">שיחה או אתר, לאותו התקן. נסו להדליק ולכבות בהדגמה — ככה זה מרגיש גם על שקע וגם על ערוץ Shelly.</p>
               <a href="#login" className="btn primary" onClick={enter}>
                 כניסה למערכת הניהול ←
               </a>
@@ -263,7 +263,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
             <div className="center reveal">
               <span className="kicker">איך מתחילים?</span>
               <h2 className="heading">שלושה צעדים. וזהו.</h2>
-              <p className="sub">בדגם השקע החכם, אין צורך להתקין מערכת חשמל חדשה בבית.</p>
+              <p className="sub">שקע חכם נכנס לשקע הקיים. Shelly Pro 3 מצטרף כשקע או כלוח, עם שלושה ערוצים.</p>
             </div>
             <div className="steps">
               {steps.map((step, index) => (
@@ -277,26 +277,25 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           </div>
         </section>
 
-        <section className="section dark" id="future">
+        <section className="section dark" id="devices">
           <div className="wrap future">
             <div className="reveal future-copy">
               <span className="kicker" style={{ color: "#6ad8ff" }}>
-                מסתכלים קדימה
+                שני סוגי התקנים
               </span>
               <h2 className="heading">
-                היום שקע חכם.
+                שקע חכם.
                 <br />
-                מחר הרבה יותר.
+                וגם Shelly Pro 3.
               </h2>
-              <p className="sub">החזון שלנו הוא להביא את השליטה החכמה לעוד ועוד מוצרי חשמל — גם למי שמשתמש בפלאפון כשר בלבד.</p>
-              <span className="pill">בפיתוח עתידי · לא זמין כרגע</span>
+              <p className="sub">אותה מערכת לשניהם: שיחה מהפלאפון הכשר, אתר, טיימר ותוכניות. בוחרים את ההתקן שמתאים לבית.</p>
             </div>
             <div className="future-card reveal">
               <div className="future-mark">
                 <Glyph name="layers" />
               </div>
-              <h3>Shelly + Kosher Smart Home</h3>
-              <p>אנחנו מתכננים לבחון שילוב מוצרי Shelly במערכת, כדי לאפשר בעתיד שליטה מהפלאפון הכשר גם בפתרונות נוספים. שילוב זה עדיין אינו פעיל ואינו מוצע כרגע.</p>
+              <h3>Shelly Pro 3 כבר במערכת</h3>
+              <p>שלושה ערוצים נפרדים, כל אחד עם שם משלו. אפשר להתקין כשקע או בלוח חשמל. מדליקים ומכבים מהטלפון ומהאתר, ורואים אם ההתקן מחובר.</p>
             </div>
           </div>
         </section>

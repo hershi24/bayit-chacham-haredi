@@ -14,6 +14,7 @@ import {
   REMOVE_CANCELLED,
   settingsMenu,
 } from "@/lib/ivr/settings-menu";
+import { auditSucceeded } from "@/lib/audit-result";
 import { addAudit, addCallerNumber, listAudit, listCallerNumbers, removeCallerNumber } from "@/lib/store";
 import { HttpError } from "@/lib/http-error";
 
@@ -86,6 +87,7 @@ export async function answerSettings(input: {
     const phone = normalizePhone(input.actorPhone);
     const entries = (await listAudit({ role: "admin", tenantId: null }, 40))
       .filter((entry) => {
+        if (!auditSucceeded(entry.result)) return false;
         if (entry.deviceId && owned.has(entry.deviceId)) return true;
         if (entry.action === "ADMIN_REQUEST" && entry.detail?.includes(input.tenantId)) return true;
         if ((entry.action === "PHONE_ADD" || entry.action === "PHONE_REMOVE") && entry.actor.includes(phone)) return true;

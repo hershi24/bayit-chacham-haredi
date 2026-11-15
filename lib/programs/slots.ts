@@ -37,10 +37,14 @@ export function parseSlots(raw: unknown, onTime: string | null, offTime: string 
     ? parsed
         .map((item) => {
           const record = (item ?? {}) as Record<string, unknown>;
+          const deviceIds = Array.isArray(record.deviceIds)
+            ? [...new Set(record.deviceIds.filter((item): item is string => typeof item === "string" && item.length > 0))]
+            : [];
           return {
             onTime: time(record.onTime),
             offTime: time(record.offTime),
             weekdays: Array.isArray(record.weekdays) ? cleanWeekdays(record.weekdays.map((item) => Number(item))) : [],
+            ...(deviceIds.length ? { deviceIds } : {}),
           };
         })
         .filter((slot) => slot.onTime || slot.offTime)

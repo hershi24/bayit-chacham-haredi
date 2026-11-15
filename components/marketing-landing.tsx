@@ -5,6 +5,7 @@ import Image from "next/image";
 import {
   ArrowLeft,
   Check,
+  CalendarDays,
   CircuitBoard,
   Clock,
   Coffee,
@@ -17,6 +18,7 @@ import {
   Phone,
   PhoneCall,
   Plug,
+  Repeat,
   Send,
   ShieldCheck,
   Snowflake,
@@ -179,6 +181,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
         <div className="navlinks">
           <a href="#how">איך זה עובד</a>
           <a href="#inside">מבפנים</a>
+          <a href="#plans">שעונים</a>
           <a href="#devices">ההתקנים</a>
           <a href="#faq">שאלות</a>
           <a href="#contact">צור קשר</a>
@@ -355,7 +358,54 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           </div>
         </section>
 
-        <section className="section tint" id="devices">
+        <section className="section tint" id="plans">
+          <div className="wrap split plans">
+            <div className="reveal">
+              <span className="kicker">לוח השעונים</span>
+              <h2>קובעים פעם אחת. לכל השבוע, ולשבת.</h2>
+              <p className="lead">כל השעונים של הבית בלוח חודשי אחד. רואים מה יידלק ומתי, ובלחיצה על יום מוסיפים שעון.</p>
+              <ul className="plan-points">
+                <li>
+                  <CalendarDays size={19} />
+                  <span>
+                    <strong>תאריך עברי ופרשת השבוע</strong> בכל יום בלוח
+                  </span>
+                </li>
+                <li>
+                  <Flame size={19} />
+                  <span>
+                    <strong>זמני כניסת שבת וחג וזמני היציאה</strong> לפי העיר שלכם, כך שקל לכוון את השעונים לשבת ולערב חג
+                  </span>
+                </li>
+                <li>
+                  <Repeat size={19} />
+                  <span>
+                    <strong>פעם אחת, כל יום, או רק בימים שבוחרים</strong>, וכמה שעונים באותה תוכנית
+                  </span>
+                </li>
+              </ul>
+            </div>
+            <figure className="browser reveal">
+              <div className="browser-bar">
+                <span />
+                <span />
+                <span />
+                <div className="browser-url" dir="ltr">
+                  kosher-smart-home
+                </div>
+              </div>
+              <Image
+                src="/product/planner.webp"
+                width={720}
+                height={756}
+                alt="לוח השעונים: חודש עברי ולועזי, שעוני הדלקה וכיבוי, זמני כניסת שבת ויציאתה"
+                className="browser-img"
+              />
+            </figure>
+          </div>
+        </section>
+
+        <section className="section" id="devices">
           <div className="wrap">
             <div className="head reveal">
               <span className="kicker">ההתקנים</span>
@@ -406,7 +456,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           </div>
         </section>
 
-        <section className="section" id="start">
+        <section className="section tint" id="start">
           <div className="wrap">
             <div className="head reveal">
               <span className="kicker">איך מתחילים</span>
@@ -424,7 +474,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           </div>
         </section>
 
-        <section className="section tint" id="faq">
+        <section className="section" id="faq">
           <div className="wrap narrow">
             <div className="head reveal">
               <span className="kicker">שאלות נפוצות</span>
@@ -441,7 +491,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           </div>
         </section>
 
-        <section className="section" id="contact">
+        <section className="section tint" id="contact">
           <div className="wrap">
             <div className="contact reveal">
               <div className="contact-copy">
@@ -495,6 +545,10 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
               </li>
               <li>
                 <a href="#inside">מבפנים</a>
+          <a href="#plans">שעונים</a>
+              </li>
+              <li>
+                <a href="#plans">לוח השעונים</a>
               </li>
               <li>
                 <a href="#devices">ההתקנים</a>

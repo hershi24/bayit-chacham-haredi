@@ -10,6 +10,7 @@ import { boardLine } from "@/lib/board-summary";
 import { api } from "@/lib/client-api";
 import type { DeviceIconKey } from "@/lib/devices/icons";
 import { planWhen, seenWhen } from "@/lib/time";
+import { auditSucceeded } from "@/lib/audit-result";
 import type { AuditView, BridgeStatus, DeviceView, RelayAction, SessionUser } from "@/lib/types";
 type Payload = { devices: DeviceView[]; status: BridgeStatus; user?: SessionUser };
 
@@ -294,7 +295,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
     .filter((device): device is DeviceView & { next: NonNullable<DeviceView["next"]> } => Boolean(device.next))
     .sort((a, b) => Date.parse(a.next.at) - Date.parse(b.next.at))
     .slice(0, 5);
-  const recent = (audit ?? []).filter((entry) => entry.deviceName).slice(0, 5);
+  const recent = (audit ?? []).filter((entry) => entry.deviceName && auditSucceeded(entry.result)).slice(0, 5);
   const compactBoard = count > 0 && count <= 2;
 
   const deviceGrid =

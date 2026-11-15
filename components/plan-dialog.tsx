@@ -47,6 +47,7 @@ type Range = {
   clockId: string | null;
   originalDate: string | null;
   weekdays?: number[];
+  deviceIds: string[];
 };
 
 type FormState = {
@@ -119,8 +120,9 @@ function clockRange(
   clockId: string | null = null,
   originalDate: string | null = null,
   weekdays?: number[],
-): Range {
-  return { key: rangeId(), on, off, date, clockId, originalDate, weekdays };
+  deviceIds: string[] = [],
+) {
+  return { key: rangeId(), on, off, date, clockId, originalDate, weekdays, deviceIds: [...deviceIds] };
 }
 
 function isIso(value: string) {
@@ -149,11 +151,14 @@ function applyWeekdays(ranges: Range[], weekdays: number[], startDate: string): 
 
 function rangesFromProgram(draft: PlannerDraft, program: PlannerProgram): Range[] {
   const origin = program.startDate || draft.date;
+  const fallback = knownIds(program.deviceIds, draft.devices);
   if (program.weekdays.length === 7) {
     const rows = program.slots
       .filter((slot) => slot.onTime || slot.offTime)
-      .map((slot) => clockRange(slot.onTime ?? "", slot.offTime ?? "", origin));
-    return rows.length ? rows : [clockRange("08:00", "09:00", origin)];
+      .map((slot) =>
+        clockRange(slot.onTime ?? "", slot.offTime ?? "", origin, null, null, undefined, knownIds(slot.deviceIds?.length ? slot.deviceIds : fallback, draft.devices)),
+      );
+    return rows.length ? rows : [clockRange("08:00", "09:00", origin, null, null, undefined, fallback)];
   }
   if (program.weekdays.length) {
     const rows = program.slots
@@ -161,13 +166,31 @@ function rangesFromProgram(draft: PlannerDraft, program: PlannerProgram): Range[
       .map((slot) => {
         const days = slot.weekdays?.length ? slot.weekdays : program.weekdays;
         const weekday = days[0] ?? weekdayOf(origin);
-        return clockRange(slot.onTime ?? "", slot.offTime ?? "", dateForWeekday(weekday, origin), null, null, days);
+        return clockRange(
+          slot.onTime ?? "",
+          slot.offTime ?? "",
+          dateForWeekday(weekday, origin),
+          null,
+          null,
+          days,
+          knownIds(slot.deviceIds?.length ? slot.deviceIds : fallback, draft.devices),
+        );
       });
-    return rows.length ? rows : [clockRange("", "", origin, null, null, program.weekdays)];
+    return rows.length ? rows : [clockRange("", "", origin, null, null, program.weekdays, fallback)];
   }
   const owned = draft.clocks.filter((clock) => !clock.recurring && clock.programId === program.id);
-  const rows = owned.map((clock) => clockRange(clock.onTime ?? "", clock.offTime ?? "", clock.day, clock.id, clock.day));
-  return rows.length ? rows : [clockRange("", "", draft.date)];
+  const rows = owned.map((clock) =>
+    clockRange(
+      clock.onTime ?? "",
+      clock.offTime ?? "",
+      clock.day,
+      clock.id,
+      clock.day,
+      undefined,
+      knownIds(clock.deviceIds.length ? clock.deviceIds : fallback, draft.devices),
+    ),
+  );
+  return rows.length ? rows : [clockRange("", "", draft.date, null, null, undefined, fallback)];
 }
 
 function buildForm(draft: PlannerDraft): FormState {
@@ -183,7 +206,7 @@ function buildForm(draft: PlannerDraft): FormState {
     startDate: draft.date,
     endDate: "",
     schedule: "times",
-    ranges: [clockRange("08:00", "09:00", draft.date)],
+    ranges: [clockRange("08:00", "09:00", draft.date, null, null, undefined, draft.devices.length === 1 ? [draft.devices[0].deviceId] : [])],
     durationStart: "08:00",
     durationMinutes: "45",
     sunEvent: "sunset",
@@ -199,7 +222,17 @@ function buildForm(draft: PlannerDraft): FormState {
       ...base,
       looseClockId: draft.clock.id,
       startDate: draft.clock.day,
-      ranges: [clockRange(draft.clock.onTime ?? "", draft.clock.offTime ?? "", draft.clock.day)],
+      ranges: [
+        clockRange(
+          draft.clock.onTime ?? "",
+          draft.clock.offTime ?? "",
+          draft.clock.day,
+          null,
+          null,
+          undefined,
+          knownIds(draft.clock.deviceIds, draft.devices),
+        ),
+      ],
       deviceIds: knownIds(draft.clock.deviceIds, draft.devices),
     };
   }
@@ -243,7 +276,7 @@ function clockShift(time: string, minutes: number) {
 function activeRanges(form: FormState): Range[] {
   if (form.schedule === "duration") {
     const shifted = clockShift(form.durationStart, Number(form.durationMinutes));
-    return [{ key: 0, on: form.durationStart, off: shifted.time, date: form.startDate, clockId: null, originalDate: null }];
+    return [{ key: 0, on: form.durationStart, off: shifted.time, date: form.startDate, clockId: null, originalDate: null, deviceIds: [...form.deviceIds] }];
   }
   return form.ranges.map((range) => ({
     key: range.key,
@@ -253,6 +286,7 @@ function activeRanges(form: FormState): Range[] {
     clockId: range.clockId,
     originalDate: range.originalDate,
     weekdays: range.weekdays,
+    deviceIds: [...range.deviceIds],
   }));
 }
 
@@ -297,7 +331,9 @@ function summaryText(form: FormState, places: PlannerPlace[]) {
       : form.schedule === "duration"
         ? `הדלקה ב־${form.durationStart || "--:--"} למשך ${form.durationMinutes || 0} דקות`
         : `${SUN_LABELS[form.sunEvent]} (${form.sunOffset || "0"} דקות)${city ? `, ${city}` : ""}`;
-  return `${name} · ${when} · ${how} · ${form.deviceIds.length} התקנים`;
+  const deviceCount =
+    form.schedule === "times" ? new Set(form.ranges.flatMap((range) => range.deviceIds)).size : form.deviceIds.length;
+  return `${name} · ${when} · ${how} · ${deviceCount} התקנים`;
 }
 
 function durationText(form: FormState) {
@@ -311,7 +347,11 @@ function durationText(form: FormState) {
 function validate(form: FormState) {
   if (!form.name.trim()) return "יש להזין שם לתוכנית";
   if (!form.startDate) return "יש לבחור תאריך התחלה";
-  if (!form.deviceIds.length) return "יש לבחור לפחות שקע אחד";
+  if (form.schedule === "times") {
+    if (form.ranges.some((range) => !range.deviceIds.length)) return "יש לבחור לפחות שקע אחד לכל שעון";
+  } else if (!form.deviceIds.length) {
+    return "יש לבחור לפחות שקע אחד";
+  }
   if (form.frequency === "weekly" && !cleanWeekdays(form.weekdays).length) return "יש לסמן לפחות יום אחד בשבוע";
   if (form.schedule === "times") {
     if (form.ranges.length > maxSlots) return `אפשר עד ${maxSlots} שעונים בתוכנית`;
@@ -400,14 +440,18 @@ function conflictName(form: FormState, programs: PlannerProgram[], clocks: Plann
     const previous = shiftDate(day, -1);
     const mine = intervals(draftRanges(form, day), draftRanges(form, previous));
     if (!mine.length) continue;
+    const myDevices =
+      form.schedule === "times"
+        ? [...new Set(form.ranges.flatMap((range) => range.deviceIds))]
+        : form.deviceIds;
     for (const program of programs) {
-      if (program.id === form.programId || !program.enabled || !form.deviceIds.some((id) => program.deviceIds.includes(id))) continue;
+      if (program.id === form.programId || !program.enabled || !myDevices.some((id) => program.deviceIds.includes(id))) continue;
       const theirs = intervals(storedRanges(program, clocks, day), storedRanges(program, clocks, previous));
       if (mine.some((left) => theirs.some((right) => overlaps(left, right)))) return program.name;
     }
     for (const clock of clocks) {
       if (clock.recurring || clock.programId || clock.id === form.looseClockId) continue;
-      if (!form.deviceIds.some((id) => clock.deviceIds.includes(id))) continue;
+      if (!myDevices.some((id) => clock.deviceIds.includes(id))) continue;
       const row = { on: clock.onTime ?? "", off: clock.offTime ?? "" };
       const theirs = intervals(clock.day === day ? [row] : [], clock.day === previous ? [row] : []);
       if (mine.some((left) => theirs.some((right) => overlaps(left, right)))) return "שעון";
@@ -419,21 +463,23 @@ function conflictName(form: FormState, programs: PlannerProgram[], clocks: Plann
 function buildBody(form: FormState) {
   const ranges = activeRanges(form).filter((range) => range.on || range.off);
   if (form.frequency === "once") {
-    const grouped = new Map<string, Array<{ id: string; onTime: string | null; offTime: string | null }>>();
+    const grouped = new Map<string, Array<{ id: string; onTime: string | null; offTime: string | null; deviceIds: string[] }>>();
     for (const range of ranges) {
       const clocks = grouped.get(range.date) ?? [];
       clocks.push({
         id: range.clockId && range.date === range.originalDate ? range.clockId : "",
         onTime: cleanTime(range.on),
         offTime: cleanTime(range.off),
+        deviceIds: range.deviceIds,
       });
       grouped.set(range.date, clocks);
     }
+    const deviceIds = [...new Set(ranges.flatMap((range) => range.deviceIds))];
     return {
       action: "program-save",
       id: form.programId,
       name: form.name.trim(),
-      deviceIds: form.deviceIds,
+      deviceIds,
       enabled: form.enabled,
       replaceClockId: form.looseClockId,
       days: [...grouped.entries()]
@@ -446,22 +492,23 @@ function buildBody(form: FormState) {
     const onTime = cleanTime(range.on);
     const offTime = cleanTime(range.off);
     if (form.frequency === "daily") {
-      const key = `${onTime}|${offTime}`;
+      const key = `${onTime}|${offTime}|${range.deviceIds.join(",")}`;
       if (seen.has(key)) return [];
       seen.add(key);
-      return [{ onTime, offTime, weekdays: [] as number[] }];
+      return [{ onTime, offTime, weekdays: [] as number[], deviceIds: range.deviceIds }];
     }
     const days = cleanWeekdays(form.weekdays);
-    return [{ onTime, offTime, weekdays: days }];
+    return [{ onTime, offTime, weekdays: days, deviceIds: range.deviceIds }];
   });
   const weekdays = form.frequency === "daily" ? [0, 1, 2, 3, 4, 5, 6] : cleanWeekdays(form.weekdays);
+  const deviceIds = [...new Set(ranges.flatMap((range) => range.deviceIds))];
   return {
     action: "repeat-save",
     id: form.programId,
     name: form.name.trim(),
     weekdays,
     slots,
-    deviceIds: form.deviceIds,
+    deviceIds,
     enabled: form.enabled,
     startDate: seriesStart(
       form,
@@ -539,8 +586,8 @@ export function PlanDialog({
       <DialogContent
         data-plan-dialog
         showCloseButton={false}
-        className="max-h-[min(92vh,920px)] gap-0 overflow-hidden p-0 sm:max-w-[920px]"
-        style={{ width: "min(920px, calc(100vw - 2rem))", display: "flex", flexDirection: "column", maxHeight: "min(92vh, 920px)" }}
+        className="max-h-[min(94vh,980px)] gap-0 overflow-hidden p-0 sm:max-w-[1080px]"
+        style={{ width: "min(1080px, calc(100vw - 2rem))", display: "flex", flexDirection: "column", maxHeight: "min(94vh, 980px)" }}
       >
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void submit(event)}>
           <div className="flex items-start justify-between gap-3 border-b px-5 py-5 sm:px-8">
@@ -560,8 +607,8 @@ export function PlanDialog({
               ×
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-8">
-            <section className="mb-6">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-10 sm:py-8">
+            <section className="mb-8">
               <SectionTitle n="01">פרטי התוכנית</SectionTitle>
               <label className="mb-2 block text-xs font-bold" htmlFor="plan-name">
                 שם התוכנית
@@ -576,7 +623,7 @@ export function PlanDialog({
                 onChange={(event) => patch((current) => ({ ...current, name: event.target.value }))}
               />
             </section>
-            <section className="mb-6">
+            <section className="mb-8">
               <SectionTitle n="02">מתי התוכנית תפעל?</SectionTitle>
               <div className="grid grid-cols-3 gap-2">
                 <Choice
@@ -681,7 +728,7 @@ export function PlanDialog({
                 ) : null}
               </div>
             </section>
-            <section className="mb-6">
+            <section className="mb-8">
               <SectionTitle n="03">איך ההתקנים יפעלו?</SectionTitle>
               <div className="grid grid-cols-3 gap-2">
                 <Choice
@@ -812,16 +859,94 @@ export function PlanDialog({
                             />
                           </label>
                         </div>
+                        <div className="mt-4 border-t border-border/70 pt-4">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <p className="text-xs font-bold">על אילו התקנים?</p>
+                            {draft.devices.length > 1 ? (
+                              <button
+                                type="button"
+                                className="text-[11px] font-bold text-primary"
+                                onClick={() =>
+                                  patch((current) => ({
+                                    ...current,
+                                    ranges: current.ranges.map((item) =>
+                                      item.key === range.key
+                                        ? {
+                                            ...item,
+                                            deviceIds:
+                                              item.deviceIds.length === draft.devices.length
+                                                ? []
+                                                : draft.devices.map((device) => device.deviceId),
+                                          }
+                                        : item,
+                                    ),
+                                  }))
+                                }
+                              >
+                                {range.deviceIds.length === draft.devices.length ? "ניקוי בחירה" : "בחירת הכול"}
+                              </button>
+                            ) : null}
+                          </div>
+                          {draft.devices.length ? (
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                              {draft.devices.map((device) => {
+                                const checked = range.deviceIds.includes(device.deviceId);
+                                return (
+                                  <label
+                                    key={device.deviceId}
+                                    className={cn(
+                                      "flex cursor-pointer items-center gap-2 rounded-xl border p-3",
+                                      checked ? "border-primary/40 bg-primary/5" : "bg-muted/20",
+                                    )}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="size-4 accent-primary"
+                                      checked={checked}
+                                      onChange={() =>
+                                        patch((current) => ({
+                                          ...current,
+                                          ranges: current.ranges.map((item) => {
+                                            if (item.key !== range.key) return item;
+                                            const deviceIds = item.deviceIds.includes(device.deviceId)
+                                              ? item.deviceIds.filter((id) => id !== device.deviceId)
+                                              : [...item.deviceIds, device.deviceId];
+                                            return { ...item, deviceIds };
+                                          }),
+                                        }))
+                                      }
+                                    />
+                                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-foreground">
+                                      <DeviceGlyph name={device.name} icon={device.icon} className="size-4" />
+                                    </span>
+                                    <b className="min-w-0 truncate text-xs">{device.name}</b>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">אין שקעים משויכים לחשבון.</p>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
                   {form.ranges.length < maxSlots ? (
                     <button
                       type="button"
-                      className="mt-2 w-full rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-3 font-bold text-primary"
+                      className="mt-3 w-full rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-3.5 font-bold text-primary"
                       onClick={() =>
                         patch((current) => {
-                          const next = clockRange("", "", current.startDate, null, null, current.frequency === "weekly" ? cleanWeekdays(current.weekdays) : undefined);
+                          const inherit = current.ranges.at(-1)?.deviceIds ?? current.deviceIds;
+                          const next = clockRange(
+                            "",
+                            "",
+                            current.startDate,
+                            null,
+                            null,
+                            current.frequency === "weekly" ? cleanWeekdays(current.weekdays) : undefined,
+                            inherit,
+                          );
                           return {
                             ...current,
                             ranges:
@@ -832,15 +957,16 @@ export function PlanDialog({
                         }, true)
                       }
                     >
-                      ＋ הוסף עוד טווח שעות
+                      ＋ הוסף עוד שעון
                     </button>
                   ) : null}
-                  <p className="mt-3 rounded-xl bg-primary/5 px-3 py-3 text-xs leading-6 text-muted-foreground">
+                  <p className="mt-4 rounded-xl bg-primary/5 px-4 py-3.5 text-xs leading-6 text-muted-foreground">
                     {form.frequency === "weekly"
-                      ? "ימי הפעולה מסומנים למעלה. כאן בוחרים את שעות ההדלקה והכיבוי, ואת תאריך ההפעלה הראשון לכל שעון. כיבוי בשעה מוקדמת מההדלקה ייחשב לכיבוי ביום הבא."
-                      : "לכל שעון בוחרים תאריך משלו מתוך לוח שנה. אפשר להוסיף כמה שעונים לאותו תאריך, או לבחור תאריכים שונים. כיבוי בשעה מוקדמת מההדלקה ייחשב לכיבוי ביום הבא."}
+                      ? "ימי הפעולה מסומנים למעלה. לכל שעון בוחרים שעות, תאריך הפעלה ראשון, ואילו התקנים הוא מפעיל. כיבוי בשעה מוקדמת מההדלקה ייחשב לכיבוי ביום הבא."
+                      : "לכל שעון בוחרים תאריך, שעות, ואילו התקנים הוא מפעיל. אפשר כמה שעונים לאותו תאריך או לתאריכים שונים. כיבוי בשעה מוקדמת מההדלקה ייחשב לכיבוי ביום הבא."}
                   </p>
                 </div>
+
               ) : null}
               {form.schedule === "duration" ? (
                 <div className="mt-3 rounded-2xl border bg-muted/30 p-4">
@@ -918,46 +1044,48 @@ export function PlanDialog({
                 </div>
               ) : null}
             </section>
-            <section className="mb-6">
-              <SectionTitle n="04">באילו שקעים?</SectionTitle>
-              {draft.devices.length ? (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {draft.devices.map((device) => {
-                    const checked = form.deviceIds.includes(device.deviceId);
-                    return (
-                      <label
-                        key={device.deviceId}
-                        className={cn(
-                          "flex cursor-pointer items-center gap-2 rounded-xl border p-3",
-                          checked ? "border-primary/40 bg-primary/5" : "bg-card",
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          className="size-4 accent-primary"
-                          checked={checked}
-                          onChange={() =>
-                            patch((current) => ({
-                              ...current,
-                              deviceIds: current.deviceIds.includes(device.deviceId)
-                                ? current.deviceIds.filter((id) => id !== device.deviceId)
-                                : [...current.deviceIds, device.deviceId],
-                            }))
-                          }
-                        />
-                        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-foreground">
-                          <DeviceGlyph name={device.name} icon={device.icon} className="size-4" />
-                        </span>
-                        <b className="min-w-0 truncate text-xs">{device.name}</b>
-                      </label>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">אין שקעים משויכים לחשבון.</p>
-              )}
-              <p className="mt-3 rounded-xl bg-primary/5 px-3 py-3 text-xs leading-6 text-muted-foreground">הרשימה היא השקעים של החשבון.</p>
-            </section>
+            {form.schedule === "times" ? null : (
+              <section className="mb-8">
+                <SectionTitle n="04">באילו שקעים?</SectionTitle>
+                {draft.devices.length ? (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {draft.devices.map((device) => {
+                      const checked = form.deviceIds.includes(device.deviceId);
+                      return (
+                        <label
+                          key={device.deviceId}
+                          className={cn(
+                            "flex cursor-pointer items-center gap-3 rounded-2xl border p-4",
+                            checked ? "border-primary/40 bg-primary/5" : "bg-card",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-primary"
+                            checked={checked}
+                            onChange={() =>
+                              patch((current) => ({
+                                ...current,
+                                deviceIds: current.deviceIds.includes(device.deviceId)
+                                  ? current.deviceIds.filter((id) => id !== device.deviceId)
+                                  : [...current.deviceIds, device.deviceId],
+                              }))
+                            }
+                          />
+                          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground">
+                            <DeviceGlyph name={device.name} icon={device.icon} className="size-4" />
+                          </span>
+                          <b className="min-w-0 truncate text-sm">{device.name}</b>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">אין שקעים משויכים לחשבון.</p>
+                )}
+                <p className="mt-4 rounded-xl bg-primary/5 px-4 py-3.5 text-xs leading-6 text-muted-foreground">הרשימה היא השקעים של החשבון.</p>
+              </section>
+            )}
             <section className="mb-6 overflow-hidden rounded-2xl border">
               <button
                 type="button"
@@ -1018,7 +1146,7 @@ export function PlanDialog({
 
 function SectionTitle({ n, children }: { n: string; children: ReactNode }) {
   return (
-    <h3 className="mb-3 flex items-center gap-2 text-[15px] font-extrabold">
+    <h3 className="mb-4 flex items-center gap-2 text-[15px] font-extrabold sm:text-base">
       <span className="grid size-6 place-items-center rounded-lg bg-primary/10 text-xs text-primary">{n}</span>
       {children}
     </h3>
@@ -1043,7 +1171,7 @@ function Choice({
       type="button"
       aria-pressed={active}
       className={cn(
-        "rounded-xl border px-2 py-3 text-center",
+        "rounded-xl border px-2 py-3 text-center sm:px-3 sm:py-4",
         active ? "border-primary bg-primary/5 shadow-[0_0_0_1px_var(--primary)]" : "border-border bg-card",
       )}
       onClick={onClick}

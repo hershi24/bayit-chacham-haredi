@@ -109,6 +109,20 @@ export function offClock(onIso: string, offIso: string): string {
   return `${day}.${month} ${face}`;
 }
 
+/** When a disconnected device was last seen online, in Israel local time. */
+export function seenWhen(iso: string | null | undefined, now = new Date()): string {
+  if (!iso) return "אין תיעוד חיבור";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "אין תיעוד חיבור";
+  const today = israelDate(now);
+  const day = israelDate(date);
+  const face = clockFace(iso);
+  if (day === today) return `היום ב־${face}`;
+  if (day === shiftDate(today, -1)) return `אתמול ב־${face}`;
+  const [, month, dateDay] = day.split("-");
+  return `${Number(dateDay)}.${Number(month)} ב־${face}`;
+}
+
 export function formatIsrael(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);

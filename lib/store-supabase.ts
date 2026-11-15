@@ -24,6 +24,7 @@ type DeviceStateRow = {
   connectivity: string | null;
   relay_on: boolean | null;
   state_updated_at: string | null;
+  last_online_at?: string | null;
   device_type: string | null;
   sensor_summary: string | null;
   last_error: string | null;
@@ -39,6 +40,7 @@ type DeviceRow = {
   kind?: string | null;
   external_id?: string | null;
   channel?: number | null;
+  created_at?: string | null;
   tenants: Embed<{ name: string; phone: string | null }>;
   device_state: Embed<DeviceStateRow>;
 };
@@ -248,6 +250,8 @@ function mapDevice(row: DeviceRow): DeviceView & { phone: string | null } {
     connectivity: connectivity === "ONLINE" || connectivity === "OFFLINE" ? connectivity : "UNKNOWN",
     relayOn: state?.relay_on ?? null,
     stateUpdatedAt: state?.state_updated_at ?? null,
+    lastOnlineAt: state?.last_online_at ?? null,
+    createdAt: row.created_at ?? null,
     deviceType: state?.device_type ?? null,
     sensorSummary: state?.sensor_summary ?? null,
     lastError: state?.last_error ?? null,
@@ -262,7 +266,7 @@ function mapDevice(row: DeviceRow): DeviceView & { phone: string | null } {
 
 const deviceColumnsPlain =
   "device_id, name, tenant_id, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)";
-let deviceColumns = `device_id, name, tenant_id, icon, frozen, vendor, kind, external_id, channel, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, device_type, sensor_summary, last_error)`;
+let deviceColumns = `device_id, name, tenant_id, icon, frozen, vendor, kind, external_id, channel, created_at, tenants!inner(name, phone), device_state(connectivity, relay_on, state_updated_at, last_online_at, device_type, sensor_summary, last_error)`;
 
 function iconColumnMissing(error: DbError) {
   return deviceColumns.includes("icon") && (error.code === "42703" || error.code === "PGRST204" || /icon/i.test(error.message));
@@ -284,6 +288,12 @@ async function deviceRows(tenantId?: string | null): Promise<DeviceRow[]> {
   }
   if (result.error && iconColumnMissing(result.error)) {
     deviceColumns = deviceColumnsPlain;
+    query = client().from("devices").select(deviceColumns);
+    if (tenantId) query = query.eq("tenant_id", tenantId);
+    result = await query;
+  }
+  if (result.error && columnMissing(result.error, "last_online_at")) {
+    deviceColumns = deviceColumns.replace(", last_online_at", "");
     query = client().from("devices").select(deviceColumns);
     if (tenantId) query = query.eq("tenant_id", tenantId);
     result = await query;
@@ -333,6 +343,10 @@ export async function getDevice(deviceId: string): Promise<(DeviceView & { phone
     deviceColumns = deviceColumnsPlain;
     result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
   }
+  if (result.error && columnMissing(result.error, "last_online_at")) {
+    deviceColumns = deviceColumns.replace(", last_online_at", "");
+    result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
+  }
   if (result.error) fail(result.error, "לא ניתן לקרוא שקע");
   return result.data ? mapDevice(result.data as unknown as DeviceRow) : null;
 }
@@ -355,6 +369,7 @@ export async function updateDeviceState(
   if (options?.onlyIfNewer && patch.stateUpdatedAt && !isNewerIso(current.stateUpdatedAt, patch.stateUpdatedAt)) {
     return presentDevice(current);
   }
+  const updatedAt = new Date().toISOString();
   const next = {
     connectivity: patch.connectivity ?? current.connectivity,
     relay_on: patch.relayOn === undefined ? current.relayOn : patch.relayOn,
@@ -362,12 +377,20 @@ export async function updateDeviceState(
     device_type: patch.deviceType === undefined ? current.deviceType : patch.deviceType,
     sensor_summary: patch.sensorSummary === undefined ? current.sensorSummary : patch.sensorSummary,
     last_error: patch.lastError === undefined ? current.lastError : patch.lastError,
-    updated_at: new Date().toISOString(),
+    updated_at: updatedAt,
   };
-  const result = await client().from("device_state").upsert(
-    { device_id: deviceId, ...next },
+  const lastOnlineAt =
+    next.connectivity === "ONLINE" ? next.state_updated_at || updatedAt : current.lastOnlineAt ?? null;
+  let result = await client().from("device_state").upsert(
+    { device_id: deviceId, ...next, last_online_at: lastOnlineAt },
     { onConflict: "device_id" },
   );
+  if (result.error && columnMissing(result.error, "last_online_at")) {
+    result = await client().from("device_state").upsert(
+      { device_id: deviceId, ...next },
+      { onConflict: "device_id" },
+    );
+  }
   if (result.error) fail(result.error, "עדכון מצב השקע נכשל");
   const view = await getDevice(deviceId);
   return view ? presentDevice(view) : null;

@@ -191,17 +191,22 @@ export function ProgramsBoard() {
   if (!board && tenants) {
     return (
       <section className="max-w-xl">
-        <h1 className="text-xl font-semibold tracking-tight">תוכניות ותזמונים</h1>
-        <p className="mt-1 text-[13px] text-muted-foreground">בחרו לקוח כדי לערוך את התוכניות שלו.</p>
-        <div className="mt-3 grid gap-1.5">
+        <h1 className="text-xl font-semibold tracking-tight">תוכניות לפי לקוח</h1>
+        <p className="mt-1 text-[13px] leading-6 text-muted-foreground">
+          מנהל לא רואה את כל התוכניות של כולם יחד. בוחרים לקוח, ואז רואים ועורכים רק את השעונים והתוכניות שלו.
+        </p>
+        <div className="mt-3 grid gap-2">
           {tenants.map((tenant) => (
             <button
               key={tenant.id}
               type="button"
-              className="rounded-lg border bg-card px-3 py-2.5 text-start text-[13px] font-medium hover:bg-muted"
+              className="rounded-2xl border bg-card px-4 py-3 text-start hover:border-primary/40"
               onClick={() => void load(tenant.id)}
             >
-              {tenant.name}
+              <span className="block text-[15px] font-semibold">{tenant.name}</span>
+              <span className="mt-0.5 block text-[13px] text-muted-foreground">
+                {tenant.deviceCount} התקנים · כניסה ללוח התוכניות של הלקוח
+              </span>
             </button>
           ))}
         </div>

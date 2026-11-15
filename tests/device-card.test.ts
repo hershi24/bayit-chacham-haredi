@@ -4,7 +4,8 @@ import { isDeviceIcon, suggestIcon } from "../lib/devices/icons";
 import { timerInstants, timerMessage } from "../lib/devices/timer";
 import { earliestPlan } from "../lib/devices/upcoming";
 import { presentDevice } from "../lib/store-sqlite";
-import { planWhen } from "../lib/time";
+import { getDevice, updateDeviceState } from "../lib/store";
+import { planWhen, seenWhen } from "../lib/time";
 import type { DeviceView } from "../lib/types";
 
 const now = new Date("2026-11-03T08:00:00.000Z");
@@ -60,6 +61,25 @@ test("the card clock says today, tomorrow, or the date", () => {
   assert.equal(planWhen("2026-11-03T11:00:00.000Z", now), "13:00");
   assert.equal(planWhen("2026-11-04T11:00:00.000Z", now), "מחר 13:00");
   assert.equal(planWhen("2026-11-05T11:00:00.000Z", now), "05.11 13:00");
+});
+
+test("seenWhen speaks the last online moment", () => {
+  assert.equal(seenWhen("2026-11-03T08:18:00.000Z", now), "היום ב־10:18");
+  assert.equal(seenWhen("2026-11-02T08:18:00.000Z", now), "אתמול ב־10:18");
+  assert.equal(seenWhen(null, now), "אין תיעוד חיבור");
+});
+
+test("an offline socket keeps the last time it was online", async () => {
+  const at = "2026-11-15T08:00:00.000Z";
+  await updateDeviceState("rct063285302", { connectivity: "ONLINE", relayOn: true, stateUpdatedAt: at });
+  assert.equal((await getDevice("rct063285302"))?.lastOnlineAt, at);
+  await updateDeviceState("rct063285302", {
+    connectivity: "OFFLINE",
+    stateUpdatedAt: "2026-11-15T12:00:00.000Z",
+  });
+  const offline = await getDevice("rct063285302");
+  assert.equal(offline?.connectivity, "OFFLINE");
+  assert.equal(offline?.lastOnlineAt, at);
 });
 
 test("a published socket keeps its next event and drops the phone", () => {

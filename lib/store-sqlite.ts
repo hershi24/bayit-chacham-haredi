@@ -70,6 +70,7 @@ function db(): DatabaseSync {
   addDeviceColumn(globalDb.__pikudDb, "external_id", "external_id TEXT");
   addDeviceColumn(globalDb.__pikudDb, "channel", "channel INTEGER");
   addCallerColumn(globalDb.__pikudDb, "label", "label TEXT");
+  addStateColumn(globalDb.__pikudDb, "last_online_at", "last_online_at TEXT");
   return globalDb.__pikudDb;
 }
 
@@ -89,6 +90,17 @@ function addDeviceColumn(database: DatabaseSync, name: string, definition: strin
   if (columns.some((column) => column.name === name)) return;
   try {
     database.exec(`ALTER TABLE devices ADD COLUMN ${definition}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!/duplicate column/i.test(message)) throw error;
+  }
+}
+
+function addStateColumn(database: DatabaseSync, name: string, definition: string) {
+  const columns = database.prepare("PRAGMA table_info(device_state)").all() as Array<{ name?: string }>;
+  if (columns.some((column) => column.name === name)) return;
+  try {
+    database.exec(`ALTER TABLE device_state ADD COLUMN ${definition}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (!/duplicate column/i.test(message)) throw error;
@@ -295,9 +307,9 @@ function seed(database: DatabaseSync) {
 
 function deviceSelect() {
   return `
-    SELECT d.device_id, d.name, d.icon, d.frozen, d.vendor, d.kind, d.external_id, d.channel, d.tenant_id,
+    SELECT d.device_id, d.name, d.icon, d.frozen, d.vendor, d.kind, d.external_id, d.channel, d.tenant_id, d.created_at,
       t.name AS tenant_name, t.phone AS tenant_phone,
-      s.connectivity, s.relay_on, s.state_updated_at, s.device_type, s.sensor_summary, s.last_error
+      s.connectivity, s.relay_on, s.state_updated_at, s.last_online_at, s.device_type, s.sensor_summary, s.last_error
     FROM devices d
     JOIN tenants t ON t.id = d.tenant_id
     LEFT JOIN device_state s ON s.device_id = d.device_id
@@ -325,6 +337,8 @@ function mapDevice(row: Row): DeviceView & { phone: string | null } {
     connectivity: connectivity === "ONLINE" || connectivity === "OFFLINE" ? connectivity : "UNKNOWN",
     relayOn: relayValue(row.relay_on),
     stateUpdatedAt: textOrNull(row, "state_updated_at"),
+    lastOnlineAt: textOrNull(row, "last_online_at"),
+    createdAt: textOrNull(row, "created_at"),
     deviceType: textOrNull(row, "device_type"),
     sensorSummary: textOrNull(row, "sensor_summary"),
     lastError: textOrNull(row, "last_error"),
@@ -346,6 +360,8 @@ export function presentDevice(device: DeviceView & { phone?: string | null }): D
     connectivity: device.connectivity,
     relayOn: device.relayOn,
     stateUpdatedAt: device.stateUpdatedAt,
+    lastOnlineAt: device.lastOnlineAt ?? null,
+    createdAt: device.createdAt ?? null,
     deviceType: device.deviceType,
     sensorSummary: device.sensorSummary,
     lastError: device.lastError,
@@ -436,15 +452,17 @@ export function updateDeviceState(
     lastError: patch.lastError === undefined ? current.lastError : patch.lastError,
   };
   const now = new Date().toISOString();
+  const lastOnlineAt = next.connectivity === "ONLINE" ? next.stateUpdatedAt || now : current.lastOnlineAt ?? null;
   db()
     .prepare(
       `INSERT INTO device_state (
-        device_id, connectivity, relay_on, state_updated_at, device_type, api_name, sensor_summary, last_error, updated_at
-      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+        device_id, connectivity, relay_on, state_updated_at, last_online_at, device_type, api_name, sensor_summary, last_error, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
       ON CONFLICT(device_id) DO UPDATE SET
         connectivity = excluded.connectivity,
         relay_on = excluded.relay_on,
         state_updated_at = excluded.state_updated_at,
+        last_online_at = excluded.last_online_at,
         device_type = excluded.device_type,
         sensor_summary = excluded.sensor_summary,
         last_error = excluded.last_error,
@@ -455,6 +473,7 @@ export function updateDeviceState(
       next.connectivity,
       next.relayOn === null ? null : next.relayOn ? 1 : 0,
       next.stateUpdatedAt,
+      lastOnlineAt,
       next.deviceType,
       next.sensorSummary,
       next.lastError,

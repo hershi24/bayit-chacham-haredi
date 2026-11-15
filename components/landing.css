@@ -347,46 +347,53 @@
   filter: blur(85px);
 }
 
-.ksh-landing .product-img {
+.ksh-landing .product-pair {
   position: relative;
-  display: block;
-  width: min(100%, 520px);
-  max-width: 100%;
-  height: auto;
-  max-height: min(520px, 68vh);
-  margin-inline: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 28px 36px rgb(0 0 0 / 45%));
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 2vw, 22px);
   animation: ksh-product-hover 7s ease-in-out infinite;
 }
 
-.ksh-landing .product-stage:hover .product-img {
+.ksh-landing .product-stage:hover .product-pair {
   animation-play-state: paused;
   transform: rotate(0) translateY(-12px) scale(1.025);
 }
 
-.ksh-landing .floating-chip {
-  position: absolute;
-  padding: 12px 16px;
-  border: 1px solid #ffffff9c;
-  border-radius: 11px;
-  background: #ffffffee;
-  color: #18345a;
-  font-weight: 600;
-  box-shadow: 0 18px 55px #0004;
-  backdrop-filter: blur(12px);
+.ksh-landing .product-shot {
+  display: block;
+  width: auto;
+  height: min(460px, 58vh);
+  max-width: 46%;
+  object-fit: contain;
+  filter: drop-shadow(0 28px 36px rgb(0 0 0 / 45%));
+}
+
+.ksh-landing .product-phone {
+  height: min(420px, 54vh);
+}
+
+.ksh-landing .call-badge {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: clamp(52px, 7vw, 72px);
+  height: clamp(52px, 7vw, 72px);
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(145deg, #2bb7ff, #0a6fd6);
+  border: 2px solid #ffffffcc;
+  box-shadow:
+    0 0 0 8px #19b9ff33,
+    0 14px 30px rgb(0 0 0 / 35%);
   animation: ksh-float 5s ease-in-out infinite;
 }
 
-.ksh-landing .chip-a {
-  right: -10px;
-  bottom: 65px;
-}
-
-.ksh-landing .chip-b {
-  top: 50px;
-  left: -15px;
-  animation-delay: -2s;
+.ksh-landing .call-badge svg {
+  width: 48%;
+  height: 48%;
 }
 
 .ksh-landing .section {
@@ -899,9 +906,22 @@
     padding: 24px;
   }
 
-  .ksh-landing .product-img {
-    width: min(100%, 390px);
-    max-height: min(390px, 58vh);
+  .ksh-landing .product-shot {
+    height: min(280px, 42vh);
+    max-width: 42%;
+  }
+
+  .ksh-landing .product-phone {
+    height: min(260px, 40vh);
+  }
+
+  .ksh-landing .call-badge {
+    width: 48px;
+    height: 48px;
+  }
+
+  .ksh-landing .product-pair {
+    gap: 8px;
   }
 }
 
@@ -911,11 +931,11 @@
     transform: none;
   }
 
-  .ksh-landing .product-img,
+  .ksh-landing .product-pair,
+  .ksh-landing .call-badge,
   .ksh-landing .spark,
   .ksh-landing .ambient-ring,
   .ksh-landing .orb,
-  .ksh-landing .floating-chip,
   .ksh-landing .future-card::after,
   .ksh-landing .cta::before {
     animation: none !important;

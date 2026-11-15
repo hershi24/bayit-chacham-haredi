@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PhoneOff, RotateCcw } from "lucide-react";
+import { PhoneOff, RotateCcw, Volume2 } from "lucide-react";
 import type { MenuRead } from "@/lib/ivr/flow";
 import { demoAnswer, demoHome, type DemoHome, type DemoValues } from "@/lib/ivr/demo";
+import { spokenParts } from "@/lib/ivr/demo-view";
 
 type Line = { from: "sys" | "me" | "note"; text: string };
 
@@ -86,7 +87,10 @@ export function CallDemo() {
 
   useEffect(() => {
     const screen = screenRef.current;
-    if (screen) screen.scrollTo({ top: screen.scrollHeight, behavior: "smooth" });
+    if (!screen) return;
+    const last = screen.lastElementChild as HTMLElement | null;
+    const top = last && last.offsetHeight > screen.clientHeight ? last.offsetTop - 10 : screen.scrollHeight;
+    screen.scrollTo({ top, behavior: "smooth" });
   }, [lines]);
 
   function submit(read: MenuRead, input: string) {
@@ -123,6 +127,7 @@ export function CallDemo() {
   }
 
   const hint = keyHint(pending);
+  const lastSpoken = lines.findLastIndex((line) => line.from === "sys");
   const clock = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
   return (
@@ -135,11 +140,46 @@ export function CallDemo() {
         </span>
       </div>
       <div className="phone-screen" ref={screenRef} aria-live="polite">
-        {lines.map((line, index) => (
-          <p key={index} className={line.from === "me" ? "bubble me" : line.from === "note" ? "bubble note" : "bubble"}>
-            {line.text}
-          </p>
-        ))}
+        {lines.map((line, index) => {
+          if (line.from === "me") {
+            return (
+              <p key={index} className="bubble me">
+                {line.text}
+              </p>
+            );
+          }
+          if (line.from === "note") {
+            return (
+              <p key={index} className="bubble note">
+                {line.text}
+              </p>
+            );
+          }
+          const live = index === lastSpoken && !ended && !waiting && pending !== null;
+          return (
+            <div key={index} className={live ? "spoken live" : "spoken"}>
+              <span className="spoken-label">
+                <Volume2 size={14} /> המערכת אומרת
+              </span>
+              {spokenParts(line.text).map((part, partIndex) =>
+                part.kind === "text" ? (
+                  <p key={partIndex}>{part.text}</p>
+                ) : (
+                  <button
+                    key={partIndex}
+                    type="button"
+                    className="option"
+                    disabled={!live || pending?.max !== 1}
+                    onClick={() => press(part.key)}
+                  >
+                    <b>{part.key}</b>
+                    <span>{part.label}</span>
+                  </button>
+                ),
+              )}
+            </div>
+          );
+        })}
         {ended ? (
           <button type="button" className="restart" onClick={start}>
             <RotateCcw size={15} /> שיחה חדשה

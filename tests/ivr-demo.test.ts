@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decideMenu, STATUS_WAIT } from "@/lib/ivr/flow";
 import { demoAnswer, demoHome, type DemoTurn, type DemoValues } from "@/lib/ivr/demo";
+import { spokenParts } from "@/lib/ivr/demo-view";
 import { settingsMenu } from "@/lib/ivr/settings-menu";
 
 function text(turn: DemoTurn) {
@@ -100,4 +101,21 @@ test("zero opens the live settings menu and its actions", () => {
     ["pikud_admin_ask", "1"],
   ]);
   assert.equal(admin.heard.at(-1), "הפניה נשלחה למנהל המערכת, נחזור אליכם בהקדם");
+});
+
+test("demo screen splits spoken menus into options with their keys", () => {
+  assert.deepEqual(spokenParts("לדוד שמש הקש אחד, למזגן בסלון הקש שתיים, לתאורת חצר הקש שלוש ולהגדרות הקש אפס"), [
+    { kind: "option", key: "1", label: "דוד שמש" },
+    { kind: "option", key: "2", label: "מזגן בסלון" },
+    { kind: "option", key: "3", label: "תאורת חצר" },
+    { kind: "option", key: "0", label: "הגדרות" },
+  ]);
+  assert.deepEqual(spokenParts("דוד שמש כבוי כעת, להפעלה הקש אחד, לטיימר הקש שתיים").slice(0, 2), [
+    { kind: "text", text: "דוד שמש כבוי כעת" },
+    { kind: "option", key: "1", label: "הפעלה" },
+  ]);
+  assert.deepEqual(spokenParts("למספר אפס חמש שמונה שלוש הקש אחד, לביטול הקש אפס")[0], { kind: "option", key: "1", label: "מספר 0583" });
+  assert.deepEqual(spokenParts("לשעת הדלקה הקש ארבע ספרות. לעשר בבוקר הקש אחת אפס אפס אפס"), [
+    { kind: "text", text: "לשעת הדלקה הקש ארבע ספרות. לעשר בבוקר הקש אחת אפס אפס אפס" },
+  ]);
 });

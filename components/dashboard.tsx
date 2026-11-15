@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Power, PowerOff, RefreshCw } from "lucide-react";
+import { ListOrdered, Power, PowerOff, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { SocketCard } from "@/components/socket-card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { boardLine } from "@/lib/board-summary";
 import { api } from "@/lib/client-api";
 import type { DeviceIconKey } from "@/lib/devices/icons";
@@ -28,6 +29,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [refreshingIds, setRefreshingIds] = useState<string[]>([]);
   const [focusTenant, setFocusTenant] = useState<string | null>(null);
+  const [orderOpen, setOrderOpen] = useState(false);
 
   const applyDevice = useCallback((next: DeviceView) => {
     setDevices((current) => {
@@ -414,6 +416,19 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
         <h2 className="text-[13px] font-medium tracking-[0.08em] text-muted-foreground uppercase">השקעים</h2>
         {count > 0 ? (
           <div className="flex flex-wrap gap-2">
+            {boardDevices && boardDevices.length > 1 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-9 rounded-full"
+                disabled={anyBusy}
+                aria-label="סידור סדר התצוגה וההקראה"
+                onClick={() => setOrderOpen(true)}
+              >
+                <ListOrdered className="size-4" />
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -446,12 +461,15 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
           <p className="mt-1 text-sm text-muted-foreground">מנהל המערכת יכול לשייך שקע ללקוח מתוך מסך הניהול.</p>
         </div>
       ) : null}
-      {boardDevices && boardDevices.length > 1 ? (
-        <div className="mb-4 overflow-hidden rounded-2xl border border-border/60 bg-card">
-          <div className="border-b border-border/50 px-4 py-2.5 text-[13px] font-medium text-muted-foreground">סדר תצוגה והקראה בטלפון</div>
-          <ol>
-            {boardDevices.map((device, index) => (
-              <li key={device.deviceId} className="flex items-center gap-3 border-b border-border/50 px-4 py-2.5 last:border-b-0">
+      <Dialog open={orderOpen} onOpenChange={setOrderOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>סדר תצוגה והקראה</DialogTitle>
+            <DialogDescription>הסדר כאן הוא גם הסדר בלוח וגם סדר ההקראה בטלפון.</DialogDescription>
+          </DialogHeader>
+          <ol className="-mx-1">
+            {(boardDevices ?? []).map((device, index) => (
+              <li key={device.deviceId} className="flex items-center gap-3 border-b border-border/50 px-1 py-2.5 last:border-b-0">
                 <span className="w-5 text-[13px] tabular-nums text-muted-foreground">{index + 1}</span>
                 <span className="min-w-0 flex-1 truncate text-[15px]">{device.name}</span>
                 <button
@@ -466,7 +484,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
                 <button
                   type="button"
                   className="rounded-lg px-2 py-1 text-[13px] text-muted-foreground hover:bg-secondary disabled:opacity-30"
-                  disabled={anyBusy || index === boardDevices.length - 1}
+                  disabled={anyBusy || index === (boardDevices?.length ?? 0) - 1}
                   aria-label={`הורדת ${device.name}`}
                   onClick={() => void moveDevice(index, 1)}
                 >
@@ -475,8 +493,8 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
               </li>
             ))}
           </ol>
-        </div>
-      ) : null}
+        </DialogContent>
+      </Dialog>
       {boardDevices && boardDevices.length > 0 ? (
         <div className={deviceGrid}>
           {(boardDevices ?? []).map((device) => (

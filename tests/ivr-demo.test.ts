@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decideMenu, STATUS_WAIT } from "@/lib/ivr/flow";
+import { decideMenu } from "@/lib/ivr/flow";
 import { demoAnswer, demoHome, type DemoTurn, type DemoValues } from "@/lib/ivr/demo";
 import { spokenParts } from "@/lib/ivr/demo-view";
 import { settingsMenu } from "@/lib/ivr/settings-menu";
@@ -28,22 +28,19 @@ test("demo opens with the same device list as the live line", () => {
   assert.match(text(demoAnswer(home, {})), /^לדוד שמש הקש אחד, למזגן בסלון הקש שתיים, לתאורת חצר הקש שלוש ולהגדרות הקש אפס$/);
 });
 
-test("choosing a device waits for status, then reads its menu and switches it", () => {
+test("choosing a device reads its menu right away and switches it", () => {
   const { home, heard } = call([
     ["pikud_device", "1"],
-    ["pikud_ready", "1"],
     ["pikud_action", "1"],
   ]);
-  assert.equal(heard[1], STATUS_WAIT);
-  assert.equal(heard[2], "דוד שמש כבוי כעת, להפעלה הקש אחד, לטיימר הקש שתיים, לשעון הקש שלוש, לתוכניות הקש ארבע");
-  assert.equal(heard[3], "דוד שמש הופעל בהצלחה");
+  assert.equal(heard[1], "דוד שמש כבוי כעת, להפעלה הקש אחד, לטיימר הקש שתיים, לשעון הקש שלוש, לתוכניות הקש ארבע");
+  assert.equal(heard[2], "דוד שמש הופעל בהצלחה");
   assert.equal(home.devices[0]?.relayOn, true);
 });
 
 test("timer and clock use the live wording", () => {
   const timer = call([
     ["pikud_device", "2"],
-    ["pikud_ready", "1"],
     ["pikud_action", "2"],
     ["pikud_minutes", "30"],
   ]);
@@ -51,7 +48,6 @@ test("timer and clock use the live wording", () => {
 
   const clock = call([
     ["pikud_device", "1"],
-    ["pikud_ready", "1"],
     ["pikud_action", "3"],
     ["pikud_repeat", "3"],
     ["pikud_side", "1"],
@@ -65,7 +61,6 @@ test("timer and clock use the live wording", () => {
 test("programs list, read every clock, and edit one", () => {
   const { heard } = call([
     ["pikud_device", "1"],
-    ["pikud_ready", "1"],
     ["pikud_action", "4"],
     ["pikud_program", "1"],
     ["pikud_program_op", "2"],
@@ -73,9 +68,9 @@ test("programs list, read every clock, and edit one", () => {
     ["pikud_side", "1"],
     ["pikud_on", "1630"],
   ]);
-  assert.match(heard[3] ?? "", /^תפריט תוכניות לדוד שמש\. תוכנית אחד, דוד בוקר וערב, פעילה כעת/);
-  assert.match(heard[4] ?? "", /שעון אחד, .*שעון שתיים/);
-  assert.match(heard[5] ?? "", /^איזה שעון לערוך/);
+  assert.match(heard[2] ?? "", /^תפריט תוכניות לדוד שמש\. תוכנית אחד, דוד בוקר וערב, פעילה כעת/);
+  assert.match(heard[3] ?? "", /שעון אחד, .*שעון שתיים/);
+  assert.match(heard[4] ?? "", /^איזה שעון לערוך/);
   assert.equal(heard.at(-1), "תוכנית דוד בוקר וערב, שעון שתיים, שעת הדלקה עודכנה לארבע וחצי בצהריים");
 });
 

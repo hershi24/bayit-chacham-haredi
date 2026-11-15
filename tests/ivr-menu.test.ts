@@ -589,17 +589,12 @@ test("the on and off keys are answered before the socket finishes switching", as
   await updateDeviceState("rct074190118", { connectivity: "ONLINE", relayOn: true, stateUpdatedAt: now, lastError: null });
   await updateDeviceState("rct063285417", { connectivity: "OFFLINE", relayOn: false, stateUpdatedAt: now, lastError: null });
 
-  let menu = await phonePress({ ApiPhone: "035551001", pikud_device: "1" });
-  let menuText = await menu.text();
-  if (menuText.includes("pikud_ready")) {
-    assert.match(menuText, /מבצע בדיקת מצב ערוץ אנא המתן/);
-    assert.equal(menuText.includes("להפעלה הקש אחד"), false);
-    assert.equal(menuText.includes("מבצע בדיקת מצב ערוץ אנא המתן,"), false);
-    // amount_attempts must be 1 — otherwise Yemot speaks the wait line twice.
-    assert.match(menuText, /=pikud_ready,no,1,1,1,No,yes,,,,1,Ok,1,,no/);
-    menu = await phonePress({ ApiPhone: "035551001", pikud_device: "1", pikud_ready: "1" });
-    menuText = await menu.text();
-  }
+  const picked = Date.now();
+  const menu = await phonePress({ ApiPhone: "035551001", pikud_device: "1" });
+  const menuText = await menu.text();
+  assert.ok(Date.now() - picked < 2500, "device menu must not wait on a long live status check");
+  assert.equal(menuText.includes("pikud_ready"), false);
+  assert.equal(menuText.includes("מבצע בדיקת מצב ערוץ"), false);
   assert.match(menuText, /כבוי כעת, להפעלה הקש אחד/);
 
   const started = Date.now();

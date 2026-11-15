@@ -1,11 +1,11 @@
 import { devicesForPhone, normalizePhone } from "@/lib/access";
-import { decideMenu, STATUS_WAIT, type MenuDevice } from "@/lib/ivr/flow";
+import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
 import { savePhoneClock } from "@/lib/ivr/phone-clock";
 import { answerPrograms } from "@/lib/ivr/programs";
 import { answerSettings } from "@/lib/ivr/settings";
 import { allDoneMessage, allIdleMessage } from "@/lib/ivr/settings-menu";
 import { speechFor } from "@/lib/ivr/speech";
-import { ensureStatusCheck, statusCheckRunning } from "@/lib/ivr/status-check";
+import { awaitStatusCheck, ensureStatusCheck } from "@/lib/ivr/status-check";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
 import { listIvrTargets, saveSchedule } from "@/lib/store";
 import { getBridge } from "@/lib/wlte/bridge";
@@ -129,36 +129,18 @@ export async function handleMenu(request: Request) {
 
   const selected = Number(present(input.values.pikud_device));
   const chosen = Number.isInteger(selected) ? devices[selected - 1] : undefined;
-  // Start live status checks while the caller still hears the device list / wait line.
+  // Warm live status while the caller still hears the device list — never block the list on it.
   if (!present(input.values.pikud_action)) {
     for (const device of devices) {
       void ensureStatusCheck(device.deviceId).catch(() => {});
     }
   }
-  // Refresh only while the caller is still choosing. Once a key asks to switch
-  // the socket, answer from the state already stored and send the command after the reply.
+  // Refresh only while the caller is still choosing. Cap the wait so a slow gateway
+  // (WLTE up to 15s / Shelly up to 8s) cannot leave silence after a keypress; fall back
+  // to the last stored state and keep the check running in the background.
   if (chosen && !present(input.values.pikud_action)) {
-    // Only announce a wait line when the check is still running — and only once.
-    // No inner comma/period: Yemot would otherwise split the sentence into two readings.
-    if (!present(input.values.pikud_ready) && statusCheckRunning(chosen.deviceId)) {
-      return reply(
-        input.format,
-        yemotRead({
-          message: STATUS_WAIT,
-          field: "pikud_ready",
-          min: 1,
-          max: 1,
-          seconds: 1,
-          allowEmpty: true,
-          emptyVal: "1",
-          // amount_attempts=2 would speak this wait line twice before continuing.
-          attempts: 1,
-          mode: "No",
-        }),
-      );
-    }
     try {
-      const fresh = await ensureStatusCheck(chosen.deviceId);
+      const fresh = await awaitStatusCheck(chosen.deviceId);
       if (fresh) {
         chosen.relayOn = fresh.relayOn;
         chosen.connectivity = fresh.connectivity;

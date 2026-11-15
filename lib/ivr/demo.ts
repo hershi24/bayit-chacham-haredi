@@ -1,5 +1,5 @@
 import { normalizePhone } from "@/lib/access";
-import { clockSavedMessage, decideMenu, STATUS_WAIT, type MenuDevice, type MenuRead } from "@/lib/ivr/flow";
+import { clockSavedMessage, decideMenu, type MenuDevice, type MenuRead } from "@/lib/ivr/flow";
 import {
   askOff,
   askOn,
@@ -111,7 +111,7 @@ export function demoAnswer(home: DemoHome, values: DemoValues): DemoTurn {
 
   const chosen = device ? devices[Number(device) - 1] : undefined;
   const action = present(values.pikud_action);
-  if (chosen && !action && !values.pikud_ready) return { type: "wait", message: STATUS_WAIT };
+  // Live IVR no longer inserts a status-wait round-trip; answer the device menu immediately.
 
   if (chosen && action === "4") return programs(home, chosen, values);
 

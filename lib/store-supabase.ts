@@ -279,34 +279,41 @@ function frozenColumnMissing(error: DbError) {
   return deviceColumns.includes("frozen") && (error.code === "42703" || error.code === "PGRST204" || /frozen/i.test(error.message));
 }
 
+type DeviceSelect<T> = { data: T | null; error: DbError | null };
+
+/** Drop optional columns the live database has not migrated yet, then retry. */
+async function selectDevices<T>(run: (columns: string) => PromiseLike<DeviceSelect<T>>): Promise<DeviceSelect<T>> {
+  let last: DeviceSelect<T> = { data: null, error: { message: "device select failed" } };
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    last = await run(deviceColumns);
+    if (!last.error) return last;
+    if (frozenColumnMissing(last.error)) {
+      deviceColumns = deviceColumns.replace(", frozen", "");
+      continue;
+    }
+    if (sortOrderColumnMissing(last.error)) {
+      deviceColumns = deviceColumns.replace(", sort_order", "");
+      continue;
+    }
+    if (iconColumnMissing(last.error)) {
+      deviceColumns = deviceColumnsPlain;
+      continue;
+    }
+    if (columnMissing(last.error, "last_online_at") && deviceColumns.includes("last_online_at")) {
+      deviceColumns = deviceColumns.replace(", last_online_at", "");
+      continue;
+    }
+    return last;
+  }
+  return last;
+}
+
 async function deviceRows(tenantId?: string | null): Promise<DeviceRow[]> {
-  let query = client().from("devices").select(deviceColumns);
-  if (tenantId) query = query.eq("tenant_id", tenantId);
-  let result = await query;
-  if (result.error && frozenColumnMissing(result.error)) {
-    deviceColumns = deviceColumns.replace(", frozen", "");
-    query = client().from("devices").select(deviceColumns);
+  const result = await selectDevices((columns) => {
+    let query = client().from("devices").select(columns);
     if (tenantId) query = query.eq("tenant_id", tenantId);
-    result = await query;
-  }
-  if (result.error && sortOrderColumnMissing(result.error)) {
-    deviceColumns = deviceColumns.replace(", sort_order", "");
-    query = client().from("devices").select(deviceColumns);
-    if (tenantId) query = query.eq("tenant_id", tenantId);
-    result = await query;
-  }
-  if (result.error && iconColumnMissing(result.error)) {
-    deviceColumns = deviceColumnsPlain;
-    query = client().from("devices").select(deviceColumns);
-    if (tenantId) query = query.eq("tenant_id", tenantId);
-    result = await query;
-  }
-  if (result.error && columnMissing(result.error, "last_online_at")) {
-    deviceColumns = deviceColumns.replace(", last_online_at", "");
-    query = client().from("devices").select(deviceColumns);
-    if (tenantId) query = query.eq("tenant_id", tenantId);
-    result = await query;
-  }
+    return query;
+  });
   if (result.error) fail(result.error, "לא ניתן לקרוא שקעים");
   return (result.data ?? []) as unknown as DeviceRow[];
 }
@@ -343,23 +350,9 @@ export async function listIvrTargets(): Promise<Array<DeviceView & { phone: stri
 
 export async function getDevice(deviceId: string): Promise<(DeviceView & { phone: string | null }) | null> {
   await ready();
-  let result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
-  if (result.error && frozenColumnMissing(result.error)) {
-    deviceColumns = deviceColumns.replace(", frozen", "");
-    result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
-  }
-  if (result.error && sortOrderColumnMissing(result.error)) {
-    deviceColumns = deviceColumns.replace(", sort_order", "");
-    result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
-  }
-  if (result.error && iconColumnMissing(result.error)) {
-    deviceColumns = deviceColumnsPlain;
-    result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
-  }
-  if (result.error && columnMissing(result.error, "last_online_at")) {
-    deviceColumns = deviceColumns.replace(", last_online_at", "");
-    result = await client().from("devices").select(deviceColumns).eq("device_id", deviceId).maybeSingle();
-  }
+  const result = await selectDevices((columns) =>
+    client().from("devices").select(columns).eq("device_id", deviceId).maybeSingle(),
+  );
   if (result.error) fail(result.error, "לא ניתן לקרוא שקע");
   return result.data ? mapDevice(result.data as unknown as DeviceRow) : null;
 }
@@ -861,7 +854,7 @@ export async function createShellyPro3(input: {
 export async function listDevicesByExternalId(externalId: string): Promise<DeviceView[]> {
   await ready();
   const id = externalId.trim().toLowerCase();
-  const result = await client().from("devices").select(deviceColumns).ilike("external_id", id);
+  const result = await selectDevices((columns) => client().from("devices").select(columns).ilike("external_id", id));
   if (result.error && /external_id/i.test(result.error.message)) return [];
   if (result.error) fail(result.error, "לא ניתן לקרוא התקני Shelly");
   return ((result.data ?? []) as unknown as DeviceRow[]).map(mapDevice).map(presentDevice);
@@ -872,7 +865,9 @@ export async function findShellyDevices(anyId: string): Promise<DeviceView[]> {
   if (exact.length) return exact;
   await ready();
   const mac = shellyMac(anyId);
-  const result = await client().from("devices").select(deviceColumns).eq("vendor", "shelly").not("external_id", "is", null);
+  const result = await selectDevices((columns) =>
+    client().from("devices").select(columns).eq("vendor", "shelly").not("external_id", "is", null),
+  );
   if (result.error && /vendor|external_id/i.test(result.error.message)) return [];
   if (result.error) fail(result.error, "לא ניתן לקרוא התקני Shelly");
   const matched = ((result.data ?? []) as unknown as DeviceRow[])

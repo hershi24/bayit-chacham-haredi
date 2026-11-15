@@ -1,7 +1,7 @@
 import type { WebSocket } from "ws";
 import { publishDevice } from "@/lib/sse";
 import { findShellyDevices, getDevice, updateDeviceState } from "@/lib/store";
-import { parseShellyChannelId, shellyChannelDeviceId, shellyMac, type ShellyChannel } from "@/lib/shelly/ids";
+import { parseShellyChannelId, shellyChannelDeviceId, shellyIdsMatch, shellyMac, type ShellyChannel } from "@/lib/shelly/ids";
 import {
   channelStatesFromStatus,
   getDeviceInfoCall,
@@ -113,7 +113,7 @@ class ShellyHub {
       return { status: "SUCCESS" };
     }
 
-    const socket = this.sockets.get(parsed.shellyId);
+    const socket = this.socketFor(parsed.shellyId);
     if (!socket || socket.readyState !== socket.OPEN) {
       return { status: "FAILED", message: "התקן Shelly אינו מחובר כעת" };
     }
@@ -137,8 +137,18 @@ class ShellyHub {
 
   isOnline(shellyId: string) {
     if (this.mockOnline.has(shellyId)) return true;
-    const socket = this.sockets.get(shellyId);
+    const socket = this.socketFor(shellyId);
     return Boolean(socket && socket.readyState === socket.OPEN);
+  }
+
+  /** Match the id the unit reported and the short MAC stored in admin. */
+  private socketFor(shellyId: string) {
+    const direct = this.sockets.get(shellyId);
+    if (direct) return direct;
+    for (const [key, socket] of this.sockets) {
+      if (shellyIdsMatch(key, shellyId)) return socket;
+    }
+    return undefined;
   }
 
   /**
@@ -173,11 +183,10 @@ class ShellyHub {
   }
 
   private async pollPresence(shellyId: string): Promise<boolean> {
-    const socket = this.sockets.get(shellyId);
-    if (!socket || socket.readyState !== socket.OPEN) {
-      await this.markOffline(shellyId);
-      return false;
-    }
+    const socket = this.socketFor(shellyId);
+    // No socket on this process does not mean the unit is down. Marking it offline
+    // here used to flip every Shelly to "מנותק" on dashboard refresh.
+    if (!socket || socket.readyState !== socket.OPEN) return false;
     const id = this.nextId++;
     try {
       const result = await this.request(socket, id, getStatusCall(id));

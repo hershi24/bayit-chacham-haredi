@@ -17,6 +17,8 @@ const sources: Record<AuditView["source"], string> = {
 function actionLabel(action: string) {
   if (action === "ON") return "הפעלה";
   if (action === "OFF") return "כיבוי";
+  if (action === "CONTACT_REQUEST") return "פניה מהאתר";
+  if (action === "ADMIN_REQUEST") return "בקשת חזרה";
   return action;
 }
 
@@ -85,7 +87,14 @@ export function AuditLog() {
                   <TableCell>{actionLabel(entry.action)}</TableCell>
                   <TableCell>
                     <div>{entry.result}</div>
-                    {entry.detail ? <div className="max-w-48 truncate text-xs text-muted-foreground">{entry.detail}</div> : null}
+                    {entry.detail ? (
+                      <div
+                        className={entry.action === "CONTACT_REQUEST" ? "max-w-72 text-xs whitespace-normal text-muted-foreground" : "max-w-48 truncate text-xs text-muted-foreground"}
+                        title={entry.detail}
+                      >
+                        {entry.detail}
+                      </div>
+                    ) : null}
                   </TableCell>
                   <TableCell className="max-w-36 truncate font-mono text-xs" dir="ltr">
                     {entry.idempotencyKey ?? "—"}

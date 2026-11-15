@@ -10,7 +10,7 @@ const assistant = Assistant({
 
 export const metadata: Metadata = {
   title: "Kosher Smart Home | בית חכם מהפלאפון הכשר",
-  description: "Kosher Smart Home – שליטה בשקעים ובהתקני Shelly Pro 3 מהפלאפון הכשר ומהאתר.",
+  description: "Kosher Smart Home – מדליקים את הדוד, המזגן והתאורה בשיחה מהפלאפון הכשר או מהאתר. מוצרים עם תו תקן. 058-329-6967",
 };
 
 export default function LoginPage() {

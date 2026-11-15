@@ -306,6 +306,25 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                 </li>
               </ul>
             </div>
+            <figure className="hero-art">
+              <div className="hero-glow" />
+              <Image
+                className="hero-devices"
+                src="/product/devices.webp"
+                width={561}
+                height={505}
+                priority
+                alt="שני ההתקנים: שקע חכם לקיר ובקר תלת־ערוצי ללוח החשמל"
+              />
+              <figcaption>
+                <span>
+                  <Plug size={16} /> שקע חכם · בלי חשמלאי
+                </span>
+                <span>
+                  <CircuitBoard size={16} /> בקר ללוח · שלושה ערוצים
+                </span>
+              </figcaption>
+            </figure>
           </div>
           <div className="wrap uses reveal">
             <span>מה מחברים?</span>
@@ -403,10 +422,8 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
             </div>
             <div className="devices">
               <article className="device-card reveal">
-                <div className="device-top">
-                  <div className="device-icon">
-                    <Plug size={28} />
-                  </div>
+                <div className="device-photo">
+                  <Image src="/product/socket.webp" width={333} height={440} alt="שקע חכם Kosher Smart Home לקיר" />
                   <span className="tag">בלי חשמלאי</span>
                 </div>
                 <h3>שקע חכם</h3>
@@ -421,10 +438,8 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                 </ul>
               </article>
               <article className="device-card reveal">
-                <div className="device-top">
-                  <div className="device-icon">
-                    <CircuitBoard size={28} />
-                  </div>
+                <div className="device-photo">
+                  <Image src="/product/controller.webp" width={333} height={440} alt="בקר Kosher Smart Home ללוח החשמל, שלושה ערוצים" />
                   <span className="tag">שלושה ערוצים</span>
                 </div>
                 <h3>בקר ללוח החשמל</h3>

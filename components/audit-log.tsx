@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/client-api";
+import { auditResultLabel, auditSucceeded } from "@/lib/audit-result";
 import { formatIsrael } from "@/lib/time";
 import type { AuditView } from "@/lib/types";
 
@@ -86,7 +87,7 @@ export function AuditLog() {
                   </TableCell>
                   <TableCell>{actionLabel(entry.action)}</TableCell>
                   <TableCell>
-                    <div>{entry.result}</div>
+                    <div className={auditSucceeded(entry.result) || entry.result === "SENT" ? undefined : "font-medium text-destructive"}>{auditResultLabel(entry.result)}</div>
                     {entry.detail ? (
                       <div
                         className={entry.action === "CONTACT_REQUEST" ? "max-w-72 text-xs whitespace-normal text-muted-foreground" : "max-w-48 truncate text-xs text-muted-foreground"}

@@ -218,25 +218,45 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
 
   async function commandAll(action: RelayAction) {
     const pool = focusTenant ? (devices ?? []).filter((device) => device.tenantId === focusTenant) : devices ?? [];
-    const targets = pool.filter((device) => {
+    const needing = pool.filter((device) => {
       if (device.frozen) return false;
       return action === "ON" ? device.relayOn !== true : device.relayOn !== false;
     });
+    const offlineSkipped = needing.filter((device) => device.connectivity === "OFFLINE").length;
+    // Skip known-offline sockets so a hung WLTE call cannot starve later sockets.
+    const targets = needing.filter((device) => device.connectivity !== "OFFLINE");
     if (!targets.length) {
-      toast.message(action === "ON" ? "כל השקעים כבר פועלים" : "כל השקעים כבר כבויים");
+      toast.message(
+        offlineSkipped
+          ? "אין שקעים מחוברים כעת"
+          : action === "ON"
+            ? "כל השקעים כבר פועלים"
+            : "כל השקעים כבר כבויים",
+      );
       return;
     }
+    // Online before unknown so a slow unreachable socket cannot occupy the browser's
+    // few connections to this host and starve the rest of the batch.
+    const ordered = [...targets].sort((left, right) => {
+      const leftRank = left.connectivity === "ONLINE" ? 0 : 1;
+      const rightRank = right.connectivity === "ONLINE" ? 0 : 1;
+      return leftRank - rightRank;
+    });
     setBulkBusy(action);
-    const results = await Promise.allSettled(targets.map((device) => command(device, action, { quiet: true })));
+    const results = await mapLimited(ordered, 4, (device) => command(device, action, { quiet: true }));
     const failed = results.filter((result) => result.status === "rejected").length;
     const ok = results.length - failed;
     if (failed === 0) {
-      toast.success(action === "ON" ? `הופעלו ${ok} שקעים` : `כובו ${ok} שקעים`);
+      const offlineNote = offlineSkipped ? ` (מנותקים ${offlineSkipped} לא שונו)` : "";
+      toast.success(action === "ON" ? `הופעלו ${ok} שקעים${offlineNote}` : `כובו ${ok} שקעים${offlineNote}`);
     } else if (ok === 0) {
       toast.error(action === "ON" ? "ההפעלה לכולם נכשלה" : "הכיבוי לכולם נכשל");
       await load(false);
     } else {
-      toast.warning(action === "ON" ? `הופעלו ${ok}, נכשלו ${failed}` : `כובו ${ok}, נכשלו ${failed}`);
+      const offlineNote = offlineSkipped ? `, מנותקים ${offlineSkipped}` : "";
+      toast.warning(
+        action === "ON" ? `הופעלו ${ok}, נכשלו ${failed}${offlineNote}` : `כובו ${ok}, נכשלו ${failed}${offlineNote}`,
+      );
       await load(false);
     }
     setBulkBusy(null);
@@ -259,6 +279,38 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
     });
     applyDevice(result.device);
     toast.success("הכינוי נשמר");
+  }
+
+  async function moveDevice(index: number, delta: number) {
+    const list = focusTenant ? (devices ?? []).filter((device) => device.tenantId === focusTenant) : [...(devices ?? [])];
+    const nextIndex = index + delta;
+    if (nextIndex < 0 || nextIndex >= list.length) return;
+    const ordered = [...list];
+    const [item] = ordered.splice(index, 1);
+    ordered.splice(nextIndex, 0, item);
+    setDevices((current) => {
+      if (!current) return current;
+      if (!focusTenant) return ordered.map((device, sortOrder) => ({ ...device, sortOrder }));
+      const others = current.filter((device) => device.tenantId !== focusTenant);
+      return [...others, ...ordered.map((device, sortOrder) => ({ ...device, sortOrder }))];
+    });
+    try {
+      const result = await api<{ devices: DeviceView[] }>("/api/devices/order", {
+        method: "POST",
+        body: JSON.stringify({
+          deviceIds: ordered.map((device) => device.deviceId),
+          tenantId: focusTenant || ordered[0]?.tenantId,
+        }),
+      });
+      setDevices((current) => {
+        if (!current) return result.devices;
+        const byId = new Map(result.devices.map((device) => [device.deviceId, device]));
+        return current.map((device) => byId.get(device.deviceId) ?? device);
+      });
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "שמירת הסדר נכשלה");
+      await load(false);
+    }
   }
 
   async function armTimer(device: DeviceView, input: { mode: "now" | "later"; time?: string; minutes: number }) {
@@ -392,6 +444,37 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
         <div className="rounded-2xl border border-border/60 bg-card p-6 text-start">
           <h3 className="font-medium">אין שקעים משויכים לחשבון הזה</h3>
           <p className="mt-1 text-sm text-muted-foreground">מנהל המערכת יכול לשייך שקע ללקוח מתוך מסך הניהול.</p>
+        </div>
+      ) : null}
+      {boardDevices && boardDevices.length > 1 ? (
+        <div className="mb-4 overflow-hidden rounded-2xl border border-border/60 bg-card">
+          <div className="border-b border-border/50 px-4 py-2.5 text-[13px] font-medium text-muted-foreground">סדר תצוגה והקראה בטלפון</div>
+          <ol>
+            {boardDevices.map((device, index) => (
+              <li key={device.deviceId} className="flex items-center gap-3 border-b border-border/50 px-4 py-2.5 last:border-b-0">
+                <span className="w-5 text-[13px] tabular-nums text-muted-foreground">{index + 1}</span>
+                <span className="min-w-0 flex-1 truncate text-[15px]">{device.name}</span>
+                <button
+                  type="button"
+                  className="rounded-lg px-2 py-1 text-[13px] text-muted-foreground hover:bg-secondary disabled:opacity-30"
+                  disabled={anyBusy || index === 0}
+                  aria-label={`העלאת ${device.name}`}
+                  onClick={() => void moveDevice(index, -1)}
+                >
+                  למעלה
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg px-2 py-1 text-[13px] text-muted-foreground hover:bg-secondary disabled:opacity-30"
+                  disabled={anyBusy || index === boardDevices.length - 1}
+                  aria-label={`הורדת ${device.name}`}
+                  onClick={() => void moveDevice(index, 1)}
+                >
+                  למטה
+                </button>
+              </li>
+            ))}
+          </ol>
         </div>
       ) : null}
       {boardDevices && boardDevices.length > 0 ? (
@@ -619,6 +702,25 @@ function AdminOverview({ devices, onOpen }: { devices: DeviceView[]; onOpen: (te
       </div>
     </div>
   );
+}
+
+async function mapLimited<T, R>(items: T[], limit: number, work: (item: T) => Promise<R>) {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      try {
+        results[index] = { status: "fulfilled", value: await work(items[index]) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

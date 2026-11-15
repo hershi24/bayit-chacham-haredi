@@ -6,16 +6,18 @@ import {
   ADMIN_SENT,
   askAdminConfirm,
   askNewPhone,
+  askOrderPick,
   askRemove,
   auditLine,
   auditMessage,
+  orderSaved,
   phoneAdded,
   phoneRemoved,
   REMOVE_CANCELLED,
   settingsMenu,
 } from "@/lib/ivr/settings-menu";
 import { auditSucceeded } from "@/lib/audit-result";
-import { addAudit, addCallerNumber, listAudit, listCallerNumbers, removeCallerNumber } from "@/lib/store";
+import { addAudit, addCallerNumber, listAudit, listCallerNumbers, removeCallerNumber, saveDeviceOrder } from "@/lib/store";
 import { HttpError } from "@/lib/http-error";
 
 export type SettingsDecision =
@@ -23,16 +25,44 @@ export type SettingsDecision =
   | { type: "say"; message: string }
   | { type: "all"; action: "ON" | "OFF" };
 
+function present(value: string | undefined) {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === "none" || trimmed === "null") return undefined;
+  return trimmed;
+}
+
+function orderPicks(values: Record<string, string | undefined>, deviceCount: number) {
+  const picks: number[] = [];
+  for (let position = 1; position <= deviceCount; position += 1) {
+    const raw = present(values[`pikud_ord${position}`]);
+    if (!raw) break;
+    if (raw === "0") return { picks, done: true as const };
+    const index = Number(raw) - 1;
+    if (!Number.isInteger(index) || index < 0 || index >= deviceCount || picks.includes(index)) {
+      return { picks, error: "הבחירה לא קיימת" as const };
+    }
+    picks.push(index);
+  }
+  return { picks, done: picks.length >= deviceCount };
+}
+
 export async function answerSettings(input: {
   tenantId: string;
   actorPhone: string;
   deviceIds?: string[];
+  devices?: Array<{ deviceId: string; name: string }>;
   settings?: string;
   newPhone?: string;
   delPhone?: string;
   adminAsk?: string;
+  orderValues?: Record<string, string | undefined>;
 }): Promise<SettingsDecision> {
-  if (!input.settings && !input.newPhone && !input.delPhone && !input.adminAsk) {
+  const ordering =
+    input.settings === "7" ||
+    Object.keys(input.orderValues ?? {}).some((key) => key.startsWith("pikud_ord"));
+
+  if (!input.settings && !input.newPhone && !input.delPhone && !input.adminAsk && !ordering) {
     return settingsMenu();
   }
 
@@ -115,6 +145,21 @@ export async function answerSettings(input: {
 
   if (input.settings === "5") return { type: "all", action: "ON" };
   if (input.settings === "6") return { type: "all", action: "OFF" };
+
+  if (ordering) {
+    const devices = (input.devices ?? []).slice(0, 9);
+    if (devices.length < 2) return { type: "say", message: "צריך לפחות שני התקנים כדי לשנות סדר" };
+    const parsed = orderPicks(input.orderValues ?? {}, devices.length);
+    if (parsed.error) return { type: "say", message: parsed.error };
+    if (!parsed.done) {
+      const remaining = devices.map((_, index) => index).filter((index) => !parsed.picks.includes(index));
+      return askOrderPick(devices, parsed.picks.length + 1, remaining);
+    }
+    const remaining = devices.map((_, index) => index).filter((index) => !parsed.picks.includes(index));
+    const orderedIds = [...parsed.picks, ...remaining].map((index) => devices[index].deviceId);
+    await saveDeviceOrder(input.tenantId, orderedIds);
+    return { type: "say", message: orderSaved() };
+  }
 
   return { ...settingsMenu(), message: `הבחירה לא קיימת, ${settingsMenu().message}` };
 }

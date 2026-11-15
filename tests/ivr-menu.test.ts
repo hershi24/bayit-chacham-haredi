@@ -23,6 +23,25 @@ import {
   updateDeviceState,
 } from "../lib/store";
 import { israelDate, nextJerusalemClock } from "../lib/time";
+import { getBridge } from "../lib/wlte/bridge";
+
+async function setSocket(
+  deviceId: string,
+  patch: { connectivity: "ONLINE" | "OFFLINE"; relayOn: boolean },
+) {
+  const now = new Date().toISOString();
+  await updateDeviceState(deviceId, {
+    connectivity: patch.connectivity,
+    relayOn: patch.relayOn,
+    stateUpdatedAt: now,
+    lastError: null,
+  });
+  // Keep the mock gateway in sync — updateDeviceState alone leaves it stale.
+  await getBridge().simulate(deviceId, {
+    online: patch.connectivity === "ONLINE",
+    relayOn: patch.relayOn,
+  });
+}
 
 const ac: MenuDevice = { deviceId: "ac", name: "מזגן", relayOn: false, connectivity: "ONLINE" };
 const light: MenuDevice = { deviceId: "light", name: "תאורה", relayOn: true, connectivity: "ONLINE" };
@@ -584,10 +603,9 @@ async function waitForRelay(deviceId: string, relayOn: boolean) {
 }
 
 test("the on and off keys are answered before the socket finishes switching", async () => {
-  const now = new Date().toISOString();
-  await updateDeviceState("rct063285302", { connectivity: "ONLINE", relayOn: false, stateUpdatedAt: now, lastError: null });
-  await updateDeviceState("rct074190118", { connectivity: "ONLINE", relayOn: true, stateUpdatedAt: now, lastError: null });
-  await updateDeviceState("rct063285417", { connectivity: "OFFLINE", relayOn: false, stateUpdatedAt: now, lastError: null });
+  await setSocket("rct063285302", { connectivity: "ONLINE", relayOn: false });
+  await setSocket("rct074190118", { connectivity: "ONLINE", relayOn: true });
+  await setSocket("rct063285417", { connectivity: "OFFLINE", relayOn: false });
 
   const picked = Date.now();
   const menu = await phonePress({ ApiPhone: "035551001", pikud_device: "1" });
@@ -670,7 +688,7 @@ test("settings branch adds and removes a caller number and can ask for an admin 
   assert.match(menuText, /להוספת מספר מורשה הקש אחד/);
   assert.match(menuText, /להפעלת כל השקעים הקש חמש/);
   assert.match(menuText, /לכיבוי כל השקעים הקש שש/);
-  assert.match(menuText, /,123456,/);
+  assert.match(menuText, /,1234567,/);
 
   const ask = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "1" });
   const askText = await ask.text();
@@ -718,14 +736,42 @@ test("settings branch adds and removes a caller number and can ask for an admin 
   const logs = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "3" });
   assert.match(await logs.text(), /פעולות אחרונות|אין פעולות ביומן/);
 
+  await setSocket("rct063285302", { connectivity: "ONLINE", relayOn: false });
+  await setSocket("rct063285417", { connectivity: "ONLINE", relayOn: false });
   const allOn = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "5" });
   assert.match(await allOn.text(), /כל השקעים הופעלו בהצלחה|כל השקעים כבר פועלים/);
+  await waitForRelay("rct063285302", true);
+  await waitForRelay("rct063285417", true);
 
   const allOff = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "6" });
   assert.match(await allOff.text(), /כל השקעים כובו בהצלחה|כל השקעים כבר כבויים/);
+  await waitForRelay("rct063285302", false);
+  await waitForRelay("rct063285417", false);
 
   // Cleanup if anything lingered from a previous failed run.
   for (const item of await listCallerNumbers(tenantId!)) {
     if (item.phone === "0540001999") await removeCallerNumber(tenantId!, item.id);
   }
+});
+
+test("all-off still commands later sockets when an earlier one is offline", async () => {
+  await setSocket("rct063285302", { connectivity: "OFFLINE", relayOn: true });
+  await setSocket("rct063285417", { connectivity: "ONLINE", relayOn: true });
+  const menu = await phonePress({ ApiPhone: "035551001", pikud_device: "0", pikud_settings: "6" });
+  const text = await menu.text();
+  assert.match(text, /כל השקעים כובו בהצלחה/);
+  assert.equal(text.includes("אין שקעים מחוברים לכיבוי כעת"), false);
+  await waitForRelay("rct063285417", false);
+  assert.equal((await getDevice("rct063285302"))?.relayOn, true);
+});
+
+test("device order from settings is used in the spoken menu", async () => {
+  const { saveDeviceOrder } = await import("../lib/store");
+  await saveDeviceOrder("ten_yeshiva", ["rct063285417", "rct063285302"]);
+  const menu = await phonePress({ ApiPhone: "035551001" });
+  const text = await menu.text();
+  const ac = text.indexOf("לשקע מזגן הקש אחד");
+  const hall = text.indexOf("לשקע אולם הקש שתיים");
+  assert.ok(ac >= 0 && hall >= 0 && ac < hall);
+  await saveDeviceOrder("ten_yeshiva", ["rct063285302", "rct063285417"]);
 });

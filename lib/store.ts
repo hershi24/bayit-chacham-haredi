@@ -89,6 +89,11 @@ export async function setDeviceName(deviceId: string, name: string) {
   return withNext;
 }
 
+export async function saveDeviceOrder(tenantId: string, deviceIds: string[]) {
+  const devices = remoteOn() ? await remote.saveDeviceOrder(tenantId, deviceIds) : sqlite.saveDeviceOrder(tenantId, deviceIds);
+  return withPlans(devices);
+}
+
 export async function listTenants() {
   if (remoteOn()) return remote.listTenants();
   return sqlite.listTenants();

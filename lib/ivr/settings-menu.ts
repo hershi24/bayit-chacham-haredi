@@ -20,13 +20,38 @@ export function settingsMenu(): MenuRead {
   return {
     type: "read",
     message:
-      "להוספת מספר מורשה הקש אחד, להסרת מספר הקש שתיים, לשמיעת יומן פעולות הקש שלוש, לפניה למנהל המערכת הקש ארבע, להפעלת כל השקעים הקש חמש, לכיבוי כל השקעים הקש שש",
+      "להוספת מספר מורשה הקש אחד, להסרת מספר הקש שתיים, לשמיעת יומן פעולות הקש שלוש, לפניה למנהל המערכת הקש ארבע, להפעלת כל השקעים הקש חמש, לכיבוי כל השקעים הקש שש, לסידור סדר ההתקנים הקש שבע",
     field: "pikud_settings",
     min: 1,
     max: 1,
-    allowed: "123456",
+    allowed: "1234567",
     mode: "No",
   };
+}
+
+export function askOrderPick(
+  devices: Array<{ name: string }>,
+  position: number,
+  remainingIndexes: number[],
+): MenuRead | { type: "say"; message: string } {
+  if (!remainingIndexes.length) return { type: "say", message: "אין התקנים לסידור" };
+  const place = INDEX[position] || String(position);
+  const choices = remainingIndexes
+    .map((index) => `ל${devices[index]?.name || "התקן"} הקש ${INDEX[index + 1]}`)
+    .join(", ");
+  return {
+    type: "read",
+    message: `מי יהיה במקום ${place}. ${choices}, להשארת שאר הסדר כמו שהוא הקש אפס`,
+    field: `pikud_ord${position}`,
+    min: 1,
+    max: 1,
+    allowed: `0${remainingIndexes.map((index) => String(index + 1)).join("")}`,
+    mode: "No",
+  };
+}
+
+export function orderSaved() {
+  return "סדר ההתקנים נשמר. כך הם יופיעו בטלפון ובאתר";
 }
 
 export function askNewPhone(): MenuRead {

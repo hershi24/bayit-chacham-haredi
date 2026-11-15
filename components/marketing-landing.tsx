@@ -273,7 +273,6 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
         <section className="hero">
           <div className="blob b1" />
           <div className="blob b2" />
-          <div className="blob b3" />
           <div className="wrap hero-grid">
             <div className="hero-copy">
               <span className="eyebrow">
@@ -306,33 +305,6 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                   <Check size={17} /> שעונים ותוכניות קבועות
                 </li>
               </ul>
-            </div>
-            <div className="hero-art">
-              <div className="art-card">
-                <Image
-                  className="product-img"
-                  src="/product/socket-phone.gif"
-                  width={512}
-                  height={512}
-                  priority
-                  unoptimized
-                  alt="שקע חכם לצד פלאפון כשר"
-                />
-              </div>
-              <div className="chip chip-a">
-                <span className="chip-dot on" />
-                <div>
-                  <strong>דוד שמש</strong>
-                  <small>נדלק ב־06:00 · לפי שעון</small>
-                </div>
-              </div>
-              <div className="chip chip-b">
-                <PhoneCall size={18} />
-                <div>
-                  <strong>הקש 1 להפעלה</strong>
-                  <small>המזגן בסלון</small>
-                </div>
-              </div>
             </div>
           </div>
           <div className="wrap uses reveal">

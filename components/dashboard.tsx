@@ -13,11 +13,11 @@ import { planWhen, seenWhen } from "@/lib/time";
 import type { AuditView, BridgeStatus, DeviceView, RelayAction, SessionUser } from "@/lib/types";
 type Payload = { devices: DeviceView[]; status: BridgeStatus; user?: SessionUser };
 
-export function Dashboard() {
+export function Dashboard({ user }: { user?: SessionUser | null }) {
   const [devices, setDevices] = useState<DeviceView[] | null>(null);
   const [status, setStatus] = useState<BridgeStatus | null>(null);
-  const [role, setRole] = useState<SessionUser["role"] | null>(null);
-  const [name, setName] = useState("");
+  const [role, setRole] = useState<SessionUser["role"] | null>(user?.role ?? null);
+  const [name, setName] = useState(user?.name ?? "");
   const [audit, setAudit] = useState<AuditView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, RelayAction | null>>({});
@@ -30,7 +30,8 @@ export function Dashboard() {
 
   const applyDevice = useCallback((next: DeviceView) => {
     setDevices((current) => {
-      if (!current) return [next];
+      // Live events can arrive before the first list; for an admin that would flash every tenant's devices.
+      if (!current) return current;
       const index = current.findIndex((device) => device.deviceId === next.deviceId);
       if (index === -1) return [...current, next];
       const previous = current[index];
@@ -165,7 +166,7 @@ export function Dashboard() {
   }, [applyDevice, devices, focusTenant, loadAudit]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(true), 0);
+    const timer = window.setTimeout(() => void load(false).then(() => load(true)), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
 

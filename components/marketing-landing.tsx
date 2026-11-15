@@ -17,7 +17,6 @@ import {
   Phone,
   PhoneCall,
   Plug,
-  RotateCcw,
   Send,
   ShieldCheck,
   Snowflake,
@@ -25,6 +24,7 @@ import {
   Zap,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { CallDemo } from "@/components/call-demo";
 import "./landing.css";
 
 const PHONE = "058-329-6967";
@@ -71,82 +71,6 @@ const questions = [
   ["מה קורה אם נפל החשמל או האינטרנט?", "כשהחיבור חוזר, ההתקן חוזר לעבוד. באתר רואים מתי בדיוק הוא היה מחובר בפעם האחרונה."],
   ["המוצרים מאושרים?", "כן. כל ההתקנים שאנחנו מספקים נושאים תו תקן ועומדים בדרישות הרשויות בישראל."],
 ];
-
-type Line = { from: "sys" | "me"; text: string };
-type CallStep = "menu" | "device" | "done";
-
-const callDevices: Record<string, string> = { "1": "דוד שמש", "2": "המזגן בסלון", "3": "התאורה בחצר" };
-const greeting: Line = { from: "sys", text: "שלום. לדוד שמש הקש 1, למזגן בסלון הקש 2, לתאורה בחצר הקש 3." };
-
-function CallDemo() {
-  const [lines, setLines] = useState<Line[]>([greeting]);
-  const [step, setStep] = useState<CallStep>("menu");
-  const [device, setDevice] = useState<string | null>(null);
-  const screenRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const screen = screenRef.current;
-    if (screen) screen.scrollTo({ top: screen.scrollHeight, behavior: "smooth" });
-  }, [lines]);
-
-  function press(key: string) {
-    if (step === "done") return;
-    const mine: Line = { from: "me", text: key };
-    if (step === "menu") {
-      const name = callDevices[key];
-      if (!name) return setLines((all) => [...all, mine, { from: "sys", text: "הבחירה לא קיימת. נסו 1, 2 או 3." }]);
-      setDevice(name);
-      setStep("device");
-      return setLines((all) => [...all, mine, { from: "sys", text: `${name} כבוי כעת. להפעלה הקש 1, להפעלה לשעה הקש 2.` }]);
-    }
-    if (key === "1") {
-      setStep("done");
-      return setLines((all) => [...all, mine, { from: "sys", text: `${device} הופעל. להתראות.` }]);
-    }
-    if (key === "2") {
-      setStep("done");
-      return setLines((all) => [...all, mine, { from: "sys", text: `${device} הופעל, ויכבה לבד בעוד שעה.` }]);
-    }
-    setLines((all) => [...all, mine, { from: "sys", text: "להפעלה הקש 1, להפעלה לשעה הקש 2." }]);
-  }
-
-  function restart() {
-    setLines([greeting]);
-    setStep("menu");
-    setDevice(null);
-  }
-
-  return (
-    <div className="phone">
-      <div className="phone-head">
-        <span className="phone-dot" />
-        <span>בשיחה עם הבית</span>
-        <span className="phone-time" dir="ltr">
-          00:{String(Math.min(59, lines.length * 4)).padStart(2, "0")}
-        </span>
-      </div>
-      <div className="phone-screen" ref={screenRef} aria-live="polite">
-        {lines.map((line, index) => (
-          <p key={index} className={line.from === "me" ? "bubble me" : "bubble"}>
-            {line.from === "me" ? `הקשתם ${line.text}` : line.text}
-          </p>
-        ))}
-        {step === "done" ? (
-          <button type="button" className="restart" onClick={restart}>
-            <RotateCcw size={15} /> שיחה חדשה
-          </button>
-        ) : null}
-      </div>
-      <div className="keypad">
-        {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((key) => (
-          <button key={key} type="button" disabled={step === "done"} onClick={() => press(key)} aria-label={`מקש ${key}`}>
-            {key}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function ContactForm() {
   const [name, setName] = useState("");
@@ -361,8 +285,25 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
             <div className="reveal">
               <span className="kicker">נסו בעצמכם</span>
               <h2>ככה נשמעת שיחה.</h2>
-              <p className="lead">בלי אפליקציה ובלי תפריטים ארוכים. המערכת קוראת לכל מכשיר בשם שנתתם לו, ואומרת בדיוק מה להקיש.</p>
-              <p className="lead muted">לחצו על המקשים בטלפון שבצד ותראו איך זה מרגיש.</p>
+              <p className="lead">זו בדיוק השיחה שתשמעו. המערכת מקריאה את המכשירים שלכם בשמות, ואחרי שבוחרים מכשיר היא אומרת מה המצב שלו ומה אפשר לעשות.</p>
+              <ul className="call-map">
+                <li>
+                  <b>1</b> הדלקה או כיבוי
+                </li>
+                <li>
+                  <b>2</b> טיימר בדקות
+                </li>
+                <li>
+                  <b>3</b> שעון: היום, תאריך, כל יום או ימים שבוחרים
+                </li>
+                <li>
+                  <b>4</b> התוכניות של המכשיר, כולל עריכת שעה
+                </li>
+                <li>
+                  <b>0</b> הגדרות: מספרים מורשים, יומן, פניה אלינו, הכל דולק או הכל כבוי
+                </li>
+              </ul>
+              <p className="lead muted">נסו בטלפון שבצד. זה בית לדוגמה עם דוד, מזגן ותאורת חצר.</p>
             </div>
             <div className="reveal">
               <CallDemo />

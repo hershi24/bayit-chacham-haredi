@@ -558,7 +558,7 @@
 
 .ksh-landing .phone-screen {
   display: flex;
-  height: 230px;
+  height: 320px;
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
@@ -588,6 +588,93 @@
   font-weight: 700;
 }
 
+.ksh-landing .bubble.note {
+  align-self: center;
+  padding: 4px 12px;
+  border-radius: 99px;
+  background: #e2e8f0;
+  box-shadow: none;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ksh-landing .phone-dot.off {
+  background: #94a3b8;
+  animation: none;
+}
+
+.ksh-landing .phone-entry {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 12px 4px 0;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: #0e1d30;
+  color: #9fb2c8;
+  font-size: 13px;
+}
+
+.ksh-landing .phone-entry strong {
+  color: white;
+  font-size: 18px;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ksh-landing .hangup {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  margin: 10px auto 4px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #ef4444;
+  color: white;
+  transition: transform 0.15s, opacity 0.2s;
+}
+
+.ksh-landing .hangup:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.ksh-landing .hangup:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.ksh-landing .call-map {
+  display: grid;
+  gap: 10px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+  color: #34465c;
+  font-weight: 600;
+}
+
+.ksh-landing .call-map li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ksh-landing .call-map b {
+  display: grid;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ink);
+  color: white;
+  font-size: 16px;
+}
+
 .ksh-landing .restart {
   display: inline-flex;
   align-self: center;
@@ -612,7 +699,7 @@
 }
 
 .ksh-landing .keypad button {
-  height: 52px;
+  height: 48px;
   border: 0;
   border-radius: 16px;
   background: #22364f;

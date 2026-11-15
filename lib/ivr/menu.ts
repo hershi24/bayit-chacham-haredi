@@ -1,16 +1,15 @@
 import { devicesForPhone, normalizePhone } from "@/lib/access";
-import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
+import { decideMenu, STATUS_WAIT, type MenuDevice } from "@/lib/ivr/flow";
 import { savePhoneClock } from "@/lib/ivr/phone-clock";
 import { answerPrograms } from "@/lib/ivr/programs";
 import { answerSettings } from "@/lib/ivr/settings";
+import { allDoneMessage, allIdleMessage } from "@/lib/ivr/settings-menu";
 import { speechFor } from "@/lib/ivr/speech";
 import { ensureStatusCheck, statusCheckRunning } from "@/lib/ivr/status-check";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
 import { listIvrTargets, saveSchedule } from "@/lib/store";
 import { getBridge } from "@/lib/wlte/bridge";
 import { isWlteError } from "@/lib/wlte/errors";
-
-const STATUS_WAIT = "מבצע בדיקת מצב ערוץ אנא המתן";
 
 function bag(entries: Iterable<[string, string]>) {
   const result: Record<string, string> = {};
@@ -118,25 +117,11 @@ export async function handleMenu(request: Request) {
         return answered.action === "ON" ? device.relayOn !== true : device.relayOn !== false;
       });
       if (!actionable.length) {
-        const idle =
-          answered.action === "ON" ? "כל השקעים כבר פועלים" : "כל השקעים כבר כבויים";
         const onlyFrozen = targets.length > 0 && targets.every((device) => device.frozen);
-        return reply(
-          input.format,
-          yemotSpeak(onlyFrozen ? "אין שקעים זמינים, כולם מוקפאים" : idle),
-        );
+        return reply(input.format, yemotSpeak(allIdleMessage(answered.action, onlyFrozen)));
       }
       for (const device of actionable) sendCommand(device.deviceId, answered.action, actor);
-      const countWord =
-        actionable.length === 1
-          ? "שקע אחד"
-          : actionable.length === 2
-            ? "שני שקעים"
-            : `${actionable.length} שקעים`;
-      const message =
-        answered.action === "ON"
-          ? `כל השקעים הופעלו בהצלחה, ${countWord}`
-          : `כל השקעים כובו בהצלחה, ${countWord}`;
+      const message = allDoneMessage(answered.action, actionable.length);
       return reply(input.format, yemotSpeak(message));
     }
     return reply(input.format, yemotSpeak(answered.message));

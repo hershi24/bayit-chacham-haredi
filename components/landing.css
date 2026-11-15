@@ -888,6 +888,12 @@
   line-height: 1.8;
 }
 
+.ksh-landing .device-card p strong {
+  display: block;
+  color: var(--ink);
+  font-size: 19px;
+}
+
 .ksh-landing .device-card ul {
   display: grid;
   gap: 8px;

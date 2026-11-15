@@ -134,9 +134,14 @@ test("Shelly refreshPresence updates connectivity from the live hub", async () =
     assert.equal((await getDevice(`${shellyId}_ch0`))?.relayOn, true);
 
     getShellyHub().mockDisconnect(shellyId);
-    const offline = await getShellyHub().refreshPresence(shellyId);
-    assert.equal(offline, false);
+    await new Promise((resolve) => setTimeout(resolve, 80));
     assert.equal((await getDevice(`${shellyId}_ch0`))?.connectivity, "OFFLINE");
+    // A refresh from a process that does not hold the socket must not be required
+    // to mark offline, and must not be the thing that flips a live unit offline.
+    await updateDeviceState(`${shellyId}_ch0`, { connectivity: "ONLINE", relayOn: true });
+    const untouched = await getShellyHub().refreshPresence(shellyId);
+    assert.equal(untouched, false);
+    assert.equal((await getDevice(`${shellyId}_ch0`))?.connectivity, "ONLINE");
   } finally {
     getShellyHub().mockDisconnect(shellyId);
     for (const channel of [0, 1, 2]) {

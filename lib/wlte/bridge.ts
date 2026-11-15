@@ -220,7 +220,11 @@ class Bridge {
     if (!current) throw new HttpError(404, "השקע לא נמצא");
     if (current.frozen) throw new HttpError(403, "השקע מוקפא");
     const key = createIdempotencyKey();
-    // Known-offline sockets must fail immediately. A long WLTE timeout here used to
+    // Shelly may still have a live socket even when the stored flag is stale.
+    if (current.vendor === "shelly" || isShellyChannelId(input.deviceId)) {
+      return this.commandShelly(input, current, key);
+    }
+    // Known-offline WLTE sockets must fail immediately. A long timeout here used to
     // stall browser bulk "all on/off" (connection pool) so later sockets never got a turn.
     if (current.connectivity === "OFFLINE") {
       await addAudit({
@@ -233,9 +237,6 @@ class Bridge {
         detail: "השקע אינו מחובר",
       });
       throw new HttpError(502, "השקע אינו מחובר כעת");
-    }
-    if (current.vendor === "shelly" || isShellyChannelId(input.deviceId)) {
-      return this.commandShelly(input, current, key);
     }
     try {
       const command = await this.gateway.command(input.deviceId, input.action, key);

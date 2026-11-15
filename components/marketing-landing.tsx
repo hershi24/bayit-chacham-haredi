@@ -2,77 +2,228 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import {
+  ArrowLeft,
+  Check,
+  CircuitBoard,
+  Clock,
+  Coffee,
+  Flame,
+  History,
+  Lightbulb,
+  LoaderCircle,
+  Mail,
+  Monitor,
+  Phone,
+  PhoneCall,
+  Plug,
+  RotateCcw,
+  Send,
+  ShieldCheck,
+  Snowflake,
+  WifiOff,
+  Zap,
+} from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import "./landing.css";
 
-const icons = {
-  phone: (
-    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72l.45 2.81a2 2 0 0 1-.57 1.71L7.1 10.1a16 16 0 0 0 6.8 6.8l1.86-1.89a2 2 0 0 1 1.71-.57l2.81.45A2 2 0 0 1 22 16.92Z" />
-  ),
-  monitor: (
-    <>
-      <rect x="3" y="3" width="18" height="14" rx="2" />
-      <path d="M8 21h8m-4-4v4" />
-    </>
-  ),
-  plug: <path d="M12 22v-5m-5-7V3m10 7V3M7 10h10v3a5 5 0 0 1-10 0z" />,
-  globe: (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
-    </>
-  ),
-  layout: (
-    <>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M3 9h18M9 9v12" />
-    </>
-  ),
-  layers: <path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5" />,
-  lightbulb: <path d="M9 18h6m-5 4h4M9 14a7 7 0 1 1 6 0l-1 4h-4z" />,
-};
+const PHONE = "058-329-6967";
+const PHONE_HREF = "tel:+972583296967";
+const EMAIL = "e0583296967@gmail.com";
 
-function Glyph({ name }: { name: keyof typeof icons }) {
-  return (
-    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {icons[name]}
-    </svg>
-  );
-}
+const uses = [
+  { icon: Flame, label: "דוד שמש" },
+  { icon: Snowflake, label: "מזגנים" },
+  { icon: Lightbulb, label: "תאורה" },
+  { icon: Coffee, label: "פלטה ומיחם" },
+  { icon: Zap, label: "מעגלים בלוח החשמל" },
+];
 
-const features: Array<{ icon: keyof typeof icons; title: string; text: string }> = [
-  { icon: "phone", title: "שליטה מהפלאפון הכשר", text: "מתקשרים למערכת ומפעילים או מכבים את השקע באמצעות מקשי הטלפון. בלי סמארטפון ובלי אפליקציה." },
-  { icon: "monitor", title: "וגם דרך האתר", text: "מעדיפים מסך? נכנסים למערכת הניהול ורואים את השקעים שלכם במקום אחד." },
-  { icon: "plug", title: "בלי להזמין חשמלאי", text: "בדגם השקע: מחברים לשקע חשמל קיים, מבצעים את ההגדרה הראשונית ומתחילים להשתמש. אין צורך בעבודות חשמל." },
-  { icon: "globe", title: "שליטה מכל מקום", text: "לא חייבים להיות ליד המכשיר. אפשר לשלוט בו מרחוק דרך שיחת טלפון או ממשק הניהול." },
-  { icon: "layout", title: "ממשק ברור ונוח", text: "רשימת מכשירים, שמות ברורים וכפתורי הפעלה וכיבוי — בלי תפריטים מסובכים." },
-  { icon: "layers", title: "פתרון שנבנה קדימה", text: "מתחילים בשקע חכם פשוט, עם חזון להרחבת המערכת למוצרי שליטה נוספים בעתיד." },
+const ways = [
+  {
+    icon: PhoneCall,
+    title: "שיחה מהפלאפון הכשר",
+    text: "מחייגים למספר של המערכת. היא מקריאה את המכשירים שלכם בשמות, ואתם מקישים מה להדליק ומה לכבות.",
+  },
+  {
+    icon: Monitor,
+    title: "מהמחשב",
+    text: "כל המכשירים במסך אחד. רואים מה דולק, מה כבוי, ומתי כל מכשיר היה מחובר בפעם האחרונה.",
+  },
+  {
+    icon: Clock,
+    title: "שעונים ותוכניות",
+    text: "הדוד נדלק כל בוקר בשש, המזגן כבה בחצות. קובעים פעם אחת, והמערכת כבר זוכרת לבד.",
+  },
 ];
 
 const steps = [
-  { title: "מחברים לחשמל", text: "מכניסים את השקע החכם לשקע הקיים ומחברים אליו מכשיר מתאים, בהתאם להוראות ולמגבלות ההספק." },
-  { title: "מגדירים ומשייכים", text: "מבצעים את ההגדרה הראשונית ומשייכים את השקע לחשבון שלכם." },
-  { title: "שולטים בדרך שלכם", text: "מפעילים ומכבים בשיחת טלפון מהפלאפון הכשר, או דרך מערכת הניהול באתר." },
+  { title: "מדברים", text: "מתקשרים או משאירים פרטים. מספרים לנו מה רוצים לשלוט, ואנחנו ממליצים על ההתקן המתאים." },
+  { title: "מתקינים", text: "שקע חכם נכנס לקיר תוך דקה. בקר ללוח החשמל מתקין חשמלאי. אנחנו מחברים הכל לחשבון שלכם." },
+  { title: "שולטים", text: "מקבלים מספר לחיוג ופרטי כניסה לאתר. מאותו רגע הבית בידיים שלכם." },
 ];
 
 const questions = [
-  ["אפשר לשלוט בשקע בלי סמארטפון?", "כן. השליטה מיועדת לעבוד באמצעות שיחה רגילה מהפלאפון הכשר, באמצעות מקשי הטלפון."],
-  ["אפשר לשלוט גם מהמחשב?", "כן. מערכת הניהול באתר מיועדת לאפשר ניהול השקעים דרך הדפדפן."],
-  ["צריך חשמלאי?", "לא עבור חיבור דגם השקע לשקע חשמל קיים ותקין. יש להשתמש במכשירים תואמים ולעמוד בהוראות הבטיחות. התקנות של מוצרים חשמליים אחרים עשויות לדרוש חשמלאי מוסמך."],
-  ["האם מוצרי Shelly כבר נתמכים?", "עדיין לא. שילוב עם מוצרי Shelly הוא כיוון לפיתוח עתידי, ויוצג כשיהיה זמין."],
+  ["צריך סמארטפון?", "לא. כל טלפון שיכול להתקשר מתאים, כולל פלאפון כשר וטלפון קווי."],
+  ["מי יכול להתקשר למערכת?", "רק מספרים שאישרתם מראש. אפשר להוסיף את הטלפון של בן או בת הזוג, ולהסיר מתי שרוצים."],
+  ["אפשר לקבוע שמכשיר יידלק לבד?", "כן. טיימר חד־פעמי, שעון יומי, או תוכנית לימים מסוימים בשבוע. קובעים באתר וגם בשיחה."],
+  ["צריך חשמלאי?", "לשקע החכם לא, הוא נכנס לשקע הקיים. בקר ללוח החשמל מתקין חשמלאי מוסמך."],
+  ["מה קורה אם נפל החשמל או האינטרנט?", "כשהחיבור חוזר, ההתקן חוזר לעבוד. באתר רואים מתי בדיוק הוא היה מחובר בפעם האחרונה."],
+  ["המוצרים מאושרים?", "כן. כל ההתקנים שאנחנו מספקים נושאים תו תקן ועומדים בדרישות הרשויות בישראל."],
 ];
+
+type Line = { from: "sys" | "me"; text: string };
+type CallStep = "menu" | "device" | "done";
+
+const callDevices: Record<string, string> = { "1": "דוד שמש", "2": "המזגן בסלון", "3": "התאורה בחצר" };
+const greeting: Line = { from: "sys", text: "שלום. לדוד שמש הקש 1, למזגן בסלון הקש 2, לתאורה בחצר הקש 3." };
+
+function CallDemo() {
+  const [lines, setLines] = useState<Line[]>([greeting]);
+  const [step, setStep] = useState<CallStep>("menu");
+  const [device, setDevice] = useState<string | null>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const screen = screenRef.current;
+    if (screen) screen.scrollTo({ top: screen.scrollHeight, behavior: "smooth" });
+  }, [lines]);
+
+  function press(key: string) {
+    if (step === "done") return;
+    const mine: Line = { from: "me", text: key };
+    if (step === "menu") {
+      const name = callDevices[key];
+      if (!name) return setLines((all) => [...all, mine, { from: "sys", text: "הבחירה לא קיימת. נסו 1, 2 או 3." }]);
+      setDevice(name);
+      setStep("device");
+      return setLines((all) => [...all, mine, { from: "sys", text: `${name} כבוי כעת. להפעלה הקש 1, להפעלה לשעה הקש 2.` }]);
+    }
+    if (key === "1") {
+      setStep("done");
+      return setLines((all) => [...all, mine, { from: "sys", text: `${device} הופעל. להתראות.` }]);
+    }
+    if (key === "2") {
+      setStep("done");
+      return setLines((all) => [...all, mine, { from: "sys", text: `${device} הופעל, ויכבה לבד בעוד שעה.` }]);
+    }
+    setLines((all) => [...all, mine, { from: "sys", text: "להפעלה הקש 1, להפעלה לשעה הקש 2." }]);
+  }
+
+  function restart() {
+    setLines([greeting]);
+    setStep("menu");
+    setDevice(null);
+  }
+
+  return (
+    <div className="phone">
+      <div className="phone-head">
+        <span className="phone-dot" />
+        <span>בשיחה עם הבית</span>
+        <span className="phone-time" dir="ltr">
+          00:{String(Math.min(59, lines.length * 4)).padStart(2, "0")}
+        </span>
+      </div>
+      <div className="phone-screen" ref={screenRef} aria-live="polite">
+        {lines.map((line, index) => (
+          <p key={index} className={line.from === "me" ? "bubble me" : "bubble"}>
+            {line.from === "me" ? `הקשתם ${line.text}` : line.text}
+          </p>
+        ))}
+        {step === "done" ? (
+          <button type="button" className="restart" onClick={restart}>
+            <RotateCcw size={15} /> שיחה חדשה
+          </button>
+        ) : null}
+      </div>
+      <div className="keypad">
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((key) => (
+          <button key={key} type="button" disabled={step === "done"} onClick={() => press(key)} aria-label={`מקש ${key}`}>
+            {key}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ContactForm() {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
+  const [website, setWebsite] = useState("");
+  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setState("sending");
+    setError(null);
+    try {
+      const response = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, phone, message, website }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      if (!response.ok) throw new Error(payload.message ?? "השליחה לא עברה");
+      setState("sent");
+    } catch (cause) {
+      setState("idle");
+      setError(cause instanceof Error ? cause.message : "השליחה לא עברה");
+    }
+  }
+
+  if (state === "sent") {
+    return (
+      <div className="form sent">
+        <div className="sent-mark">
+          <Check size={28} />
+        </div>
+        <h3>תודה, {name.split(" ")[0]}.</h3>
+        <p>קיבלנו את הפרטים ונחזור אליכם בהקדם.</p>
+      </div>
+    );
+  }
+
+  return (
+    <form className="form" onSubmit={(event) => void submit(event)}>
+      <label>
+        <span>שם</span>
+        <input required minLength={2} maxLength={60} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="איך לפנות אליכם" />
+      </label>
+      <label>
+        <span>טלפון</span>
+        <input required type="tel" dir="ltr" inputMode="tel" autoComplete="tel" maxLength={20} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="050-0000000" />
+      </label>
+      <label>
+        <span>מה תרצו לשלוט? <em>(לא חובה)</em></span>
+        <textarea rows={3} maxLength={600} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="למשל: דוד שמש ושני מזגנים" />
+      </label>
+      <input className="trap" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website} onChange={(event) => setWebsite(event.target.value)} />
+      {error ? (
+        <p className="form-error">
+          {error}. אפשר גם להתקשר: <a href={PHONE_HREF}>{PHONE}</a>
+        </p>
+      ) : null}
+      <button type="submit" className="btn primary wide" disabled={state === "sending"}>
+        {state === "sending" ? <LoaderCircle size={18} className="spin" /> : <Send size={18} />}
+        {state === "sending" ? "שולחים" : "חזרו אליי"}
+      </button>
+    </form>
+  );
+}
 
 export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; onLogin: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [powered, setPowered] = useState(true);
   const year = new Date().getFullYear();
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const nodes = [...root.querySelectorAll(".reveal")];
-    if (reduce || !("IntersectionObserver" in window)) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || !("IntersectionObserver" in window)) {
       nodes.forEach((node) => node.classList.add("visible"));
       return;
     }
@@ -90,46 +241,6 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-    if (!fine) return;
-    const hero = root.querySelector<HTMLElement>(".hero");
-    const stage = root.querySelector<HTMLElement>(".product-stage");
-    const cards = [...root.querySelectorAll<HTMLElement>(".feature")];
-    const cleanups: Array<() => void> = [];
-    if (hero && stage) {
-      const move = (event: PointerEvent) => {
-        const rect = hero.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / rect.width;
-        const y = (event.clientY - rect.top) / rect.height;
-        hero.style.setProperty("--hx", `${x * 100}%`);
-        hero.style.setProperty("--hy", `${y * 100}%`);
-        stage.style.transform = `translate3d(${(x - 0.5) * -20}px, ${(y - 0.5) * -18}px, 0) rotateY(${(x - 0.5) * -6}deg) rotateX(${(y - 0.5) * 5}deg)`;
-      };
-      const leave = () => {
-        stage.style.transform = "";
-      };
-      hero.addEventListener("pointermove", move);
-      hero.addEventListener("pointerleave", leave);
-      cleanups.push(() => {
-        hero.removeEventListener("pointermove", move);
-        hero.removeEventListener("pointerleave", leave);
-      });
-    }
-    cards.forEach((card) => {
-      const move = (event: PointerEvent) => {
-        const rect = card.getBoundingClientRect();
-        card.style.setProperty("--mx", `${event.clientX - rect.left}px`);
-        card.style.setProperty("--my", `${event.clientY - rect.top}px`);
-      };
-      card.addEventListener("pointermove", move);
-      cleanups.push(() => card.removeEventListener("pointermove", move));
-    });
-    return () => cleanups.forEach((cleanup) => cleanup());
-  }, []);
-
   function enter(event: React.MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
     onLogin();
@@ -142,174 +253,256 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           <BrandLogo className="brand-logo" />
         </a>
         <div className="navlinks">
-          <a href="#benefits">היתרונות</a>
           <a href="#how">איך זה עובד</a>
-          <a href="#control">הדגמה</a>
-          <a href="#future">מה בהמשך</a>
-          <a className="btn primary" href="#login" onClick={enter}>
-            כניסה למערכת ←
+          <a href="#inside">מבפנים</a>
+          <a href="#devices">ההתקנים</a>
+          <a href="#faq">שאלות</a>
+          <a href="#contact">צור קשר</a>
+        </div>
+        <div className="nav-actions">
+          <a className="nav-phone" href={PHONE_HREF} dir="ltr">
+            <Phone size={16} /> {PHONE}
+          </a>
+          <a className="btn dark small" href="#login" onClick={enter}>
+            כניסה ללקוחות
           </a>
         </div>
       </nav>
+
       <main id="top">
         <section className="hero">
-          <div className="gridglow" />
-          <div className="orb one" />
-          <div className="orb two" />
-          <div className="ambient-ring ring-one" />
-          <div className="ambient-ring ring-two" />
-          <span className="spark s1" />
-          <span className="spark s2" />
-          <span className="spark s3" />
-          <span className="spark s4" />
+          <div className="blob b1" />
+          <div className="blob b2" />
+          <div className="blob b3" />
           <div className="wrap hero-grid">
-            <div>
-              <div className="eyebrow">
-                <span className="pulse" /> הבית החכם שמתאים גם לפלאפון כשר
-              </div>
+            <div className="hero-copy">
+              <span className="eyebrow">
+                <span className="pulse" /> בית חכם, גם בלי סמארטפון
+              </span>
               <h1>
-                הבית החכם שלך.
+                מדליקים את הדוד
                 <br />
-                <em>במרחק שיחת טלפון.</em>
+                <em>בשיחת טלפון.</em>
               </h1>
-              <p>
-                מדליקים ומכבים מכשירי חשמל מכל מקום — <strong>מהפלאפון הכשר בשיחה רגילה, וגם דרך האתר.</strong> בלי אפליקציה בטלפון. בלי להסתבך.
+              <p className="hero-text">
+                מתקשרים מהפלאפון הכשר, מקישים מספר, והמזגן, הדוד או התאורה נדלקים. אפשר גם מהמחשב, ואפשר לקבוע שעון שיעשה את זה בשבילכם.
               </p>
               <div className="actions">
-                <a className="btn primary" href="#how">
-                  גלו איך זה עובד ←
+                <a className="btn primary" href="#contact">
+                  השאירו פרטים <ArrowLeft size={18} />
                 </a>
-                <a className="btn outline" href="#login" onClick={enter}>
-                  כניסה לניהול השקעים
+                <a className="btn ghost" href={PHONE_HREF}>
+                  <Phone size={18} /> <span dir="ltr">{PHONE}</span>
                 </a>
               </div>
-              <div className="tiny">✓ שליטה בשיחה רגילה &nbsp; ✓ ניהול דרך האתר &nbsp; ✓ שקע שמתחבר ללא חשמלאי</div>
+              <ul className="trust">
+                <li>
+                  <ShieldCheck size={17} /> מוצרים עם תו תקן
+                </li>
+                <li>
+                  <Check size={17} /> עובד מכל טלפון
+                </li>
+                <li>
+                  <Check size={17} /> שעונים ותוכניות קבועות
+                </li>
+              </ul>
             </div>
-            <div className="product-stage">
-              <div className="product-glow" />
-              <Image
-                className="product-img"
-                src="/product/socket-phone.gif"
-                width={512}
-                height={512}
-                priority
-                unoptimized
-                alt="שקע חכם Kosher Smart Home לצד פלאפון כשר לשליטה מרחוק"
-              />
+            <div className="hero-art">
+              <div className="art-card">
+                <Image
+                  className="product-img"
+                  src="/product/socket-phone.gif"
+                  width={512}
+                  height={512}
+                  priority
+                  unoptimized
+                  alt="שקע חכם לצד פלאפון כשר"
+                />
+              </div>
+              <div className="chip chip-a">
+                <span className="chip-dot on" />
+                <div>
+                  <strong>דוד שמש</strong>
+                  <small>נדלק ב־06:00 · לפי שעון</small>
+                </div>
+              </div>
+              <div className="chip chip-b">
+                <PhoneCall size={18} />
+                <div>
+                  <strong>הקש 1 להפעלה</strong>
+                  <small>המזגן בסלון</small>
+                </div>
+              </div>
             </div>
+          </div>
+          <div className="wrap uses reveal">
+            <span>מה מחברים?</span>
+            {uses.map(({ icon: Icon, label }) => (
+              <span key={label} className="use">
+                <Icon size={17} /> {label}
+              </span>
+            ))}
           </div>
         </section>
 
-        <section className="section alt" id="benefits">
+        <section className="section" id="how">
           <div className="wrap">
-            <div className="center reveal">
-              <span className="kicker">פשוט. חכם. נגיש.</span>
-              <h2 className="heading">כל היתרונות. בלי סיבוכים.</h2>
-              <p className="sub">הטכנולוגיה עובדת בשבילכם — לא להפך. שליטה פשוטה במכשירים המחוברים, בדרך שמתאימה לכם.</p>
+            <div className="head reveal">
+              <span className="kicker">שלוש דרכים לשלוט</span>
+              <h2>בטלפון, באתר, או שזה קורה לבד.</h2>
             </div>
-            <div className="features">
-              {features.map((feature) => (
-                <article key={feature.title} className="feature reveal">
-                  <div className="ico">
-                    <Glyph name={feature.icon} />
+            <div className="ways">
+              {ways.map(({ icon: Icon, title, text }, index) => (
+                <article key={title} className={`way reveal tone-${index}`}>
+                  <div className="way-icon">
+                    <Icon size={26} />
                   </div>
-                  <h3>{feature.title}</h3>
-                  <p>{feature.text}</p>
+                  <h3>{title}</h3>
+                  <p>{text}</p>
                 </article>
               ))}
             </div>
           </div>
         </section>
 
-        <section className="section" id="control">
-          <div className="wrap dual">
+        <section className="section tint" id="call">
+          <div className="wrap split">
             <div className="reveal">
-              <span className="kicker">תנסו בעצמכם</span>
-              <h2 className="heading">
-                קליק באתר.
-                <br />
-                או לחיצה בטלפון.
-              </h2>
-              <p className="lead">שתי דרכים לשלוט באותו שקע. בחרו את הדרך הנוחה לכם. נסו להדליק ולכבות את השקע בהדגמה — ותראו כמה פשוט זה יכול להיות.</p>
-              <a href="#login" className="btn primary" onClick={enter}>
-                כניסה למערכת הניהול ←
-              </a>
+              <span className="kicker">נסו בעצמכם</span>
+              <h2>ככה נשמעת שיחה.</h2>
+              <p className="lead">בלי אפליקציה ובלי תפריטים ארוכים. המערכת קוראת לכל מכשיר בשם שנתתם לו, ואומרת בדיוק מה להקיש.</p>
+              <p className="lead muted">לחצו על המקשים בטלפון שבצד ותראו איך זה מרגיש.</p>
             </div>
-            <div className="demo reveal">
-              <div className="demo-top">
-                <h3>השקעים שלי</h3>
-                <span className="live-dot">● הדגמה</span>
-              </div>
-              <div className="device">
-                <div className="device-icon">
-                  <Glyph name="lightbulb" />
-                </div>
-                <div>
-                  <strong>תאורת הסלון</strong>
-                  <small>שקע חכם 01</small>
-                </div>
-                <button type="button" className={powered ? "switch on" : "switch"} aria-label="כיבוי או הפעלת שקע בהדגמה" aria-pressed={powered} onClick={() => setPowered((current) => !current)} />
-              </div>
-              <div className={powered ? "status on" : "status"} aria-live="polite">
-                {powered ? "● השקע פעיל כעת" : "○ השקע כבוי כעת"}
-              </div>
-              <div className="demo-note">זוהי הדמיה אינטראקטיבית בלבד. אין חיבור למכשיר חשמלי אמיתי.</div>
+            <div className="reveal">
+              <CallDemo />
             </div>
           </div>
         </section>
 
-        <section className="section alt" id="how">
+        <section className="section" id="inside">
           <div className="wrap">
-            <div className="center reveal">
-              <span className="kicker">איך מתחילים?</span>
-              <h2 className="heading">שלושה צעדים. וזהו.</h2>
-              <p className="sub">בדגם השקע החכם, אין צורך להתקין מערכת חשמל חדשה בבית.</p>
+            <div className="head reveal">
+              <span className="kicker">מבפנים</span>
+              <h2>מסך אחד, כל הבית.</h2>
+              <p>ככה נראה החשבון שלכם באתר. כל מכשיר עם שם, מצב ושעון, ובלחיצה על «כבה הכל» יוצאים מהבית רגועים.</p>
             </div>
-            <div className="steps">
+            <figure className="browser reveal">
+              <div className="browser-bar">
+                <span />
+                <span />
+                <span />
+                <div className="browser-url" dir="ltr">
+                  kosher-smart-home
+                </div>
+              </div>
+              <Image src="/product/dashboard.webp" width={1600} height={902} alt="מסך הבית במערכת: מזגנים, דוד ותאורה עם מצב ומתג לכל אחד" className="browser-img" />
+            </figure>
+            <div className="perks">
+              <div className="perk reveal">
+                <Zap size={20} />
+                <div>
+                  <strong>רואים מה דולק</strong>
+                  <p>ירוק זה פועל. אין מה לנחש.</p>
+                </div>
+              </div>
+              <div className="perk reveal">
+                <WifiOff size={20} />
+                <div>
+                  <strong>יודעים מתי נותק</strong>
+                  <p>אם מכשיר לא מחובר, רואים מתי היה מחובר לאחרונה.</p>
+                </div>
+              </div>
+              <div className="perk reveal">
+                <History size={20} />
+                <div>
+                  <strong>יומן פעולות</strong>
+                  <p>מי הדליק, מתי, ומאיפה: שיחה, אתר או שעון.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="section tint" id="devices">
+          <div className="wrap">
+            <div className="head reveal">
+              <span className="kicker">ההתקנים</span>
+              <h2>שני סוגים. בוחרים מה מתאים לבית.</h2>
+            </div>
+            <div className="devices">
+              <article className="device-card reveal">
+                <div className="device-top">
+                  <div className="device-icon">
+                    <Plug size={28} />
+                  </div>
+                  <span className="tag">בלי חשמלאי</span>
+                </div>
+                <h3>שקע חכם</h3>
+                <p>נכנס לשקע שבקיר, והמכשיר מתחבר אליו. מתאים לכל מה שעובד משקע רגיל, לפי מגבלת ההספק.</p>
+                <ul>
+                  <li>
+                    <Check size={16} /> מתקינים לבד תוך דקה
+                  </li>
+                  <li>
+                    <Check size={16} /> מתאים לפלטה, מיחם, מנורה ותנור
+                  </li>
+                </ul>
+              </article>
+              <article className="device-card reveal">
+                <div className="device-top">
+                  <div className="device-icon">
+                    <CircuitBoard size={28} />
+                  </div>
+                  <span className="tag">שלושה ערוצים</span>
+                </div>
+                <h3>בקר ללוח החשמל</h3>
+                <p>מותקן בלוח ושולט בעד שלושה מעגלים נפרדים. כל ערוץ מקבל שם משלו ונשלט בנפרד.</p>
+                <ul>
+                  <li>
+                    <Check size={16} /> דוד, מזגן מרכזי, תאורת חוץ
+                  </li>
+                  <li>
+                    <Check size={16} /> התקנה על ידי חשמלאי מוסמך
+                  </li>
+                </ul>
+              </article>
+            </div>
+            <div className="cert reveal">
+              <ShieldCheck size={26} />
+              <p>
+                <strong>כל המוצרים נושאים תו תקן</strong> ועומדים בדרישות הרשויות בישראל.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="section" id="start">
+          <div className="wrap">
+            <div className="head reveal">
+              <span className="kicker">איך מתחילים</span>
+              <h2>שלושה צעדים, ואתם בפנים.</h2>
+            </div>
+            <ol className="steps">
               {steps.map((step, index) => (
-                <div key={step.title} className="step reveal">
-                  <div className="num">{String(index + 1).padStart(2, "0")}</div>
+                <li key={step.title} className="step reveal">
+                  <span className="num">{index + 1}</span>
                   <h3>{step.title}</h3>
                   <p>{step.text}</p>
-                </div>
+                </li>
               ))}
-            </div>
+            </ol>
           </div>
         </section>
 
-        <section className="section dark" id="future">
-          <div className="wrap future">
-            <div className="reveal future-copy">
-              <span className="kicker" style={{ color: "#6ad8ff" }}>
-                מסתכלים קדימה
-              </span>
-              <h2 className="heading">
-                היום שקע חכם.
-                <br />
-                מחר הרבה יותר.
-              </h2>
-              <p className="sub">החזון שלנו הוא להביא את השליטה החכמה לעוד ועוד מוצרי חשמל — גם למי שמשתמש בפלאפון כשר בלבד.</p>
-              <span className="pill">בפיתוח עתידי · לא זמין כרגע</span>
-            </div>
-            <div className="future-card reveal">
-              <div className="future-mark">
-                <Glyph name="layers" />
-              </div>
-              <h3>Shelly + Kosher Smart Home</h3>
-              <p>אנחנו מתכננים לבחון שילוב מוצרי Shelly במערכת, כדי לאפשר בעתיד שליטה מהפלאפון הכשר גם בפתרונות נוספים. שילוב זה עדיין אינו פעיל ואינו מוצע כרגע.</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="section alt" id="faq">
-          <div className="wrap">
-            <div className="center">
+        <section className="section tint" id="faq">
+          <div className="wrap narrow">
+            <div className="head reveal">
               <span className="kicker">שאלות נפוצות</span>
-              <h2 className="heading">שאלות פשוטות. תשובות ברורות.</h2>
+              <h2>מה שבדרך כלל שואלים אותנו.</h2>
             </div>
             <div className="faq">
               {questions.map(([question, answer]) => (
-                <details key={question}>
+                <details key={question} className="reveal">
                   <summary>{question}</summary>
                   <p>{answer}</p>
                 </details>
@@ -320,27 +513,98 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
 
         <section className="section" id="contact">
           <div className="wrap">
-            <div className="cta reveal">
-              <h2>מוכנים לבית חכם באמת?</h2>
-              <p>בלי אפליקציה בטלפון. בלי התקנה מסובכת. השליטה בידיים שלכם.</p>
-              <a className="btn" href="#login" onClick={enter}>
-                כבר לקוחות? היכנסו למערכת ←
-              </a>
-              <p className="fine">מעוניינים לרכוש? פרטי יצירת קשר והזמנה יתווספו כאן לפני הפרסום.</p>
+            <div className="contact reveal">
+              <div className="contact-copy">
+                <span className="kicker light">צור קשר</span>
+                <h2>רוצים לשמוע עוד?</h2>
+                <p>השאירו שם וטלפון ונחזור אליכם. מעדיפים לדבר עכשיו? אנחנו על הקו.</p>
+                <a className="contact-line" href={PHONE_HREF}>
+                  <span className="contact-icon">
+                    <Phone size={20} />
+                  </span>
+                  <span dir="ltr">{PHONE}</span>
+                </a>
+                <a className="contact-line" href={`mailto:${EMAIL}`}>
+                  <span className="contact-icon">
+                    <Mail size={20} />
+                  </span>
+                  <span dir="ltr">{EMAIL}</span>
+                </a>
+              </div>
+              <ContactForm />
             </div>
           </div>
         </section>
       </main>
+
       <footer className="footer">
-        <div className="wrap">
-          <div>
-            <strong>Kosher Smart Home</strong>
-            <br />
-            בית חכם מהפלאפון הכשר
+        <div className="wrap footer-grid">
+          <div className="footer-brand">
+            <strong className="footer-name">Kosher Smart Home</strong>
+            <p>שליטה במכשירי החשמל בבית מהפלאפון הכשר ומהאתר.</p>
+            <a className="footer-phone" href={PHONE_HREF} dir="ltr">
+              {PHONE}
+            </a>
+            <p className="footer-note">התקשרו או השאירו פרטים, ונחזור אליכם.</p>
           </div>
-          <div>© {year} Kosher Smart Home · כל הזכויות שמורות</div>
+          <div>
+            <h4>מה שולטים</h4>
+            <ul>
+              <li>דוד שמש</li>
+              <li>מזגנים</li>
+              <li>תאורה בבית ובחצר</li>
+              <li>פלטה ומיחם</li>
+              <li>מעגלים בלוח החשמל</li>
+            </ul>
+          </div>
+          <div>
+            <h4>באתר</h4>
+            <ul>
+              <li>
+                <a href="#how">איך זה עובד</a>
+              </li>
+              <li>
+                <a href="#inside">מבפנים</a>
+              </li>
+              <li>
+                <a href="#devices">ההתקנים</a>
+              </li>
+              <li>
+                <a href="#faq">שאלות נפוצות</a>
+              </li>
+              <li>
+                <a href="#contact">צור קשר</a>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h4>לקוחות קיימים</h4>
+            <ul>
+              <li>
+                <a href="#login" onClick={enter}>
+                  כניסה למערכת
+                </a>
+              </li>
+              <li>
+                טלפון: <a href={PHONE_HREF} dir="ltr">{PHONE}</a>
+              </li>
+              <li>
+                <a href={`mailto:${EMAIL}`} dir="ltr">
+                  {EMAIL}
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div className="wrap footer-bottom">
+          <span>© {year} Kosher Smart Home</span>
+          <span>כל המוצרים עם תו תקן</span>
         </div>
       </footer>
+
+      <a className="float-call" href={PHONE_HREF} aria-label={`התקשרו ${PHONE}`}>
+        <Phone size={22} />
+      </a>
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { spokenClockTime, spokenDateWords, type PhoneClockPlan } from "@/lib/ivr/flow";
+import { clockSavedMessage, phoneClockProgramName, type PhoneClockPlan } from "@/lib/ivr/flow";
 import { programId, syncTenantPrograms } from "@/lib/programs/sync";
-import { weekdayPhrase } from "@/lib/programs/weekdays";
 import { getDevice, listPrograms, saveDayClock, upsertProgram } from "@/lib/store";
 
 export async function savePhoneClock(plan: PhoneClockPlan): Promise<string> {
@@ -9,7 +8,6 @@ export async function savePhoneClock(plan: PhoneClockPlan): Promise<string> {
   if (!stored?.tenantId) return "השקע לא נמצא";
   const tenantId = stored.tenantId;
   const deviceIds = plan.devices.map((device) => device.deviceId);
-  const times = spokenTimes(plan.onTime, plan.offTime);
   if (plan.day) {
     await saveDayClock({
       id: `clk_${randomUUID()}`,
@@ -21,10 +19,10 @@ export async function savePhoneClock(plan: PhoneClockPlan): Promise<string> {
       deviceIds,
     });
     await syncTenantPrograms(tenantId);
-    return `נשמר שעון ל${spokenDevices(plan)}, בתאריך ${spokenDateWords(plan.day)}, ${times}`;
+    return clockSavedMessage(plan);
   }
 
-  const name = programName(plan).slice(0, 40);
+  const name = phoneClockProgramName(plan);
   const programs = await listPrograms(tenantId);
   const existing = programs.find((item) => item.programKey.startsWith("days:") && item.name === name && item.weekdays.length > 0);
   const key = existing?.programKey ?? `days:${randomUUID()}`;
@@ -44,22 +42,5 @@ export async function savePhoneClock(plan: PhoneClockPlan): Promise<string> {
     slots: [{ onTime: plan.onTime, offTime: plan.offTime }],
   });
   await syncTenantPrograms(tenantId);
-  return `נשמרה תוכנית ${name}, ${times}`;
-}
-
-function programName(plan: PhoneClockPlan): string {
-  const who = plan.devices.length > 1 ? "כל השקעים" : plan.device.name.trim() || "שקע";
-  return `${who} ${weekdayPhrase(plan.weekdays)}`.trim();
-}
-
-function spokenDevices(plan: PhoneClockPlan): string {
-  return plan.devices.map((device) => device.name.trim() || device.deviceId).join(" ו");
-}
-
-function spokenTimes(onTime: string | null, offTime: string | null): string {
-  const parts = [];
-  if (onTime) parts.push(`הדלקה ${spokenClockTime(onTime)}`);
-  if (offTime) parts.push(`כיבוי ${spokenClockTime(offTime)}`);
-  if (onTime && offTime && offTime <= onTime) parts.push("הכיבוי למחרת");
-  return parts.join(", ");
+  return clockSavedMessage(plan);
 }

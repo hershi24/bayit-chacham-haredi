@@ -1,101 +1,26 @@
 import { normalizePhone } from "@/lib/access";
 import { callerPhone } from "@/lib/caller-phone";
 import type { MenuRead } from "@/lib/ivr/flow";
+import {
+  ADMIN_CANCELLED,
+  ADMIN_SENT,
+  askAdminConfirm,
+  askNewPhone,
+  askRemove,
+  auditLine,
+  auditMessage,
+  phoneAdded,
+  phoneRemoved,
+  REMOVE_CANCELLED,
+  settingsMenu,
+} from "@/lib/ivr/settings-menu";
 import { addAudit, addCallerNumber, listAudit, listCallerNumbers, removeCallerNumber } from "@/lib/store";
 import { HttpError } from "@/lib/http-error";
-import type { AuditView, CallerNumber } from "@/lib/types";
 
 export type SettingsDecision =
   | MenuRead
   | { type: "say"; message: string }
   | { type: "all"; action: "ON" | "OFF" };
-
-const DIGIT = ["אפס", "אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע"];
-const INDEX = ["", "אחד", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע"];
-
-export function speakPhone(phone: string) {
-  return normalizePhone(phone)
-    .split("")
-    .map((digit) => DIGIT[Number(digit)] ?? digit)
-    .join(" ");
-}
-
-function settingsMenu(): MenuRead {
-  return {
-    type: "read",
-    message:
-      "להוספת מספר מורשה הקש אחד, להסרת מספר הקש שתיים, לשמיעת יומן פעולות הקש שלוש, לפניה למנהל המערכת הקש ארבע, להפעלת כל השקעים הקש חמש, לכיבוי כל השקעים הקש שש",
-    field: "pikud_settings",
-    min: 1,
-    max: 1,
-    allowed: "123456",
-    mode: "No",
-  };
-}
-
-function askNewPhone(): MenuRead {
-  return {
-    type: "read",
-    message: "הקישו את מספר הטלפון להוספה, כולל קידומת אפס",
-    field: "pikud_new_phone",
-    min: 9,
-    max: 10,
-    mode: "Digits",
-    seconds: 12,
-  };
-}
-
-function askRemove(phones: CallerNumber[]): SettingsDecision {
-  if (phones.length <= 1) {
-    return { type: "say", message: "חייבים להשאיר לפחות מספר מורשה אחד, לא ניתן להסיר כעת" };
-  }
-  const listed = phones.slice(0, 9);
-  const choices = listed
-    .map((item, index) => `למספר ${speakPhone(item.phone)} הקש ${INDEX[index + 1]}`)
-    .join(", ");
-  return {
-    type: "read",
-    message: `${choices}, לביטול הקש אפס`,
-    field: "pikud_del_phone",
-    min: 1,
-    max: 1,
-    allowed: `0${listed.map((_, index) => String(index + 1)).join("")}`,
-    mode: "No",
-  };
-}
-
-function askAdminConfirm(): MenuRead {
-  return {
-    type: "read",
-    message: "לשליחת פניה למנהל המערכת שיחזור אליכם הקש אחד, לביטול הקש שתיים",
-    field: "pikud_admin_ask",
-    min: 1,
-    max: 1,
-    allowed: "12",
-    mode: "No",
-  };
-}
-
-function auditSpeech(entry: AuditView) {
-  const when = new Intl.DateTimeFormat("he-IL", {
-    timeZone: "Asia/Jerusalem",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(entry.at));
-  const device = entry.deviceName ? `ב${entry.deviceName}` : "";
-  return `${when} ${device} ${auditAction(entry.action)}`.replace(/\s+/g, " ").trim();
-}
-
-function auditAction(action: string) {
-  if (action === "ON") return "הופעל";
-  if (action === "OFF") return "כובה";
-  if (action.startsWith("TIMER")) return "טיימר";
-  if (action === "ADMIN_REQUEST") return "פניה למנהל";
-  if (action.includes("PHONE")) return "עדכון מספר";
-  return action;
-}
 
 export async function answerSettings(input: {
   tenantId: string;
@@ -124,7 +49,7 @@ export async function answerSettings(input: {
         result: "OK",
         detail: phone,
       });
-      return { type: "say", message: `המספר ${speakPhone(phone)} נוסף בהצלחה` };
+      return { type: "say", message: phoneAdded(phone) };
     } catch (error) {
       const message = error instanceof HttpError ? error.message : "הוספת המספר נכשלה";
       return { type: "say", message };
@@ -134,7 +59,7 @@ export async function answerSettings(input: {
   if (input.settings === "2" || input.delPhone !== undefined) {
     const phones = await listCallerNumbers(input.tenantId);
     if (input.delPhone === undefined) return askRemove(phones);
-    if (input.delPhone === "0") return { type: "say", message: "ההסרה בוטלה" };
+    if (input.delPhone === "0") return { type: "say", message: REMOVE_CANCELLED };
     const index = Number(input.delPhone) - 1;
     const chosen = phones[index];
     if (!chosen || !Number.isInteger(index)) {
@@ -153,7 +78,7 @@ export async function answerSettings(input: {
       result: "OK",
       detail: chosen.phone,
     });
-    return { type: "say", message: `המספר ${speakPhone(chosen.phone)} הוסר` };
+    return { type: "say", message: phoneRemoved(chosen.phone) };
   }
 
   if (input.settings === "3") {
@@ -167,14 +92,12 @@ export async function answerSettings(input: {
         return false;
       })
       .slice(0, 5);
-    if (!entries.length) return { type: "say", message: "אין פעולות ביומן כרגע" };
-    const spoken = entries.map((entry) => auditSpeech(entry)).join(", ");
-    return { type: "say", message: `פעולות אחרונות, ${spoken}` };
+    return { type: "say", message: auditMessage(entries.map((entry) => auditLine(entry.at, entry.deviceName, entry.action))) };
   }
 
   if (input.settings === "4" || input.adminAsk !== undefined) {
     if (!input.adminAsk) return askAdminConfirm();
-    if (input.adminAsk !== "1") return { type: "say", message: "הפניה בוטלה" };
+    if (input.adminAsk !== "1") return { type: "say", message: ADMIN_CANCELLED };
     const phone = normalizePhone(input.actorPhone);
     await addAudit({
       source: "ivr",
@@ -185,7 +108,7 @@ export async function answerSettings(input: {
       result: "OPEN",
       detail: `בקשת חזרה מלקוח, טלפון ${phone}, tenant ${input.tenantId}`,
     });
-    return { type: "say", message: "הפניה נשלחה למנהל המערכת, נחזור אליכם בהקדם" };
+    return { type: "say", message: ADMIN_SENT };
   }
 
   if (input.settings === "5") return { type: "all", action: "ON" };
@@ -193,3 +116,5 @@ export async function answerSettings(input: {
 
   return { ...settingsMenu(), message: `הבחירה לא קיימת, ${settingsMenu().message}` };
 }
+
+export { speakPhone } from "@/lib/ivr/settings-menu";

@@ -1,4 +1,5 @@
 import type { Connectivity } from "@/lib/types";
+import { weekdayPhrase } from "@/lib/programs/weekdays";
 import { israelDate } from "@/lib/time";
 
 export type MenuDevice = {
@@ -68,6 +69,8 @@ export type MenuDecision =
   | { type: "turn"; device: MenuDevice; action: "ON" | "OFF" }
   | { type: "timer"; device: MenuDevice; minutes: number }
   | PhoneClockPlan;
+
+export const STATUS_WAIT = "מבצע בדיקת מצב ערוץ אנא המתן";
 
 const DIGIT_WORD = ["", "אחד", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע"];
 
@@ -450,4 +453,22 @@ function spokenCount(value: number, gender: "m" | "f"): string {
 function label(device: MenuDevice): string {
   const name = device.name.trim();
   return name || device.deviceId;
+}
+
+export function phoneClockProgramName(plan: PhoneClockPlan): string {
+  const who = plan.devices.length > 1 ? "כל השקעים" : plan.device.name.trim() || "שקע";
+  return `${who} ${weekdayPhrase(plan.weekdays)}`.trim().slice(0, 40);
+}
+
+export function clockSavedMessage(plan: PhoneClockPlan): string {
+  const parts = [];
+  if (plan.onTime) parts.push(`הדלקה ${spokenClockTime(plan.onTime)}`);
+  if (plan.offTime) parts.push(`כיבוי ${spokenClockTime(plan.offTime)}`);
+  if (plan.onTime && plan.offTime && plan.offTime <= plan.onTime) parts.push("הכיבוי למחרת");
+  const times = parts.join(", ");
+  if (plan.day) {
+    const names = plan.devices.map((device) => device.name.trim() || device.deviceId).join(" ו");
+    return `נשמר שעון ל${names}, בתאריך ${spokenDateWords(plan.day)}, ${times}`;
+  }
+  return `נשמרה תוכנית ${phoneClockProgramName(plan)}, ${times}`;
 }

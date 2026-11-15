@@ -45,7 +45,7 @@
   --bg: #fbfcfe;
   --tint: #f3f7fc;
   min-height: 100dvh;
-  overflow-x: hidden;
+  overflow-x: clip;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-assistant), Arial, sans-serif;
@@ -524,7 +524,7 @@
 }
 
 .ksh-landing .phone {
-  width: min(360px, 100%);
+  width: min(380px, 100%);
   margin-inline: auto;
   padding: 18px;
   border-radius: 40px;
@@ -557,10 +557,11 @@
 }
 
 .ksh-landing .phone-screen {
+  position: relative;
   display: flex;
-  height: 320px;
+  height: 400px;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   overflow-y: auto;
   padding: 14px;
   border-radius: 24px;
@@ -578,6 +579,91 @@
   font-size: 15px;
   line-height: 1.55;
   animation: ksh-pop 0.25s ease-out;
+}
+
+.ksh-landing .spoken {
+  display: grid;
+  gap: 8px;
+  flex: none;
+  padding: 12px 14px 14px;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 2px 8px #0f22380f;
+  opacity: 0.55;
+  animation: ksh-pop 0.25s ease-out;
+  transition: opacity 0.2s;
+}
+
+.ksh-landing .spoken.live {
+  opacity: 1;
+  box-shadow:
+    0 0 0 2px var(--blue-soft),
+    0 6px 18px #0f22381a;
+}
+
+.ksh-landing .spoken-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ksh-landing .spoken p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.ksh-landing .option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafd;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: start;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.ksh-landing .option b {
+  display: grid;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--ink);
+  color: white;
+  font-size: 15px;
+}
+
+.ksh-landing .option span {
+  padding-top: 3px;
+}
+
+.ksh-landing .option:disabled {
+  cursor: default;
+}
+
+.ksh-landing .spoken.live .option:hover:not(:disabled) {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.ksh-landing .spoken.live .option b {
+  background: var(--blue);
 }
 
 .ksh-landing .bubble.me {
@@ -1085,6 +1171,7 @@
 }
 
 .ksh-landing .form {
+  position: relative;
   display: grid;
   gap: 14px;
   padding: 28px;
@@ -1136,10 +1223,16 @@
 
 .ksh-landing .form .trap {
   position: absolute;
-  left: -9999px;
+  top: 0;
+  right: 0;
   width: 1px;
   height: 1px;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  clip-path: inset(50%);
   opacity: 0;
+  pointer-events: none;
 }
 
 .ksh-landing .form-error {

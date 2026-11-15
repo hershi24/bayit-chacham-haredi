@@ -523,6 +523,39 @@
   gap: 60px;
 }
 
+.ksh-landing .split.plans {
+  grid-template-columns: 0.85fr 1.15fr;
+}
+
+.ksh-landing .plan-points {
+  display: grid;
+  gap: 16px;
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+  color: #34465c;
+  line-height: 1.6;
+}
+
+.ksh-landing .plan-points li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ksh-landing .plan-points svg {
+  flex: none;
+  box-sizing: content-box;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.ksh-landing .plan-points strong {
+  color: var(--ink);
+}
+
 .ksh-landing .phone {
   width: min(380px, 100%);
   margin-inline: auto;
@@ -1405,6 +1438,7 @@
 
   .ksh-landing .hero-grid,
   .ksh-landing .split,
+  .ksh-landing .split.plans,
   .ksh-landing .contact {
     grid-template-columns: 1fr;
   }

@@ -512,3 +512,17 @@ test("the phone saves a weekday clock on the chosen socket", async () => {
   assert.equal(program?.offTime, "12:00");
   if (program) await deleteProgram("ten_shul", program.id);
 });
+
+test("parseSlots keeps per-slot device ids", async () => {
+  const { parseSlots } = await import("../lib/programs/slots");
+  const slots = parseSlots(
+    [
+      { onTime: "06:00", offTime: "07:00", deviceIds: ["a"] },
+      { onTime: "18:00", offTime: "19:00", deviceIds: ["b", "c"] },
+    ],
+    null,
+    null,
+  );
+  assert.deepEqual(slots[0]?.deviceIds, ["a"]);
+  assert.deepEqual(slots[1]?.deviceIds, ["b", "c"]);
+});

@@ -80,7 +80,7 @@ function runsForWeekdays(program: StoredProgram, allowed: Set<string>, now: Date
           day,
           onTime: slot.onTime,
           offTime: slot.offTime,
-          deviceIds: program.deviceIds,
+          deviceIds: slot.deviceIds?.length ? slot.deviceIds : program.deviceIds,
         });
       }
     }

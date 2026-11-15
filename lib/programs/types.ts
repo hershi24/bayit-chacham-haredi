@@ -21,6 +21,8 @@ export type ProgramSlot = {
   onTime: string | null;
   offTime: string | null;
   weekdays?: number[];
+  /** When set, this clock runs only on these devices. Empty or missing means the program's devices. */
+  deviceIds?: string[];
 };
 
 export type DayClock = {

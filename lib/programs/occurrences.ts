@@ -10,7 +10,7 @@ export type OccurrenceProgram = {
   weekdays: number[];
   startDate: string | null;
   endDate: string | null;
-  slots: Array<{ onTime: string | null; offTime: string | null; weekdays?: number[] }>;
+  slots: Array<{ onTime: string | null; offTime: string | null; weekdays?: number[]; deviceIds?: string[] }>;
   deviceIds: string[];
   skippedDates?: string[];
 };
@@ -91,14 +91,16 @@ export function occurrencesOn(
     for (const sourceDay of [day, previous]) {
       if ((program.skippedDates ?? []).includes(sourceDay)) continue;
       if (!program.weekdays.includes(weekdayOf(sourceDay)) || !coversDay(sourceDay, program.startDate, program.endDate)) continue;
-      pushRanges(
-        sourceDay,
-        slotsForWeekday(program.slots, weekdayOf(sourceDay)),
-        program.id,
-        null,
-        program.name,
-        program.deviceIds,
-      );
+      for (const slot of slotsForWeekday(program.slots, weekdayOf(sourceDay))) {
+        pushRanges(
+          sourceDay,
+          [slot],
+          program.id,
+          null,
+          program.name,
+          slot.deviceIds?.length ? slot.deviceIds : program.deviceIds,
+        );
+      }
     }
   }
 

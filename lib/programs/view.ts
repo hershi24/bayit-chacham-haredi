@@ -57,7 +57,7 @@ export async function programsPayload(
           hebrew: day.hebrew,
           onTime: slot.onTime,
           offTime: slot.offTime,
-          deviceIds: program.deviceIds,
+          deviceIds: slot.deviceIds?.length ? slot.deviceIds : program.deviceIds,
           programId: program.id,
           recurring: true,
         })),

@@ -1024,11 +1024,13 @@
 
 .ksh-landing .device-card li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
 .ksh-landing .device-card li svg {
+  flex: none;
+  margin-top: 3px;
   color: var(--green);
 }
 

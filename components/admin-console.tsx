@@ -439,6 +439,7 @@ function CustomerEditorForm({
   const [name, setName] = useState(user?.name ?? tenant?.name ?? "");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(user?.email ?? "");
   const [allDevices, setAllDevices] = useState(user ? user.deviceIds === null : true);
   const [chosen, setChosen] = useState<string[]>(user?.deviceIds ?? []);
   const [pending, setPending] = useState(false);
@@ -579,13 +580,14 @@ function CustomerEditorForm({
             role: user.role,
             tenantId: user.tenantId,
             password,
+            email,
             deviceIds: user.role === "admin" || allDevices ? null : chosen.filter((id) => tenantDevices.some((device) => device.deviceId === id)),
           }),
         });
       } else if (tenant && username.trim() !== "") {
         await api("/api/admin/users", {
           method: "POST",
-          body: JSON.stringify({ name, username, password, role: "operator", tenantId: tenant.id }),
+          body: JSON.stringify({ name, username, password, email, role: "operator", tenantId: tenant.id }),
         });
       }
       if (tenant && name !== tenant.name) {
@@ -623,6 +625,19 @@ function CustomerEditorForm({
           <Input id="edit-username" dir="ltr" className="text-left" value={username} onChange={(event) => setUsername(event.target.value)} />
         </div>
       )}
+      <div className="grid gap-2">
+        <Label htmlFor="edit-email">דוא״ל</Label>
+        <Input
+          id="edit-email"
+          dir="ltr"
+          className="text-left"
+          type="email"
+          autoComplete="off"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="לאיפוס סיסמה ולהתחברות עם גוגל"
+        />
+      </div>
       <div className="grid gap-2">
         <Label htmlFor="edit-password">{user ? "איפוס סיסמה" : "סיסמה"}</Label>
         <Input

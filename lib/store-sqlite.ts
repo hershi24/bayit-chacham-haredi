@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SqlValue } from "node:sqlite";
@@ -73,6 +73,19 @@ function db(): DatabaseSync {
   addDeviceColumn(globalDb.__pikudDb, "channel", "channel INTEGER");
   addCallerColumn(globalDb.__pikudDb, "label", "label TEXT");
   addStateColumn(globalDb.__pikudDb, "last_online_at", "last_online_at TEXT");
+  addUserColumn(globalDb.__pikudDb, "email", "email TEXT");
+  addUserColumn(globalDb.__pikudDb, "google_sub", "google_sub TEXT");
+  globalDb.__pikudDb.exec(`
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users(email) WHERE email IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_idx ON users(google_sub) WHERE google_sub IS NOT NULL;
+  `);
   return globalDb.__pikudDb;
 }
 
@@ -81,6 +94,17 @@ function addColumn(database: DatabaseSync, name: string, definition: string) {
   if (columns.some((column) => column.name === name)) return;
   try {
     database.exec(`ALTER TABLE programs ADD COLUMN ${definition}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!/duplicate column/i.test(message)) throw error;
+  }
+}
+
+function addUserColumn(database: DatabaseSync, name: string, definition: string) {
+  const columns = database.prepare("PRAGMA table_info(users)").all() as Array<{ name?: string }>;
+  if (columns.some((column) => column.name === name)) return;
+  try {
+    database.exec(`ALTER TABLE users ADD COLUMN ${definition}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (!/duplicate column/i.test(message)) throw error;
@@ -630,7 +654,7 @@ export function listUsers(): UserView[] {
   const grants = grantsByUser();
   const rows = db()
     .prepare(
-      `SELECT u.id, u.username, u.name, u.role, u.tenant_id, t.name AS tenant_name
+      `SELECT u.id, u.username, u.name, u.role, u.tenant_id, u.email, t.name AS tenant_name
        FROM users u
        LEFT JOIN tenants t ON t.id = u.tenant_id
        ORDER BY u.role, u.name`,
@@ -652,6 +676,7 @@ function mapUser(row: Row): UserView {
     tenantId: textOrNull(row, "tenant_id"),
     tenantName: textOrNull(row, "tenant_name"),
     deviceIds: null,
+    email: textOrNull(row, "email"),
   };
 }
 
@@ -661,16 +686,18 @@ export function createUser(input: {
   password: string;
   role: Role;
   tenantId: string | null;
+  email?: string | null;
 }) {
   const existing = db().prepare("SELECT id FROM users WHERE username = ?").get(input.username);
   if (existing) throw new HttpError(409, "שם המשתמש כבר תפוס");
+  if (input.email) assertEmailFree(input.email, "");
   if (input.role === "operator" && !input.tenantId) throw new HttpError(400, "משתמש לקוח חייב להיות משויך ללקוח");
   if (input.tenantId && !listTenants().some((tenant) => tenant.id === input.tenantId)) {
     throw new HttpError(404, "הלקוח לא נמצא");
   }
   db()
     .prepare(
-      "INSERT INTO users (id, tenant_id, username, name, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO users (id, tenant_id, username, name, password_hash, role, email, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .run(
       `usr_${randomUUID().slice(0, 8)}`,
@@ -679,6 +706,7 @@ export function createUser(input: {
       input.name,
       hashPassword(input.password),
       input.role,
+      input.email ?? null,
       new Date().toISOString(),
     );
 }
@@ -697,6 +725,7 @@ export function updateUser(input: {
   tenantId: string | null;
   password: string | null;
   deviceIds: string[] | null;
+  email?: string | null;
 }) {
   const current = listUsers().find((user) => user.id === input.id);
   if (!current) throw new HttpError(404, "המשתמש לא נמצא");
@@ -720,13 +749,15 @@ export function updateUser(input: {
     );
     if (deviceIds.some((id) => !owned.has(id))) throw new HttpError(400, "אפשר לשייך רק שקעים של הלקוח");
   }
+  const email = input.email === undefined ? current.email : input.email;
+  if (email) assertEmailFree(email, input.id);
   if (input.password) {
     db()
-      .prepare("UPDATE users SET name = ?, role = ?, tenant_id = ?, password_hash = ? WHERE id = ?")
-      .run(input.name, input.role, tenantId, hashPassword(input.password), input.id);
+      .prepare("UPDATE users SET name = ?, role = ?, tenant_id = ?, email = ?, password_hash = ? WHERE id = ?")
+      .run(input.name, input.role, tenantId, email, hashPassword(input.password), input.id);
     if (input.id !== input.actorId) db().prepare("DELETE FROM sessions WHERE user_id = ?").run(input.id);
   } else {
-    db().prepare("UPDATE users SET name = ?, role = ?, tenant_id = ? WHERE id = ?").run(input.name, input.role, tenantId, input.id);
+    db().prepare("UPDATE users SET name = ?, role = ?, tenant_id = ?, email = ? WHERE id = ?").run(input.name, input.role, tenantId, email, input.id);
   }
   db().prepare("DELETE FROM user_devices WHERE user_id = ?").run(input.id);
   if (deviceIds) {
@@ -852,6 +883,65 @@ export function deleteDevice(deviceId: string) {
   const result = db().prepare("DELETE FROM devices WHERE device_id = ?").run(deviceId);
   if (Number(result.changes) === 0) throw new HttpError(404, "השקע לא נמצא");
   return [deviceId];
+}
+
+function assertEmailFree(email: string, exceptUserId: string) {
+  const taken = db().prepare("SELECT id FROM users WHERE email = ? AND id <> ?").get(email, exceptUserId) as Row | undefined;
+  if (taken) throw new HttpError(409, "הדוא״ל כבר משויך לחשבון אחר");
+}
+
+export function setUserEmail(userId: string, email: string | null) {
+  if (!db().prepare("SELECT id FROM users WHERE id = ?").get(userId)) throw new HttpError(404, "המשתמש לא נמצא");
+  if (email) assertEmailFree(email, userId);
+  db().prepare("UPDATE users SET email = ? WHERE id = ?").run(email, userId);
+}
+
+export function getUserEmail(userId: string): string | null {
+  const row = db().prepare("SELECT email FROM users WHERE id = ?").get(userId) as Row | undefined;
+  return row ? textOrNull(row, "email") : null;
+}
+
+export function findUserIdByEmail(email: string): string | null {
+  const row = db().prepare("SELECT id FROM users WHERE email = ?").get(email) as Row | undefined;
+  return row ? text(row, "id") : null;
+}
+
+export function findUserIdByGoogleSub(sub: string): string | null {
+  const row = db().prepare("SELECT id FROM users WHERE google_sub = ?").get(sub) as Row | undefined;
+  return row ? text(row, "id") : null;
+}
+
+export function linkGoogleAccount(userId: string, sub: string, email: string) {
+  const other = db().prepare("SELECT id FROM users WHERE google_sub = ? AND id <> ?").get(sub, userId) as Row | undefined;
+  if (other) throw new HttpError(409, "חשבון גוגל זה כבר משויך למשתמש אחר");
+  assertEmailFree(email, userId);
+  db().prepare("UPDATE users SET google_sub = ?, email = ? WHERE id = ?").run(sub, email, userId);
+}
+
+export function issuePasswordReset(userId: string): string {
+  const token = randomBytes(32).toString("hex");
+  const hash = createHash("sha256").update(token).digest("hex");
+  const now = new Date();
+  db().prepare("DELETE FROM password_resets WHERE user_id = ?").run(userId);
+  db()
+    .prepare("INSERT INTO password_resets (id, user_id, token_hash, expires_at, used_at) VALUES (?, ?, ?, ?, NULL)")
+    .run(`rst_${randomUUID().slice(0, 8)}`, userId, hash, new Date(now.getTime() + 30 * 60 * 1000).toISOString());
+  return token;
+}
+
+export function consumePasswordReset(token: string): string | null {
+  const hash = createHash("sha256").update(token).digest("hex");
+  const row = db().prepare("SELECT id, user_id, expires_at, used_at FROM password_resets WHERE token_hash = ?").get(hash) as Row | undefined;
+  if (!row || textOrNull(row, "used_at")) return null;
+  if (Date.parse(text(row, "expires_at")) < Date.now()) return null;
+  const updated = db().prepare("UPDATE password_resets SET used_at = ? WHERE id = ? AND used_at IS NULL").run(new Date().toISOString(), text(row, "id"));
+  if (Number(updated.changes) === 0) return null;
+  return text(row, "user_id");
+}
+
+export function replacePassword(userId: string, password: string) {
+  db().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), userId);
+  db().prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
 }
 
 export function changeOwnPassword(userId: string, currentPassword: string, nextPassword: string) {

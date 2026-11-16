@@ -1,6 +1,6 @@
 import { requireAdmin, requireUser, withErrors } from "@/lib/session";
 import { deleteUser, updateUser } from "@/lib/store";
-import { cleanName, cleanPassword, readJson } from "@/lib/validate";
+import { cleanEmail, cleanName, cleanPassword, readJson } from "@/lib/validate";
 import { HttpError } from "@/lib/http-error";
 
 export const runtime = "nodejs";
@@ -13,6 +13,7 @@ export function PATCH(request: Request, context: { params: Promise<{ id: string 
     const body = await readJson(request);
     if (body.role !== "admin" && body.role !== "operator") throw new HttpError(400, "תפקיד לא מוכר");
     const password = body.password == null || body.password === "" ? null : cleanPassword(body.password);
+    const email = body.email == null || body.email === "" ? null : cleanEmail(body.email);
     let deviceIds: string[] | null = null;
     if (body.role === "operator" && body.deviceIds != null) {
       if (!Array.isArray(body.deviceIds)) throw new HttpError(400, "רשימת השקעים אינה תקינה");
@@ -25,6 +26,7 @@ export function PATCH(request: Request, context: { params: Promise<{ id: string 
       role: body.role,
       tenantId: typeof body.tenantId === "string" && body.tenantId ? body.tenantId : null,
       password,
+      email,
       deviceIds,
     });
     return Response.json({ ok: true });

@@ -17,6 +17,8 @@ create table if not exists users (
   name text not null,
   password_hash text not null,
   role text not null check (role in ('admin', 'operator')),
+  email text,
+  google_sub text,
   created_at text not null
 );
 
@@ -182,4 +184,19 @@ create table if not exists user_devices (
 alter table caller_numbers enable row level security;
 alter table user_devices enable row level security;
 
-revoke all on table tenants, users, devices, device_state, sessions, audit_log, schedules, clock_settings, programs, program_runs, clocks, caller_numbers, user_devices from anon, authenticated;
+alter table users add column if not exists email text;
+alter table users add column if not exists google_sub text;
+create unique index if not exists users_email_idx on users (email) where email is not null;
+create unique index if not exists users_google_sub_idx on users (google_sub) where google_sub is not null;
+
+create table if not exists password_resets (
+  id text primary key,
+  user_id text not null references users (id) on delete cascade,
+  token_hash text not null,
+  expires_at text not null,
+  used_at text
+);
+
+alter table password_resets enable row level security;
+
+revoke all on table tenants, users, devices, device_state, sessions, audit_log, schedules, clock_settings, programs, program_runs, clocks, caller_numbers, user_devices, password_resets from anon, authenticated;

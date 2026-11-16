@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SqlValue } from "node:sqlite";
@@ -53,6 +53,7 @@ type UserRow = {
   name: string;
   role: string;
   tenant_id: string | null;
+  email?: string | null;
   tenants: Embed<{ name: string }>;
 };
 
@@ -645,6 +646,7 @@ function mapUser(row: UserRow): UserView {
     tenantId: row.tenant_id,
     tenantName: one(row.tenants)?.name ?? null,
     deviceIds: null,
+    email: row.email ?? null,
   };
 }
 
@@ -672,7 +674,14 @@ export async function grantsFor(userId: string): Promise<string[] | null> {
 
 export async function listUsers(): Promise<UserView[]> {
   await ready();
-  const result = await client().from("users").select("id, username, name, role, tenant_id, tenants(name)").order("role").order("name");
+  let result = await client().from("users").select("id, username, name, role, tenant_id, email, tenants(name)").order("role").order("name");
+  if (result.error && columnMissing(result.error, "email")) {
+    result = (await client()
+      .from("users")
+      .select("id, username, name, role, tenant_id, tenants(name)")
+      .order("role")
+      .order("name")) as typeof result;
+  }
   if (result.error) fail(result.error, "לא ניתן לקרוא משתמשים");
   const grants = await loadGrants();
   return ((result.data ?? []) as unknown as UserRow[]).map((row) => {
@@ -687,11 +696,13 @@ export async function createUser(input: {
   password: string;
   role: Role;
   tenantId: string | null;
+  email?: string | null;
 }) {
   await ready();
   const existing = await client().from("users").select("id").eq("username", input.username).maybeSingle();
   if (existing.error) fail(existing.error, "לא ניתן לבדוק שם משתמש");
   if (existing.data) throw new HttpError(409, "שם המשתמש כבר תפוס");
+  if (input.email) await assertEmailFree(input.email, "");
   if (input.role === "operator" && !input.tenantId) throw new HttpError(400, "משתמש לקוח חייב להיות משויך ללקוח");
   if (input.tenantId && !(await listTenants()).some((tenant) => tenant.id === input.tenantId)) {
     throw new HttpError(404, "הלקוח לא נמצא");
@@ -704,6 +715,7 @@ export async function createUser(input: {
     password_hash: hashPassword(input.password),
     role: input.role,
     created_at: new Date().toISOString(),
+    ...(input.email ? { email: input.email } : {}),
   });
   if (result.error?.code === "23505") throw new HttpError(409, "שם המשתמש כבר תפוס");
   if (result.error) fail(result.error, "יצירת משתמש נכשלה");
@@ -725,6 +737,7 @@ export async function updateUser(input: {
   tenantId: string | null;
   password: string | null;
   deviceIds: string[] | null;
+  email?: string | null;
 }) {
   await ready();
   const users = await listUsers();
@@ -746,8 +759,13 @@ export async function updateUser(input: {
     if (deviceIds.some((id) => !owned.has(id))) throw new HttpError(400, "אפשר לשייך רק שקעים של הלקוח");
   }
   const patch: Record<string, string | null> = { name: input.name, role: input.role, tenant_id: tenantId };
+  if (input.email !== undefined) {
+    if (input.email) await assertEmailFree(input.email, input.id);
+    patch.email = input.email;
+  }
   if (input.password) patch.password_hash = hashPassword(input.password);
   const saved = await client().from("users").update(patch).eq("id", input.id);
+  if (saved.error && input.email !== undefined && columnMissing(saved.error, "email")) throw new HttpError(500, EMAIL_SCHEMA);
   if (saved.error) fail(saved.error, "עדכון המשתמש נכשל");
   if (input.password && input.id !== input.actorId) {
     const dropped = await client().from("sessions").delete().eq("user_id", input.id);
@@ -908,6 +926,111 @@ export async function deleteDevice(deviceId: string) {
   if (result.error) fail(result.error, "הסרת שקע נכשלה");
   if (!result.data?.length) throw new HttpError(404, "השקע לא נמצא");
   return [deviceId];
+}
+
+const EMAIL_SCHEMA = "עמודת הדוא״ל חסרה. הריצו את supabase/migrations/20261116_user_email.sql";
+
+async function assertEmailFree(email: string, exceptUserId: string) {
+  const taken = await client().from("users").select("id").eq("email", email).neq("id", exceptUserId).maybeSingle();
+  if (taken.error && columnMissing(taken.error, "email")) throw new HttpError(500, EMAIL_SCHEMA);
+  if (taken.error) fail(taken.error, "לא ניתן לבדוק דוא״ל");
+  if (taken.data) throw new HttpError(409, "הדוא״ל כבר משויך לחשבון אחר");
+}
+
+export async function setUserEmail(userId: string, email: string | null) {
+  await ready();
+  if (email) await assertEmailFree(email, userId);
+  const saved = await client().from("users").update({ email }).eq("id", userId).select("id");
+  if (saved.error && columnMissing(saved.error, "email")) throw new HttpError(500, EMAIL_SCHEMA);
+  if (saved.error) fail(saved.error, "שמירת הדוא״ל נכשלה");
+  if (!saved.data?.length) throw new HttpError(404, "המשתמש לא נמצא");
+}
+
+export async function getUserEmail(userId: string): Promise<string | null> {
+  await ready();
+  const result = await client().from("users").select("email").eq("id", userId).maybeSingle();
+  if (result.error && columnMissing(result.error, "email")) return null;
+  if (result.error) fail(result.error, "לא ניתן לקרוא דוא״ל");
+  const email = result.data?.email;
+  return typeof email === "string" && email ? email : null;
+}
+
+export async function findUserIdByEmail(email: string): Promise<string | null> {
+  await ready();
+  const result = await client().from("users").select("id").eq("email", email).maybeSingle();
+  if (result.error && columnMissing(result.error, "email")) throw new HttpError(500, EMAIL_SCHEMA);
+  if (result.error) fail(result.error, "לא ניתן לחפש לפי דוא״ל");
+  return result.data?.id ? String(result.data.id) : null;
+}
+
+export async function findUserIdByGoogleSub(sub: string): Promise<string | null> {
+  await ready();
+  const result = await client().from("users").select("id").eq("google_sub", sub).maybeSingle();
+  if (result.error && columnMissing(result.error, "google_sub")) throw new HttpError(500, EMAIL_SCHEMA);
+  if (result.error) fail(result.error, "לא ניתן לחפש חשבון גוגל");
+  return result.data?.id ? String(result.data.id) : null;
+}
+
+export async function linkGoogleAccount(userId: string, sub: string, email: string) {
+  await ready();
+  const other = await client().from("users").select("id").eq("google_sub", sub).neq("id", userId).maybeSingle();
+  if (other.error && columnMissing(other.error, "google_sub")) throw new HttpError(500, EMAIL_SCHEMA);
+  if (other.error) fail(other.error, "לא ניתן לקשר חשבון גוגל");
+  if (other.data) throw new HttpError(409, "חשבון גוגל זה כבר משויך למשתמש אחר");
+  await assertEmailFree(email, userId);
+  const saved = await client().from("users").update({ google_sub: sub, email }).eq("id", userId);
+  if (saved.error && (columnMissing(saved.error, "google_sub") || columnMissing(saved.error, "email"))) {
+    throw new HttpError(500, EMAIL_SCHEMA);
+  }
+  if (saved.error) fail(saved.error, "קישור חשבון גוגל נכשל");
+}
+
+export async function issuePasswordReset(userId: string): Promise<string> {
+  await ready();
+  const token = randomBytes(32).toString("hex");
+  const hash = createHash("sha256").update(token).digest("hex");
+  const cleared = await client().from("password_resets").delete().eq("user_id", userId);
+  if (cleared.error && (cleared.error.code === "42P01" || cleared.error.code === "PGRST205")) {
+    throw new HttpError(500, EMAIL_SCHEMA);
+  }
+  if (cleared.error) fail(cleared.error, "לא ניתן להכין איפוס סיסמה");
+  const inserted = await client().from("password_resets").insert({
+    id: `rst_${randomUUID().slice(0, 8)}`,
+    user_id: userId,
+    token_hash: hash,
+    expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    used_at: null,
+  });
+  if (inserted.error) fail(inserted.error, "לא ניתן להכין איפוס סיסמה");
+  return token;
+}
+
+export async function consumePasswordReset(token: string): Promise<string | null> {
+  await ready();
+  const hash = createHash("sha256").update(token).digest("hex");
+  const found = await client().from("password_resets").select("id, user_id, expires_at, used_at").eq("token_hash", hash).maybeSingle();
+  if (found.error && (found.error.code === "42P01" || found.error.code === "PGRST205")) throw new HttpError(500, EMAIL_SCHEMA);
+  if (found.error) fail(found.error, "לא ניתן לאמת את הקישור");
+  const row = found.data as { id?: string; user_id?: string; expires_at?: string; used_at?: string | null } | null;
+  if (!row?.id || !row.user_id || row.used_at) return null;
+  if (Date.parse(String(row.expires_at)) < Date.now()) return null;
+  const updated = await client()
+    .from("password_resets")
+    .update({ used_at: new Date().toISOString() })
+    .eq("id", row.id)
+    .is("used_at", null)
+    .select("id");
+  if (updated.error) fail(updated.error, "לא ניתן לאמת את הקישור");
+  if (!updated.data?.length) return null;
+  return String(row.user_id);
+}
+
+export async function replacePassword(userId: string, password: string) {
+  await ready();
+  const saved = await client().from("users").update({ password_hash: hashPassword(password) }).eq("id", userId);
+  if (saved.error) fail(saved.error, "עדכון הסיסמה נכשל");
+  const dropped = await client().from("sessions").delete().eq("user_id", userId);
+  if (dropped.error) fail(dropped.error, "ניתוק המשתמש נכשל");
 }
 
 export async function changeOwnPassword(userId: string, currentPassword: string, nextPassword: string) {

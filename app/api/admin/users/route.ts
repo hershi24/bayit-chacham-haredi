@@ -1,6 +1,6 @@
 import { requireAdmin, requireUser, withErrors } from "@/lib/session";
 import { createUser, listUsers } from "@/lib/store";
-import { cleanName, cleanPassword, cleanUsername, readJson } from "@/lib/validate";
+import { cleanEmail, cleanName, cleanPassword, cleanUsername, readJson } from "@/lib/validate";
 import { HttpError } from "@/lib/http-error";
 
 export const runtime = "nodejs";
@@ -25,6 +25,7 @@ export function POST(request: Request) {
       password: cleanPassword(body.password),
       role: body.role,
       tenantId: typeof body.tenantId === "string" && body.tenantId ? body.tenantId : null,
+      email: body.email == null || body.email === "" ? null : cleanEmail(body.email),
     });
     return Response.json({ users: await listUsers() }, { status: 201 });
   });

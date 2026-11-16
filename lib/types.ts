@@ -88,6 +88,7 @@ export type UserView = {
   tenantId: string | null;
   tenantName: string | null;
   deviceIds: string[] | null;
+  email: string | null;
 };
 
 export type BridgeStatus = {

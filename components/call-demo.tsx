@@ -134,7 +134,7 @@ export function CallDemo() {
     <div className="phone">
       <div className="phone-head">
         <span className={ended ? "phone-dot off" : "phone-dot"} />
-        <span>{ended ? "השיחה הסתיימה" : "בשיחה עם הבית"}</span>
+        <span>{ended ? "השיחה הסתיימה" : "שיחה עם הבית החכם"}</span>
         <span className="phone-time" dir="ltr">
           {clock}
         </span>

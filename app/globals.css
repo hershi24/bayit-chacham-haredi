@@ -172,9 +172,8 @@ html[data-theme="dark"] {
 }
 
 .app-bar {
-  background: color-mix(in srgb, var(--bar) 82%, transparent);
-  backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  background: var(--bar-opaque);
+  backdrop-filter: none;
 }
 
 @media (prefers-reduced-transparency: reduce) {

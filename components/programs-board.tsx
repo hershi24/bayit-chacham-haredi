@@ -252,34 +252,35 @@ export function ProgramsBoard() {
 
   return (
     <section className="min-w-0">
-      <div className="mb-6 flex items-end justify-between gap-4">
+      <div className="mb-3 flex items-end justify-between gap-3 md:mb-6 md:gap-4">
         <div className="min-w-0">
           <p className="text-xs font-medium text-muted-foreground">ניהול אוטומציות</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">תוכניות ותזמונים</h1>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight md:text-2xl">תוכניות ותזמונים</h1>
           <p className="mt-1 hidden text-sm text-muted-foreground sm:block">כל ההפעלות והכיבויים שלך, בלוח אחד מסודר.</p>
         </div>
-        <Button type="button" className="h-10 shrink-0 rounded-xl px-4" onClick={() => openNew(today)}>
+        <Button type="button" className="h-9 shrink-0 rounded-xl px-3 md:h-10 md:px-4" onClick={() => openNew(today)}>
           ＋ תוכנית חדשה
         </Button>
       </div>
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border bg-card px-5 py-4">
-          <p className="text-xs text-muted-foreground">תוכניות שמורות</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums">{savedCount}</p>
+      <div className="mb-3 grid grid-cols-3 gap-2 md:mb-6 md:gap-3">
+        <div className="rounded-xl border bg-card px-2 py-2 md:rounded-2xl md:px-5 md:py-4">
+          <p className="text-[10px] leading-tight text-muted-foreground md:text-xs">תוכניות שמורות</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums md:mt-1 md:text-xl">{savedCount}</p>
         </div>
-        <div className="rounded-2xl border bg-card px-5 py-4">
-          <p className="text-xs text-muted-foreground">פעולות החודש</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums">{monthCount}</p>
+        <div className="rounded-xl border bg-card px-2 py-2 md:rounded-2xl md:px-5 md:py-4">
+          <p className="text-[10px] leading-tight text-muted-foreground md:text-xs">פעולות החודש</p>
+          <p className="mt-0.5 text-base font-semibold tabular-nums md:mt-1 md:text-xl">{monthCount}</p>
         </div>
-        <div className="rounded-2xl border bg-card px-5 py-4">
-          <p className="text-xs text-muted-foreground">הפעולה הקרובה</p>
-          <p className="mt-1 truncate text-xl font-semibold">{soon ? soon.time : "אין"}</p>
-          {soon ? <p className="mt-0.5 text-xs text-muted-foreground">{shortDate(soon.day)}</p> : null}
+        <div className="rounded-xl border bg-card px-2 py-2 md:rounded-2xl md:px-5 md:py-4">
+          <p className="text-[10px] leading-tight text-muted-foreground md:text-xs">הפעולה הקרובה</p>
+          <p className="mt-0.5 truncate text-base font-semibold md:mt-1 md:text-xl">{soon ? soon.time : "אין"}</p>
+          {soon ? <p className="mt-0.5 hidden text-xs text-muted-foreground md:block">{shortDate(soon.day)}</p> : null}
         </div>
       </div>
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
-        <section className="min-w-0 overflow-hidden rounded-2xl border bg-card">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
+        <section className="min-w-0 rounded-2xl border bg-card">
+          <div className="sticky top-14 z-10 bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-2 py-2 sm:gap-3 sm:px-5 sm:py-4">
             <div className="flex items-center gap-1">
               <button type="button" className="grid size-9 place-items-center rounded-lg border text-sm" aria-label="הקודם" onClick={() => move(-1)}>
                 ‹
@@ -318,6 +319,18 @@ export function ProgramsBoard() {
                 </button>
               ))}
             </div>
+          </div>
+          {view === "month" || view === "week" ? (
+            <div className="border-b bg-muted/40 px-1 pt-1 md:px-3 md:pt-3">
+              <div className="grid grid-cols-7 gap-1 md:gap-2">
+                {WEEKDAYS.map((label) => (
+                  <div key={label} className="px-0.5 py-1 text-center text-[11px] font-semibold text-muted-foreground md:px-1 md:py-1.5 md:text-xs">
+                    {label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           </div>
           {view === "list" ? (
             <div className="p-4">
@@ -468,15 +481,8 @@ export function ProgramsBoard() {
             </div>
           ) : (
             <>
-              <div className="bg-muted/40 p-2 md:p-3">
-              <div className="grid grid-cols-7 gap-1.5 md:gap-2">
-                {WEEKDAYS.map((label) => (
-                  <div key={label} className="px-1 py-1.5 text-center text-xs font-semibold text-muted-foreground">
-                    {label}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-1.5 grid grid-cols-7 gap-1.5 md:mt-2 md:gap-2">
+              <div className="bg-muted/40 p-1 md:p-3">
+              <div className="grid grid-cols-7 gap-1 md:gap-2">
                 {gridDays.map((day) => {
                   const meta = board.month.days.find((item) => item.date === day);
                   const inMonth = view !== "month" || meta?.inMonth !== false;
@@ -487,9 +493,9 @@ export function ProgramsBoard() {
                       key={day}
                       data-date={day}
                       className={cn(
-                        "group flex min-w-0 flex-col gap-1 rounded-lg border bg-card p-1 md:gap-1.5 md:p-2",
-                        view === "month" && "min-h-16 md:min-h-36",
-                        view === "week" && "min-h-28 md:min-h-44",
+                        "group flex min-w-0 flex-col gap-0.5 rounded-md border bg-card p-0.5 md:gap-1.5 md:rounded-lg md:p-2",
+                        view === "month" && "md:min-h-36",
+                        view === "week" && "min-h-20 md:min-h-44",
                         !inMonth && "bg-muted/50 text-muted-foreground",
                         day === today && "bg-primary/5",
                       )}
@@ -497,24 +503,20 @@ export function ProgramsBoard() {
                       <div className="flex items-center justify-between gap-1">
                         <button
                           type="button"
-                          className="min-w-0 text-start"
+                          className="min-w-0 flex-1 text-center sm:text-start"
                           onClick={() => {
                             setCursor(day);
                             setView("day");
                           }}
                         >
-                          <span className={cn("grid size-6 place-items-center rounded-full text-xs font-semibold", day === today && "bg-primary text-primary-foreground")}>
+                          <span className={cn("mx-auto grid size-5 place-items-center rounded-full text-[11px] font-semibold sm:mx-0 sm:size-6 sm:text-xs", day === today && "bg-primary text-primary-foreground")}>
                             {Number(day.slice(8))}
                           </span>
-                          {meta?.hebrew ? (
-                            <span className="mt-1 hidden truncate text-[11px] font-medium leading-none text-muted-foreground sm:block">
-                              {meta.hebrew}
-                            </span>
-                          ) : null}
+                          {meta?.hebrew ? <HebrewDate value={meta.hebrew} /> : null}
                         </button>
                         <button
                           type="button"
-                          className="grid size-5 place-items-center rounded border text-[11px] font-semibold text-muted-foreground opacity-0 transition group-hover:opacity-100"
+                          className="hidden size-5 place-items-center rounded border text-[11px] font-semibold text-muted-foreground opacity-0 transition group-hover:opacity-100 sm:grid"
                           aria-label={`תוכנית חדשה ב-${day}`}
                           onClick={() => openNew(day)}
                         >
@@ -526,7 +528,7 @@ export function ProgramsBoard() {
                           key={event.key}
                           type="button"
                           className={cn(
-                            "flex w-full min-w-0 items-center gap-1.5 rounded-md border-s-[3px] px-1.5 py-1 text-start text-[11px] leading-4 md:text-xs",
+                            "flex w-full min-w-0 items-center justify-center gap-1 rounded border-s-2 px-0.5 py-px text-center text-[10px] leading-[14px] md:justify-start md:gap-1.5 md:rounded-md md:border-s-[3px] md:px-1.5 md:py-1 md:text-start md:text-xs md:leading-4",
                             event.action === "off" ? "border-destructive bg-destructive/10 text-destructive" : "border-online bg-online-soft text-online-foreground",
                           )}
                           title={event.name}
@@ -848,6 +850,20 @@ function jerusalemTime(date = new Date()) {
     minute: "2-digit",
     hourCycle: "h23",
   }).format(date);
+}
+
+function HebrewDate({ value }: { value: string }) {
+  const [day, ...rest] = value.split(" ");
+  const month = rest.join(" ");
+  return (
+    <>
+      <span className="mt-0.5 block text-[9px] leading-tight text-muted-foreground sm:hidden">
+        {day}
+        {month ? <span className="block">{month}</span> : null}
+      </span>
+      <span className="mt-1 hidden truncate text-[11px] font-medium leading-none text-muted-foreground sm:block">{value}</span>
+    </>
+  );
 }
 
 function weekDays(cursor: string) {

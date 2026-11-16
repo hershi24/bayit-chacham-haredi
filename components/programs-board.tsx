@@ -262,7 +262,7 @@ export function ProgramsBoard() {
           ＋ תוכנית חדשה
         </Button>
       </div>
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border bg-card px-3 py-2 text-[12px] md:mb-3">
+      <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border bg-card px-4 py-3 text-[13px]">
         <span className="text-muted-foreground">
           תוכניות שמורות <strong className="font-semibold text-foreground">{savedCount}</strong>
         </span>
@@ -276,9 +276,9 @@ export function ProgramsBoard() {
           <strong className="font-semibold text-foreground">{soon ? `${soon.time} · ${shortDate(soon.day)}` : "אין"}</strong>
         </span>
       </div>
-      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-4">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-6">
         <section className="min-w-0 overflow-hidden rounded-xl border bg-card">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b px-2.5 py-2 sm:px-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-3 sm:px-4">
             <div className="flex items-center gap-1">
               <button type="button" className="rounded-md border px-2 py-1 text-sm" aria-label="הקודם" onClick={() => move(-1)}>
                 ‹
@@ -291,7 +291,7 @@ export function ProgramsBoard() {
                 היום
               </button>
             </div>
-            <div className="grid grid-cols-4 rounded-lg bg-secondary p-0.5" role="tablist" aria-label="תצוגת הלוח">
+            <div className="grid grid-cols-4 rounded-lg bg-secondary p-1" role="tablist" aria-label="תצוגת הלוח">
               {(
                 [
                   ["month", "חודש"],
@@ -305,7 +305,7 @@ export function ProgramsBoard() {
                   type="button"
                   role="tab"
                   aria-selected={view === key}
-                  className={cn("rounded-md px-2 py-1 text-[11px] sm:text-xs", view === key ? "bg-card font-semibold text-foreground shadow-sm" : "text-muted-foreground")}
+                  className={cn("rounded-md px-2.5 py-1.5 text-xs", view === key ? "bg-card font-semibold text-foreground shadow-sm" : "text-muted-foreground")}
                   onClick={() => setView(key)}
                 >
                   {label}
@@ -462,14 +462,15 @@ export function ProgramsBoard() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-7 gap-px bg-border">
+              <div className="bg-muted/40 p-2 md:p-3">
+              <div className="grid grid-cols-7 gap-1.5 md:gap-2">
                 {WEEKDAYS.map((label) => (
-                  <div key={label} className="bg-muted px-1 py-2 text-center text-[11px] font-bold text-muted-foreground sm:text-xs">
+                  <div key={label} className="px-1 py-1.5 text-center text-xs font-semibold text-muted-foreground">
                     {label}
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-px bg-border">
+              <div className="mt-1.5 grid grid-cols-7 gap-1.5 md:mt-2 md:gap-2">
                 {gridDays.map((day) => {
                   const meta = board.month.days.find((item) => item.date === day);
                   const inMonth = view !== "month" || meta?.inMonth !== false;
@@ -480,9 +481,9 @@ export function ProgramsBoard() {
                       key={day}
                       data-date={day}
                       className={cn(
-                        "group flex min-w-0 flex-col gap-0.5 bg-card p-1",
-                        view === "month" && "min-h-[4.5rem] md:min-h-[5.25rem]",
-                        view === "week" && "min-h-28 md:min-h-32",
+                        "group flex min-w-0 flex-col gap-1 rounded-lg border bg-card p-1 md:gap-1.5 md:p-2",
+                        view === "month" && "min-h-16 md:min-h-36",
+                        view === "week" && "min-h-28 md:min-h-44",
                         !inMonth && "bg-muted/50 text-muted-foreground",
                         day === today && "bg-primary/5",
                       )}
@@ -496,11 +497,11 @@ export function ProgramsBoard() {
                             setView("day");
                           }}
                         >
-                          <span className={cn("grid size-5 place-items-center rounded-full text-[11px] font-semibold", day === today && "bg-primary text-primary-foreground")}>
+                          <span className={cn("grid size-6 place-items-center rounded-full text-xs font-semibold", day === today && "bg-primary text-primary-foreground")}>
                             {Number(day.slice(8))}
                           </span>
                           {meta?.hebrew ? (
-                            <span className="mt-0.5 block truncate text-[9px] font-medium leading-none text-muted-foreground">
+                            <span className="mt-1 hidden truncate text-[11px] font-medium leading-none text-muted-foreground sm:block">
                               {meta.hebrew}
                             </span>
                           ) : null}
@@ -519,7 +520,7 @@ export function ProgramsBoard() {
                           key={event.key}
                           type="button"
                           className={cn(
-                            "flex w-full min-w-0 items-center gap-1 rounded-md border-s-[3px] px-1 py-1 text-start text-[10px] sm:text-[11px]",
+                            "flex w-full min-w-0 items-center gap-1.5 rounded-md border-s-[3px] px-1.5 py-1 text-start text-[11px] leading-4 md:text-xs",
                             event.action === "off" ? "border-destructive bg-destructive/10 text-destructive" : "border-online bg-online-soft text-online-foreground",
                           )}
                           title={event.name}
@@ -532,7 +533,7 @@ export function ProgramsBoard() {
                       {events.length > cap ? (
                         <button
                           type="button"
-                          className="px-1 text-start text-[10px] font-bold text-primary"
+                          className="px-1 py-0.5 text-start text-[11px] font-semibold text-primary"
                           onClick={() => {
                             setCursor(day);
                             setView("day");
@@ -542,7 +543,7 @@ export function ProgramsBoard() {
                         </button>
                       ) : null}
                       {meta?.parsha || meta?.candles || meta?.havdalah ? (
-                        <p className="hidden truncate text-[10px] font-semibold text-muted-foreground sm:block">
+                        <p className="mt-0.5 hidden truncate text-[11px] font-medium leading-4 text-muted-foreground sm:block">
                           {[
                             meta.parsha ? meta.parsha : null,
                             meta.candles ? `כניסה ${meta.candles}` : null,
@@ -556,7 +557,8 @@ export function ProgramsBoard() {
                   );
                 })}
               </div>
-              <p className="flex flex-wrap items-center gap-3 px-4 py-3 text-xs text-muted-foreground">
+              </div>
+              <p className="flex flex-wrap items-center gap-4 px-4 py-3.5 text-[13px] text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-online" /> הפעלה</span>
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-destructive" /> כיבוי</span>
                 <span>· לחצו על שעון לפתיחת פרטים · על + להוספה</span>
@@ -564,22 +566,22 @@ export function ProgramsBoard() {
             </>
           )}
         </section>
-        <aside className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-          <div className="rounded-xl border bg-card p-3">
-            <h3 className="mb-2 text-[13px] font-semibold">ההתקנים שלי</h3>
+        <aside className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+          <div className="rounded-xl border bg-card p-4">
+            <h3 className="mb-3 text-sm font-semibold">ההתקנים שלי</h3>
             {board.devices.map((device) => {
               const selected = filter === device.deviceId;
               return (
                 <label
                   key={device.deviceId}
-                  className={cn("mb-1.5 flex cursor-pointer items-center gap-2 rounded-lg border p-2", selected && "border-primary/40 bg-primary/5")}
+                  className={cn("mb-2 flex cursor-pointer items-center gap-2.5 rounded-lg border p-2.5", selected && "border-primary/40 bg-primary/5")}
                 >
-                  <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-secondary">
-                    <DeviceGlyph name={device.name} icon={device.icon} className="size-3.5" />
+                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary">
+                    <DeviceGlyph name={device.name} icon={device.icon} className="size-4" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <b className="block truncate text-[13px] font-medium">{device.name}</b>
-                    <small className="text-[10px] text-muted-foreground">{devicePlanCount(board, device.deviceId)} תוכניות</small>
+                    <b className="block truncate text-sm font-medium">{device.name}</b>
+                    <small className="text-xs text-muted-foreground">{devicePlanCount(board, device.deviceId)} תוכניות</small>
                   </span>
                   <input
                     type="radio"
@@ -591,26 +593,26 @@ export function ProgramsBoard() {
                 </label>
               );
             })}
-            <button type="button" className="mt-1 h-8 w-full rounded-lg border text-[12px]" onClick={() => setFilter("all")}>
+            <button type="button" className="mt-1 h-9 w-full rounded-lg border text-[13px]" onClick={() => setFilter("all")}>
               הצג את כל ההתקנים
             </button>
           </div>
-          <div className="rounded-xl border bg-card p-3">
-            <h3 className="mb-2 text-[13px] font-semibold">פעולות קרובות</h3>
+          <div className="rounded-xl border bg-card p-4">
+            <h3 className="mb-2 text-sm font-semibold">פעולות קרובות</h3>
             {nextEvents.length ? (
               nextEvents.slice(0, 5).map((event) => (
                 <button
                   key={`${event.day}-${event.key}`}
                   type="button"
-                  className="flex w-full items-center gap-2 border-b border-border/60 py-1.5 text-start last:border-0"
+                  className="flex w-full items-center gap-3 border-b border-border/60 py-2.5 text-start last:border-0"
                   onClick={() => openEvent(event, board, showProgram, showClock)}
                 >
-                  <time className="text-[12px] font-semibold text-muted-foreground tabular-nums" dir="ltr">
+                  <time className="text-[13px] font-semibold text-muted-foreground tabular-nums" dir="ltr">
                     {event.time}
                   </time>
                   <span className="min-w-0">
-                    <b className="block truncate text-[12px] font-medium">{event.name}</b>
-                    <small className="text-[10px] text-muted-foreground">{longDate(event.day)}</small>
+                    <b className="block truncate text-[13px] font-medium">{event.name}</b>
+                    <small className="text-xs text-muted-foreground">{longDate(event.day)}</small>
                   </span>
                 </button>
               ))
@@ -618,14 +620,14 @@ export function ProgramsBoard() {
               <p className="text-[12px] text-muted-foreground">אין פעולות קרובות</p>
             )}
           </div>
-          <div className="rounded-xl bg-muted/60 p-3 text-[11px] leading-5 text-muted-foreground sm:col-span-2 lg:col-span-1">
+          <div className="rounded-xl bg-muted/60 p-4 text-xs leading-6 text-muted-foreground sm:col-span-2 lg:col-span-1">
             <b className="text-foreground">שליטה חכמה, בדרך שלך</b>
             <br />
             צרו תוכניות חד־פעמיות או חוזרות. התוכנית נשמרת בחשבון ומפעילה את השקעים שנבחרו.
             <label className="mt-2 block font-medium text-foreground">
               עיר לזמני שבת
               <select
-                className="mt-1 h-8 w-full rounded-lg border bg-card px-2 text-[12px] text-foreground"
+                className="mt-1.5 h-9 w-full rounded-lg border bg-card px-2 text-[13px] text-foreground"
                 aria-label="עיר לזמני היום"
                 value={board.locationId}
                 onChange={(event) => void send({ action: "location", locationId: event.target.value }, "location")}
@@ -637,7 +639,7 @@ export function ProgramsBoard() {
                 ))}
               </select>
             </label>
-            <p className="mt-2 text-[11px] leading-5 opacity-90">זמני כניסת ויציאת שבת מחושבים לפי Hebcal לעיר שנבחרה.</p>
+            <p className="mt-2 text-xs leading-6 opacity-90">זמני כניסת ויציאת שבת מחושבים לפי Hebcal לעיר שנבחרה.</p>
             {tenants ? (
               <button
                 type="button"

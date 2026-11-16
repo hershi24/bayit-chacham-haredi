@@ -49,7 +49,7 @@ export function AppShell({ children, user }: { children: React.ReactNode; user: 
     router.refresh();
   }
 
-  const frame = pathname === "/programs" ? "max-w-[1120px]" : pathname === "/" ? "max-w-7xl" : "max-w-5xl";
+  const frame = pathname === "/programs" || pathname === "/" ? "max-w-7xl" : "max-w-5xl";
 
   return (
     <div className="flex min-h-dvh min-w-0 flex-col overflow-x-clip">

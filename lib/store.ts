@@ -130,6 +130,7 @@ export async function createUser(input: {
   password: string;
   role: Role;
   tenantId: string | null;
+  email?: string | null;
 }) {
   if (remoteOn()) return remote.createUser(input);
   return sqlite.createUser(input);
@@ -145,6 +146,46 @@ export async function changeOwnPassword(userId: string, currentPassword: string,
   return sqlite.changeOwnPassword(userId, currentPassword, nextPassword);
 }
 
+export async function setUserEmail(userId: string, email: string | null) {
+  if (remoteOn()) return remote.setUserEmail(userId, email);
+  return sqlite.setUserEmail(userId, email);
+}
+
+export async function getUserEmail(userId: string) {
+  if (remoteOn()) return remote.getUserEmail(userId);
+  return sqlite.getUserEmail(userId);
+}
+
+export async function findUserIdByEmail(email: string) {
+  if (remoteOn()) return remote.findUserIdByEmail(email);
+  return sqlite.findUserIdByEmail(email);
+}
+
+export async function findUserIdByGoogleSub(sub: string) {
+  if (remoteOn()) return remote.findUserIdByGoogleSub(sub);
+  return sqlite.findUserIdByGoogleSub(sub);
+}
+
+export async function linkGoogleAccount(userId: string, sub: string, email: string) {
+  if (remoteOn()) return remote.linkGoogleAccount(userId, sub, email);
+  return sqlite.linkGoogleAccount(userId, sub, email);
+}
+
+export async function issuePasswordReset(userId: string) {
+  if (remoteOn()) return remote.issuePasswordReset(userId);
+  return sqlite.issuePasswordReset(userId);
+}
+
+export async function consumePasswordReset(token: string) {
+  if (remoteOn()) return remote.consumePasswordReset(token);
+  return sqlite.consumePasswordReset(token);
+}
+
+export async function replacePassword(userId: string, password: string) {
+  if (remoteOn()) return remote.replacePassword(userId, password);
+  return sqlite.replacePassword(userId, password);
+}
+
 export async function updateUser(input: {
   id: string;
   actorId: string;
@@ -153,6 +194,7 @@ export async function updateUser(input: {
   tenantId: string | null;
   password: string | null;
   deviceIds: string[] | null;
+  email?: string | null;
 }) {
   if (remoteOn()) return remote.updateUser(input);
   return sqlite.updateUser(input);

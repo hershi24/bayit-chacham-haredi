@@ -69,14 +69,18 @@ export function requireAdmin(user: SessionUser) {
   if (user.role !== "admin") throw new HttpError(403, "הפעולה שמורה למנהל");
 }
 
+export async function startSession(userId: string) {
+  const session = await createSession(userId);
+  const jar = await cookies();
+  jar.set(SESSION_COOKIE, session.id, cookieOptions(session.maxAge));
+}
+
 export async function establishSession(username: string, password: string): Promise<SessionUser> {
   const account = await findUserForLogin(username.trim());
   if (!account || !verifyPassword(password, account.passwordHash)) {
     throw new HttpError(401, "שם המשתמש או הסיסמה שגויים");
   }
-  const session = await createSession(account.id);
-  const jar = await cookies();
-  jar.set(SESSION_COOKIE, session.id, cookieOptions(session.maxAge));
+  await startSession(account.id);
   return {
     id: account.id,
     username: account.username,

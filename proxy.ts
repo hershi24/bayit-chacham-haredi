@@ -2,7 +2,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const SESSION_COOKIE = "pikud_session";
-const PUBLIC_PREFIXES = ["/login", "/api/ivr", "/api/auth/login", "/api/health", "/api/contact"];
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/api/ivr",
+  "/api/auth/login",
+  "/api/auth/google",
+  "/api/auth/forgot",
+  "/api/auth/reset",
+  "/api/health",
+  "/api/contact",
+];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

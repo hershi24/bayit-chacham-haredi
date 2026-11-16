@@ -28,6 +28,15 @@ export function cleanUsername(value: unknown) {
   return value.trim();
 }
 
+export function cleanEmail(value: unknown) {
+  if (typeof value !== "string") throw new HttpError(400, "הדוא״ל לא תקין");
+  const email = value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 120) {
+    throw new HttpError(400, "הדוא״ל לא תקין");
+  }
+  return email;
+}
+
 export function cleanPassword(value: unknown) {
   if (typeof value !== "string" || value.length < 6 || value.length > 80) {
     throw new HttpError(400, "סיסמה באורך 6 עד 80 תווים");

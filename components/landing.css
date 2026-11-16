@@ -319,24 +319,52 @@
 }
 
 .ksh-landing h1 {
-  margin: 22px 0 18px;
-  font-size: clamp(44px, 6vw, 78px);
-  line-height: 1.08;
+  margin: 26px 0 22px;
+  font-size: clamp(40px, 5.2vw, 72px);
+  line-height: 1.2;
+}
+
+.ksh-landing h1 span,
+.ksh-landing h1 em {
+  display: block;
+  white-space: nowrap;
 }
 
 .ksh-landing h1 em {
+  margin-top: 8px;
   font-style: normal;
   background: linear-gradient(90deg, #1766e0, #22a06b);
   background-clip: text;
   color: transparent;
 }
 
-.ksh-landing .hero-text {
-  max-width: 560px;
+.ksh-landing .hero-lead {
+  display: grid;
+  gap: 18px;
+  max-width: 36rem;
+}
+
+.ksh-landing .hero-lead p {
   margin: 0;
   color: #44566c;
-  font-size: 20px;
-  line-height: 1.75;
+  font-size: 18px;
+  line-height: 1.85;
+  text-wrap: balance;
+}
+
+.ksh-landing .lead-q,
+.ksh-landing .lead-a {
+  display: block;
+}
+
+.ksh-landing .lead-q {
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .ksh-landing .lead-q {
+    white-space: normal;
+  }
 }
 
 .ksh-landing .actions {
@@ -1024,11 +1052,13 @@
 
 .ksh-landing .device-card li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
 .ksh-landing .device-card li svg {
+  flex: none;
+  margin-top: 3px;
   color: var(--green);
 }
 
@@ -1423,7 +1453,7 @@
     text-align: center;
   }
 
-  .ksh-landing .hero-text {
+  .ksh-landing .hero-lead {
     margin-inline: auto;
   }
 
@@ -1477,8 +1507,8 @@
     display: none;
   }
 
-  .ksh-landing .hero-text {
-    font-size: 17px;
+  .ksh-landing .hero-lead p {
+    font-size: 16px;
   }
 
   .ksh-landing .actions .btn {

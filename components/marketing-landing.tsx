@@ -44,34 +44,35 @@ const uses = [
 const ways = [
   {
     icon: PhoneCall,
-    title: "שיחה מהפלאפון הכשר",
-    text: "מחייגים למספר של המערכת. היא מקריאה את המכשירים שלכם בשמות, ואתם מקישים מה להדליק ומה לכבות.",
+    title: "מהפלאפון הכשר",
+    text: "מחייגים למספר המערכת, בוחרים את המכשיר הרצוי ופועלים לפי ההוראות הקוליות. אפשר להדליק, לכבות, לבדוק את מצב המכשיר ולקבוע זמני הפעלה, והכול ללא צורך בסמארטפון.",
   },
   {
     icon: Monitor,
-    title: "מהמחשב",
-    text: "כל המכשירים במסך אחד. רואים מה דולק, מה כבוי, ומתי כל מכשיר היה מחובר בפעם האחרונה.",
+    title: "דרך האתר",
+    text: "כל מכשירי החשמל שלכם במקום אחד. רואים אילו מכשירים פועלים, מפעילים ומכבים בלחיצה, ועוקבים אחר מצב החיבור של כל התקן.",
   },
   {
     icon: Clock,
-    title: "שעונים ותוכניות",
-    text: "הדוד נדלק כל בוקר בשש, המזגן כבה בחצות. קובעים פעם אחת, והמערכת כבר זוכרת לבד.",
+    title: "שעונים ותוכניות אוטומטיות",
+    text: "קובעים מראש מתי כל מכשיר יידלק ומתי יכבה. אפשר ליצור תוכניות קבועות, לתכנן חודשים קדימה ולהיערך מראש לשבתות ולמועדי ישראל.",
   },
 ];
 
 const steps = [
-  { title: "מדברים", text: "מתקשרים או משאירים פרטים. מספרים לנו מה רוצים לשלוט, ואנחנו ממליצים על ההתקן המתאים." },
-  { title: "מחברים", text: "את השקע החכם פשוט מחברים לשקע בקיר, בלי שום התקנה. בקר ללוח החשמל מתקין חשמלאי. אנחנו מחברים הכל לחשבון שלכם." },
-  { title: "שולטים", text: "מקבלים מספר לחיוג ופרטי כניסה לאתר. מאותו רגע הבית בידיים שלכם." },
+  { title: "מתייעצים ובוחרים", text: "מספרים לנו באילו מכשירי חשמל תרצו לשלוט, ואנחנו מסייעים לכם לבחור את הפתרון המתאים." },
+  { title: "מחברים את ההתקן", text: "את השקע החכם מחברים ישירות לשקע החשמל. בקר ללוח החשמל מותקן על ידי חשמלאי מוסמך. אנחנו דואגים לשיוך ההתקן לחשבון שלכם." },
+  { title: "מתחילים לשלוט", text: "מקבלים מספר טלפון לחיוג ופרטי כניסה לאתר, ומתחילים ליהנות משליטה נוחה במכשירי החשמל – מכל מקום." },
 ];
 
 const questions = [
-  ["צריך סמארטפון?", "לא. כל טלפון שיכול להתקשר מתאים, כולל פלאפון כשר וטלפון קווי."],
-  ["מי יכול להתקשר למערכת?", "רק מספרים שאישרתם מראש. אפשר להוסיף את הטלפון של בן או בת הזוג, ולהסיר מתי שרוצים."],
-  ["אפשר לקבוע שמכשיר יידלק לבד?", "כן. טיימר חד־פעמי, שעון יומי, או תוכנית לימים מסוימים בשבוע. קובעים באתר וגם בשיחה."],
-  ["צריך חשמלאי או התקנה?", "לשקע החכם לא. אין התקנה ואין ציוד נוסף: מוציאים מהקופסה, מחברים לשקע הקיים, וזה עובד. רק בקר ללוח החשמל מתקין חשמלאי מוסמך."],
-  ["מה קורה אם נפל החשמל או האינטרנט?", "כשהחיבור חוזר, ההתקן חוזר לעבוד. באתר רואים מתי בדיוק הוא היה מחובר בפעם האחרונה."],
-  ["המוצרים מאושרים?", "כן. כל ההתקנים שאנחנו מספקים נושאים תו תקן ועומדים בדרישות הרשויות בישראל."],
+  ["האם צריך סמארטפון כדי להשתמש במערכת?", "לא. ניתן לשלוט במערכת באמצעות שיחת טלפון רגילה, כולל פלאפון כשר וטלפון קווי. בנוסף, ניתן להשתמש באתר דרך מחשב המחובר לאינטרנט."],
+  ["מי יכול לשלוט במכשירי החשמל שלי?", "הגישה הטלפונית מוגבלת למספרים שהוגדרו מראש כמורשים. ניתן להוסיף ולהסיר מספרים בהתאם לצורך."],
+  ["האם אפשר לתכנן את פעילות המכשירים חודשים מראש?", "בהחלט. אפשר ליצור תוכניות חד־פעמיות או קבועות, לבחור ימים ושעות ולתכנן את פעילות המכשירים חודשים קדימה. כל התוכניות מוצגות בלוח שנה חודשי, כך שניתן לצפות בהן ולערוך אותן בקלות."],
+  ["האם אפשר להכין תוכניות לשבתות ולמועדי ישראל?", "כן. ניתן לתכנן מראש זמני הדלקה וכיבוי לקראת שבתות וחגים. לוח השנה כולל תאריכים עבריים, פרשות שבוע וזמני כניסת השבת והחג ויציאתם בהתאם לעיר שנבחרה, ומסייע בהיערכות נוחה מראש. יש להשתמש באפשרויות התזמון בהתאם להנחיות ההלכתיות המקובלות על המשתמש."],
+  ["האם נדרש חשמלאי להתקנת המערכת?", "השקע החכם מתחבר לשקע חשמל קיים ואינו דורש התקנה מקצועית. בקר המיועד ללוח החשמל מחייב התקנה על ידי חשמלאי מוסמך."],
+  ["מה קורה במקרה של הפסקת חשמל או ניתוק התקשורת?", "מצב ההתקן לאחר חזרת החשמל או התקשורת תלוי בסוג ההתקן ובהגדרותיו. באתר ניתן לבדוק את מצב החיבור ולראות מתי התקבל ממנו עדכון לאחרונה."],
+  ["האם ההתקנים עומדים בדרישות התקינה?", "המערכת משתמשת בהתקנים בעלי אישורי תקינה רלוונטיים. ניתן לקבל מידע על האישורים המתאימים לכל דגם לפני הרכישה, בכפוף למסמכי היצרן ולאישורים הקיימים."],
 ];
 
 function ContactForm() {
@@ -120,11 +121,11 @@ function ContactForm() {
         <input required minLength={2} maxLength={60} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="איך לפנות אליכם" />
       </label>
       <label>
-        <span>טלפון</span>
+        <span>מספר טלפון</span>
         <input required type="tel" dir="ltr" inputMode="tel" autoComplete="tel" maxLength={20} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="050-0000000" />
       </label>
       <label>
-        <span>מה תרצו לשלוט? <em>(לא חובה)</em></span>
+        <span>באילו מכשירים תרצו לשלוט? <em>(לא חובה)</em></span>
         <textarea rows={3} maxLength={600} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="למשל: דוד שמש ושני מזגנים" />
       </label>
       <input className="trap" tabIndex={-1} autoComplete="off" aria-hidden="true" value={website} onChange={(event) => setWebsite(event.target.value)} />
@@ -135,7 +136,7 @@ function ContactForm() {
       ) : null}
       <button type="submit" className="btn primary wide" disabled={state === "sending"}>
         {state === "sending" ? <LoaderCircle size={18} className="spin" /> : <Send size={18} />}
-        {state === "sending" ? "שולחים" : "חזרו אליי"}
+        {state === "sending" ? "שולחים" : "אשמח שתחזרו אליי"}
       </button>
     </form>
   );
@@ -180,18 +181,18 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
         </a>
         <div className="navlinks">
           <a href="#how">איך זה עובד</a>
-          <a href="#inside">מבפנים</a>
-          <a href="#plans">שעונים</a>
+          <a href="#inside">הצצה למערכת</a>
+          <a href="#plans">לוח השעונים</a>
           <a href="#devices">ההתקנים</a>
-          <a href="#faq">שאלות</a>
-          <a href="#contact">צור קשר</a>
+          <a href="#faq">שאלות נפוצות</a>
+          <a href="#contact">יצירת קשר</a>
         </div>
         <div className="nav-actions">
           <a className="nav-phone" href={PHONE_HREF} dir="ltr">
             <Phone size={16} /> {PHONE}
           </a>
           <a className="btn dark small" href="#login" onClick={enter}>
-            כניסה ללקוחות
+            כניסה למערכת
           </a>
         </div>
       </nav>
@@ -206,13 +207,17 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                 <span className="pulse" /> בית חכם, גם בלי סמארטפון
               </span>
               <h1>
-                מדליקים את הדוד
-                <br />
-                <em>בשיחת טלפון.</em>
+                <span>מי אמר שבית חכם</span>
+                <em>צריך סמארטפון?</em>
               </h1>
-              <p className="hero-text">
-                מתקשרים מהפלאפון הכשר, מקישים מספר, והמזגן, הדוד או התאורה נדלקים. אפשר גם מהמחשב, ואפשר לקבוע שעון שיעשה את זה בשבילכם.
-              </p>
+              <div className="hero-lead">
+                <p>
+                  <span className="lead-q">שמעתם על בית חכם, אבל חשבתם שזה מחייב סמארטפון?</span>
+                  <span className="lead-a">הגיע הזמן לחשוב אחרת.</span>
+                </p>
+                <p>הכירו את הבית החכם שמתאים גם לכם. מדליקים את המזגן בדרך הביתה, שולטים בדוד ובתאורה, ומתכננים את פעילות מכשירי החשמל חודשים קדימה – כולל תוכניות לשבתות ולמועדי ישראל.</p>
+                <p>והכול באמצעות שיחת טלפון פשוטה מהפלאפון הכשר, או דרך האתר.</p>
+              </div>
               <div className="actions">
                 <a className="btn primary" href="#contact">
                   השאירו פרטים <ArrowLeft size={18} />
@@ -223,13 +228,13 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
               </div>
               <ul className="trust">
                 <li>
-                  <ShieldCheck size={17} /> מוצרים עם תו תקן
+                  <ShieldCheck size={17} /> התקנים בעלי אישורי תקינה
                 </li>
                 <li>
-                  <Check size={17} /> עובד מכל טלפון
+                  <Check size={17} /> שליטה מכל טלפון
                 </li>
                 <li>
-                  <Check size={17} /> שעונים ותוכניות קבועות
+                  <Check size={17} /> תכנון חכם גם חודשים מראש
                 </li>
               </ul>
             </div>
@@ -245,16 +250,16 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
               />
               <figcaption>
                 <span>
-                  <Plug size={16} /> שקע חכם · בלי שום התקנה
+                  <Plug size={16} /> שקע חכם · ללא צורך בחשמלאי
                 </span>
                 <span>
-                  <CircuitBoard size={16} /> בקר ללוח · שלושה ערוצים
+                  <CircuitBoard size={16} /> בקר ללוח החשמל · שלושה ערוצים נפרדים
                 </span>
               </figcaption>
             </figure>
           </div>
           <div className="wrap uses reveal">
-            <span>מה מחברים?</span>
+            <span>במה אפשר לשלוט?</span>
             {uses.map(({ icon: Icon, label }) => (
               <span key={label} className="use">
                 <Icon size={17} /> {label}
@@ -267,7 +272,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           <div className="wrap">
             <div className="head reveal">
               <span className="kicker">שלוש דרכים לשלוט</span>
-              <h2>בטלפון, באתר, או שזה קורה לבד.</h2>
+              <h2>שליטה פשוטה. מכל מקום. בדרך שנוחה לכם.</h2>
             </div>
             <div className="ways">
               {ways.map(({ icon: Icon, title, text }, index) => (
@@ -287,26 +292,26 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           <div className="wrap split">
             <div className="reveal">
               <span className="kicker">נסו בעצמכם</span>
-              <h2>ככה נשמעת שיחה.</h2>
-              <p className="lead">זו בדיוק השיחה שתשמעו. המערכת מקריאה את המכשירים שלכם בשמות, ואחרי שבוחרים מכשיר היא אומרת מה המצב שלו ומה אפשר לעשות.</p>
+              <h2>כך פשוט לשלוט בבית בשיחת טלפון.</h2>
+              <p className="lead">רוצים לראות איך זה עובד? התנסו בהדמיה של שיחה עם המערכת. בחרו מכשיר, בדקו את מצבו וגלו כיצד ניתן להפעיל, לכבות ולתכנן פעולות באמצעות מקשי הטלפון.</p>
               <ul className="call-map">
                 <li>
-                  <b>1</b> הדלקה או כיבוי
+                  <b>1</b> הדלקה וכיבוי
                 </li>
                 <li>
-                  <b>2</b> טיימר בדקות
+                  <b>2</b> הפעלה או כיבוי באמצעות טיימר
                 </li>
                 <li>
-                  <b>3</b> שעון: היום, תאריך, כל יום או ימים שבוחרים
+                  <b>3</b> קביעת שעון חד־פעמי או קבוע
                 </li>
                 <li>
-                  <b>4</b> התוכניות של המכשיר, כולל עריכת שעה
+                  <b>4</b> צפייה בתוכניות קיימות ועריכתן
                 </li>
                 <li>
-                  <b>0</b> הגדרות: מספרים מורשים, יומן, פניה אלינו, הכל דולק או הכל כבוי, וסידור ההתקנים
+                  <b>0</b> הגדרות ואפשרויות נוספות
                 </li>
               </ul>
-              <p className="lead muted">נסו בטלפון שבצד. זה בית לדוגמה עם דוד, מזגן ותאורת חצר.</p>
+              <p className="lead muted">בחרו מקש בטלפון והתחילו להתנסות. ההדמיה מציגה בית לדוגמה הכולל דוד, מזגן ותאורת חצר.</p>
             </div>
             <div className="reveal">
               <CallDemo />
@@ -317,9 +322,9 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
         <section className="section" id="inside">
           <div className="wrap">
             <div className="head reveal">
-              <span className="kicker">מבפנים</span>
+              <span className="kicker">הצצה למערכת</span>
               <h2>מסך אחד, כל הבית.</h2>
-              <p>ככה נראה החשבון שלכם באתר. כל מכשיר עם שם, מצב ושעון, ובלחיצה על «כבה הכל» יוצאים מהבית רגועים.</p>
+              <p>כל מכשירי החשמל שלכם מוצגים במקום אחד, בצורה ברורה ונוחה. ניתן לבדוק את מצבם, להפעיל ולכבות מכשירים, לנהל תוכניות ולצפות בפעולות שבוצעו.</p>
             </div>
             <figure className="browser reveal">
               <div className="browser-bar">
@@ -336,22 +341,22 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
               <div className="perk reveal">
                 <Zap size={20} />
                 <div>
-                  <strong>רואים מה דולק</strong>
-                  <p>ירוק זה פועל. אין מה לנחש.</p>
+                  <strong>רואים מה פועל</strong>
+                  <p>יודעים במבט אחד אילו מכשירים דולקים ואילו כבויים, ושולטים בכל מכשיר בנפרד.</p>
                 </div>
               </div>
               <div className="perk reveal">
                 <WifiOff size={20} />
                 <div>
-                  <strong>יודעים מתי נותק</strong>
-                  <p>אם מכשיר לא מחובר, רואים מתי היה מחובר לאחרונה.</p>
+                  <strong>מעקב אחר חיבור ההתקנים</strong>
+                  <p>בודקים את מצב החיבור של כל התקן ורואים מתי התקבל ממנו עדכון לאחרונה.</p>
                 </div>
               </div>
               <div className="perk reveal">
                 <History size={20} />
                 <div>
                   <strong>יומן פעולות</strong>
-                  <p>מי הדליק, מתי, ומאיפה: שיחה, אתר או שעון.</p>
+                  <p>צופים בפעולות שבוצעו במערכת, במועד הביצוע ובאופן ההפעלה: דרך הטלפון, האתר או תוכנית אוטומטית.</p>
                 </div>
               </div>
             </div>
@@ -362,25 +367,26 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           <div className="wrap split plans">
             <div className="reveal">
               <span className="kicker">לוח השעונים</span>
-              <h2>קובעים פעם אחת. לכל השבוע, ולשבת.</h2>
-              <p className="lead">כל השעונים של הבית בלוח חודשי אחד. רואים מה יידלק ומתי, ובלחיצה על יום מוסיפים שעון.</p>
+              <h2>מתכננים חודשים קדימה. גם לשבתות ולמועדי ישראל.</h2>
+              <p className="lead">מתכננים מראש את פעילות מכשירי החשמל לכל תקופה שתרצו, מיום אחד ועד חודשים קדימה. באמצעות לוח שנה נוח וברור ניתן לקבוע זמני הדלקה וכיבוי, לשלב תוכניות קבועות וחד־פעמיות ולהיערך מראש לשבתות ולמועדי ישראל.</p>
+              <p className="lead">כל התוכניות מוצגות בלוח חודשי אחד, לצד התאריך העברי, פרשת השבוע וזמני כניסת השבת והחג ויציאתם, בהתאם לעיר שבחרתם. תוכנית חוזרת מכסה תקופה ארוכה, בלי להגדיר כל יום בנפרד.</p>
               <ul className="plan-points">
                 <li>
                   <CalendarDays size={19} />
                   <span>
-                    <strong>תאריך עברי ופרשת השבוע</strong> בכל יום בלוח
+                    <strong>תכנון לטווח ארוך.</strong> קובעים תוכניות הפעלה וכיבוי שבועות וחודשים מראש, וצופים בכל הפעולות המתוכננות בלוח שנה מסודר.
                   </span>
                 </li>
                 <li>
                   <Flame size={19} />
                   <span>
-                    <strong>זמני כניסת שבת וחג וזמני היציאה</strong> לפי העיר שלכם, כך שקל לכוון את השעונים לשבת ולערב חג
+                    <strong>תוכניות לשבתות ולמועדי ישראל.</strong> מתכננים מראש את זמני הפעילות לקראת שבתות וחגים, תוך הסתייעות בלוח העברי ובזמני כניסת השבת והחג ויציאתם.
                   </span>
                 </li>
                 <li>
                   <Repeat size={19} />
                   <span>
-                    <strong>פעם אחת, כל יום, או רק בימים שבוחרים</strong>, וכמה שעונים באותה תוכנית
+                    <strong>גמישות מלאה בתכנון.</strong> משלבים תוכניות חד־פעמיות וקבועות, בוחרים ימים ושעות ומגדירים מספר פעולות לאותו מכשיר בהתאם לצורך.
                   </span>
                 </li>
               </ul>
@@ -408,25 +414,26 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
         <section className="section" id="devices">
           <div className="wrap">
             <div className="head reveal">
-              <span className="kicker">ההתקנים</span>
-              <h2>שני סוגים. בוחרים מה מתאים לבית.</h2>
+              <span className="kicker">ההתקנים שלנו</span>
+              <h2>הפתרון המתאים לכל צורך.</h2>
             </div>
             <div className="devices">
               <article className="device-card reveal">
                 <div className="device-photo">
                   <Image src="/product/socket.webp" width={333} height={440} alt="שקע חכם Kosher Smart Home לקיר" />
-                  <span className="tag">בלי שום התקנה</span>
+                  <span className="tag">ללא צורך בחשמלאי</span>
                 </div>
                 <h3>שקע חכם</h3>
-                <p>
-                  <strong>מוכן לשימוש כמו שהוא.</strong> בלי התקנה, בלי חשמלאי ובלי ציוד נוסף. מחברים לשקע שבקיר, את המכשיר מחברים אליו, וזה עובד.
-                </p>
+                <p>שליטה חכמה במכשירי חשמל, ללא צורך בהתקנה מקצועית. מחברים את השקע החכם לשקע החשמל הקיים, מחברים אליו מכשיר מתאים ומתחילים לשלוט בו באמצעות הטלפון או האתר.</p>
                 <ul>
                   <li>
-                    <Check size={16} /> מחברים ועובד, תוך דקה
+                    <Check size={16} /> <span>חיבור פשוט, ללא צורך בחשמלאי</span>
                   </li>
                   <li>
-                    <Check size={16} /> מזגן, פלטה, מיחם, תנור ומנורה
+                    <Check size={16} /> <span>שליטה מרחוק וקביעת זמני הפעלה וכיבוי</span>
+                  </li>
+                  <li>
+                    <Check size={16} /> <span>מתאים למכשירי חשמל בהתאם לנתוני ההספק והעומס המותרים</span>
                   </li>
                 </ul>
               </article>
@@ -435,14 +442,17 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                   <Image src="/product/controller.webp" width={333} height={440} alt="בקר Kosher Smart Home ללוח החשמל, שלושה ערוצים" />
                   <span className="tag">שלושה ערוצים</span>
                 </div>
-                <h3>בקר ללוח החשמל</h3>
-                <p>מותקן בלוח ושולט בעד שלושה מעגלים נפרדים. כל ערוץ מקבל שם משלו ונשלט בנפרד.</p>
+                <h3>בקר חכם ללוח החשמל</h3>
+                <p>פתרון מתקדם לשליטה במערכות חשמל קבועות. הבקר מותקן בלוח החשמל על ידי חשמלאי מוסמך ומאפשר שליטה נפרדת בעד שלושה מעגלי חשמל. לכל מעגל ניתן להגדיר שם, זמני פעילות ותוכניות הפעלה משלו.</p>
                 <ul>
                   <li>
-                    <Check size={16} /> דוד, מזגן מרכזי, תאורת חוץ
+                    <Check size={16} /> <span>שליטה נפרדת בעד שלושה מעגלי חשמל</span>
                   </li>
                   <li>
-                    <Check size={16} /> התקנה על ידי חשמלאי מוסמך
+                    <Check size={16} /> <span>מתאים למערכות כגון דוד, מיזוג ותאורה</span>
+                  </li>
+                  <li>
+                    <Check size={16} /> <span>התקנה מקצועית על ידי חשמלאי מוסמך</span>
                   </li>
                 </ul>
               </article>
@@ -450,7 +460,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
             <div className="cert reveal">
               <ShieldCheck size={26} />
               <p>
-                <strong>כל המוצרים נושאים תו תקן</strong> ועומדים בדרישות הרשויות בישראל.
+                המערכת מבוססת על התקנים איכותיים בעלי אישורי תקינה רלוונטיים, שנבחרו תוך הקפדה על אמינות ובטיחות.
               </p>
             </div>
           </div>
@@ -460,7 +470,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           <div className="wrap">
             <div className="head reveal">
               <span className="kicker">איך מתחילים</span>
-              <h2>שלושה צעדים, ואתם בפנים.</h2>
+              <h2>מתחילים בשלושה צעדים פשוטים.</h2>
             </div>
             <ol className="steps">
               {steps.map((step, index) => (
@@ -478,7 +488,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           <div className="wrap narrow">
             <div className="head reveal">
               <span className="kicker">שאלות נפוצות</span>
-              <h2>מה שבדרך כלל שואלים אותנו.</h2>
+              <h2>כל מה שחשוב לדעת.</h2>
             </div>
             <div className="faq">
               {questions.map(([question, answer]) => (
@@ -495,9 +505,9 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
           <div className="wrap">
             <div className="contact reveal">
               <div className="contact-copy">
-                <span className="kicker light">צור קשר</span>
-                <h2>רוצים לשמוע עוד?</h2>
-                <p>השאירו שם וטלפון ונחזור אליכם. מעדיפים לדבר עכשיו? אנחנו על הקו.</p>
+                <span className="kicker light">יצירת קשר</span>
+                <h2>רוצים לדעת אם זה מתאים גם לכם?</h2>
+                <p>ספרו לנו באילו מכשירי חשמל תרצו לשלוט, ונשמח לעזור לכם לבחור את הפתרון המתאים. השאירו פרטים ונחזור אליכם בהקדם.</p>
                 <a className="contact-line" href={PHONE_HREF}>
                   <span className="contact-icon">
                     <Phone size={20} />
@@ -521,7 +531,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
         <div className="wrap footer-grid">
           <div className="footer-brand">
             <strong className="footer-name">Kosher Smart Home</strong>
-            <p>שליטה במכשירי החשמל בבית מהפלאפון הכשר ומהאתר.</p>
+            <p>Kosher Smart Home – בית חכם מהפלאפון הכשר. שליטה במכשירי החשמל באמצעות שיחת טלפון, דרך האתר ובאמצעות תוכניות אוטומטיות, עם אפשרות לתכנון מראש גם לשבתות ולמועדי ישראל.</p>
             <a className="footer-phone" href={PHONE_HREF} dir="ltr">
               {PHONE}
             </a>
@@ -544,8 +554,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                 <a href="#how">איך זה עובד</a>
               </li>
               <li>
-                <a href="#inside">מבפנים</a>
-          <a href="#plans">שעונים</a>
+                <a href="#inside">הצצה למערכת</a>
               </li>
               <li>
                 <a href="#plans">לוח השעונים</a>
@@ -557,7 +566,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                 <a href="#faq">שאלות נפוצות</a>
               </li>
               <li>
-                <a href="#contact">צור קשר</a>
+                <a href="#contact">יצירת קשר</a>
               </li>
             </ul>
           </div>
@@ -582,7 +591,7 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
         </div>
         <div className="wrap footer-bottom">
           <span>© {year} Kosher Smart Home</span>
-          <span>כל המוצרים עם תו תקן</span>
+          <span>התקנים בעלי אישורי תקינה</span>
         </div>
       </footer>
 

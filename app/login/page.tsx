@@ -10,7 +10,7 @@ const assistant = Assistant({
 
 export const metadata: Metadata = {
   title: "Kosher Smart Home | בית חכם מהפלאפון הכשר",
-  description: "Kosher Smart Home – מדליקים את הדוד, המזגן והתאורה בשיחה מהפלאפון הכשר או מהאתר. מוצרים עם תו תקן. 058-329-6967",
+  description: "Kosher Smart Home – בית חכם מהפלאפון הכשר. שליטה במכשירי החשמל בשיחת טלפון, באתר ובתוכניות אוטומטיות, כולל תכנון מראש לשבתות ולמועדי ישראל. 058-329-6967",
 };
 
 export default function LoginPage() {

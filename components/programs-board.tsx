@@ -252,42 +252,43 @@ export function ProgramsBoard() {
 
   return (
     <section className="min-w-0">
-      <div className="mb-3 flex items-start justify-between gap-3 md:mb-4">
+      <div className="mb-6 flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-[11px] font-medium text-muted-foreground">ניהול אוטומציות</p>
-          <h1 className="text-[20px] font-semibold tracking-tight md:text-[22px]">תוכניות ותזמונים</h1>
-          <p className="mt-0.5 hidden text-[13px] text-muted-foreground sm:block">כל ההפעלות והכיבויים שלך, בלוח אחד מסודר.</p>
+          <p className="text-xs font-medium text-muted-foreground">ניהול אוטומציות</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">תוכניות ותזמונים</h1>
+          <p className="mt-1 hidden text-sm text-muted-foreground sm:block">כל ההפעלות והכיבויים שלך, בלוח אחד מסודר.</p>
         </div>
-        <Button type="button" size="sm" className="h-9 shrink-0 rounded-lg px-3 text-[13px]" onClick={() => openNew(today)}>
+        <Button type="button" className="h-10 shrink-0 rounded-xl px-4" onClick={() => openNew(today)}>
           ＋ תוכנית חדשה
         </Button>
       </div>
-      <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border bg-card px-4 py-3 text-[13px]">
-        <span className="text-muted-foreground">
-          תוכניות שמורות <strong className="font-semibold text-foreground">{savedCount}</strong>
-        </span>
-        <span className="hidden text-border sm:inline">·</span>
-        <span className="text-muted-foreground">
-          פעולות החודש <strong className="font-semibold text-foreground">{monthCount}</strong>
-        </span>
-        <span className="hidden text-border sm:inline">·</span>
-        <span className="min-w-0 truncate text-muted-foreground">
-          הפעולה הקרובה{" "}
-          <strong className="font-semibold text-foreground">{soon ? `${soon.time} · ${shortDate(soon.day)}` : "אין"}</strong>
-        </span>
+      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border bg-card px-5 py-4">
+          <p className="text-xs text-muted-foreground">תוכניות שמורות</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums">{savedCount}</p>
+        </div>
+        <div className="rounded-2xl border bg-card px-5 py-4">
+          <p className="text-xs text-muted-foreground">פעולות החודש</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums">{monthCount}</p>
+        </div>
+        <div className="rounded-2xl border bg-card px-5 py-4">
+          <p className="text-xs text-muted-foreground">הפעולה הקרובה</p>
+          <p className="mt-1 truncate text-xl font-semibold">{soon ? soon.time : "אין"}</p>
+          {soon ? <p className="mt-0.5 text-xs text-muted-foreground">{shortDate(soon.day)}</p> : null}
+        </div>
       </div>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-6">
-        <section className="min-w-0 overflow-hidden rounded-xl border bg-card">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-3 sm:px-4">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
+        <section className="min-w-0 overflow-hidden rounded-2xl border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
             <div className="flex items-center gap-1">
-              <button type="button" className="rounded-md border px-2 py-1 text-sm" aria-label="הקודם" onClick={() => move(-1)}>
+              <button type="button" className="grid size-9 place-items-center rounded-lg border text-sm" aria-label="הקודם" onClick={() => move(-1)}>
                 ‹
               </button>
-              <h2 className="min-w-24 px-1 text-center text-[13px] font-semibold sm:min-w-36 sm:text-sm">{heading}</h2>
-              <button type="button" className="rounded-md border px-2 py-1 text-sm" aria-label="הבא" onClick={() => move(1)}>
+              <h2 className="min-w-28 px-2 text-center text-sm font-semibold sm:min-w-40">{heading}</h2>
+              <button type="button" className="grid size-9 place-items-center rounded-lg border text-sm" aria-label="הבא" onClick={() => move(1)}>
                 ›
               </button>
-              <button type="button" className="rounded-md border px-2 py-1 text-[12px]" onClick={jumpToday}>
+              <button type="button" className="h-9 rounded-lg border px-3 text-sm" onClick={jumpToday}>
                 היום
               </button>
             </div>
@@ -566,68 +567,73 @@ export function ProgramsBoard() {
             </>
           )}
         </section>
-        <aside className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <div className="rounded-xl border bg-card p-4">
-            <h3 className="mb-3 text-sm font-semibold">ההתקנים שלי</h3>
-            {board.devices.map((device) => {
-              const selected = filter === device.deviceId;
-              return (
-                <label
-                  key={device.deviceId}
-                  className={cn("mb-2 flex cursor-pointer items-center gap-2.5 rounded-lg border p-2.5", selected && "border-primary/40 bg-primary/5")}
-                >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary">
-                    <DeviceGlyph name={device.name} icon={device.icon} className="size-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <b className="block truncate text-sm font-medium">{device.name}</b>
-                    <small className="text-xs text-muted-foreground">{devicePlanCount(board, device.deviceId)} תוכניות</small>
-                  </span>
-                  <input
-                    type="radio"
-                    name="device-filter"
-                    className="accent-primary"
-                    checked={selected}
-                    onChange={() => setFilter(device.deviceId)}
-                  />
-                </label>
-              );
-            })}
-            <button type="button" className="mt-1 h-9 w-full rounded-lg border text-[13px]" onClick={() => setFilter("all")}>
-              הצג את כל ההתקנים
-            </button>
-          </div>
-          <div className="rounded-xl border bg-card p-4">
-            <h3 className="mb-2 text-sm font-semibold">פעולות קרובות</h3>
+        <aside className="grid gap-5 sm:grid-cols-2 lg:grid-cols-1">
+          <section className="rounded-2xl border bg-card px-5 py-5">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold">ההתקנים שלי</h3>
+              <button type="button" className="text-xs font-medium text-primary" onClick={() => setFilter("all")}>
+                הכל
+              </button>
+            </div>
+            <div>
+              {board.devices.map((device) => {
+                const selected = filter === device.deviceId;
+                return (
+                  <label
+                    key={device.deviceId}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-3 border-b border-border/70 py-3 last:border-0",
+                      selected && "bg-primary/5 -mx-2 rounded-xl border-transparent px-2",
+                    )}
+                  >
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary">
+                      <DeviceGlyph name={device.name} icon={device.icon} className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <b className="block truncate text-sm font-medium">{device.name}</b>
+                      <small className="mt-0.5 block text-xs text-muted-foreground">{devicePlanCount(board, device.deviceId)} תוכניות</small>
+                    </span>
+                    <input
+                      type="radio"
+                      name="device-filter"
+                      className="size-4 accent-primary"
+                      checked={selected}
+                      onChange={() => setFilter(device.deviceId)}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+          <section className="rounded-2xl border bg-card px-5 py-5">
+            <h3 className="mb-1 text-sm font-semibold">פעולות קרובות</h3>
             {nextEvents.length ? (
               nextEvents.slice(0, 5).map((event) => (
                 <button
                   key={`${event.day}-${event.key}`}
                   type="button"
-                  className="flex w-full items-center gap-3 border-b border-border/60 py-2.5 text-start last:border-0"
+                  className="flex w-full items-center gap-4 border-b border-border/70 py-3 text-start last:border-0"
                   onClick={() => openEvent(event, board, showProgram, showClock)}
                 >
-                  <time className="text-[13px] font-semibold text-muted-foreground tabular-nums" dir="ltr">
+                  <time className="w-12 shrink-0 text-sm font-semibold tabular-nums" dir="ltr">
                     {event.time}
                   </time>
                   <span className="min-w-0">
-                    <b className="block truncate text-[13px] font-medium">{event.name}</b>
-                    <small className="text-xs text-muted-foreground">{longDate(event.day)}</small>
+                    <b className="block truncate text-sm font-medium">{event.name}</b>
+                    <small className="mt-0.5 block text-xs text-muted-foreground">{longDate(event.day)}</small>
                   </span>
                 </button>
               ))
             ) : (
-              <p className="text-[12px] text-muted-foreground">אין פעולות קרובות</p>
+              <p className="py-3 text-sm text-muted-foreground">אין פעולות קרובות</p>
             )}
-          </div>
-          <div className="rounded-xl bg-muted/60 p-4 text-xs leading-6 text-muted-foreground sm:col-span-2 lg:col-span-1">
-            <b className="text-foreground">שליטה חכמה, בדרך שלך</b>
-            <br />
-            צרו תוכניות חד־פעמיות או חוזרות. התוכנית נשמרת בחשבון ומפעילה את השקעים שנבחרו.
-            <label className="mt-2 block font-medium text-foreground">
-              עיר לזמני שבת
+          </section>
+          <section className="rounded-2xl border bg-card px-5 py-5 sm:col-span-2 lg:col-span-1">
+            <h3 className="text-sm font-semibold">זמני שבת</h3>
+            <label className="mt-4 block text-xs text-muted-foreground">
+              עיר
               <select
-                className="mt-1.5 h-9 w-full rounded-lg border bg-card px-2 text-[13px] text-foreground"
+                className="mt-1.5 h-10 w-full rounded-xl border bg-card px-3 text-sm text-foreground"
                 aria-label="עיר לזמני היום"
                 value={board.locationId}
                 onChange={(event) => void send({ action: "location", locationId: event.target.value }, "location")}
@@ -639,11 +645,11 @@ export function ProgramsBoard() {
                 ))}
               </select>
             </label>
-            <p className="mt-2 text-xs leading-6 opacity-90">זמני כניסת ויציאת שבת מחושבים לפי Hebcal לעיר שנבחרה.</p>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">כניסה ויציאה לפי העיר שנבחרה.</p>
             {tenants ? (
               <button
                 type="button"
-                className="mt-2 text-sm font-bold"
+                className="mt-4 text-sm font-medium text-primary"
                 onClick={() => {
                   setBoard(null);
                   setDraft(null);
@@ -652,7 +658,7 @@ export function ProgramsBoard() {
                 לקוח אחר
               </button>
             ) : null}
-          </div>
+          </section>
         </aside>
       </div>
       {pausing ? (

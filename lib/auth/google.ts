@@ -1,3 +1,9 @@
+export function redirectWithCookies(url: string, cookies: string[]) {
+  const headers = new Headers({ Location: url });
+  for (const cookie of cookies) headers.append("Set-Cookie", cookie);
+  return new Response(null, { status: 302, headers });
+}
+
 export function requestOrigin(request: Request) {
   const url = new URL(request.url);
   const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || url.protocol.replace(":", "");

@@ -1,4 +1,4 @@
-import { googleProfile, requestOrigin } from "@/lib/auth/google";
+import { googleProfile, redirectWithCookies, requestOrigin } from "@/lib/auth/google";
 import { cookieOptions, SESSION_COOKIE } from "@/lib/session";
 import { createSession, findUserIdByEmail, findUserIdByGoogleSub, linkGoogleAccount } from "@/lib/store";
 
@@ -20,11 +20,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code") ?? "";
   const state = url.searchParams.get("state") ?? "";
-  const fail = (reason: string) => {
-    const response = Response.redirect(`${origin}/login?auth=${reason}`);
-    response.headers.append("Set-Cookie", cookie("pikud_google_state", "", 0));
-    return response;
-  };
+  const fail = (reason: string) => redirectWithCookies(`${origin}/login?auth=${reason}`, [cookie("pikud_google_state", "", 0)]);
   if (!code || !state || state !== stateFromCookie(request)) return fail("google-failed");
 
   const profile = await googleProfile(origin, code);
@@ -36,10 +32,10 @@ export async function GET(request: Request) {
     if (!userId) return fail("google-unknown");
     if (!linked) await linkGoogleAccount(userId, profile.sub, profile.email);
     const session = await createSession(userId);
-    const response = Response.redirect(`${origin}/`);
-    response.headers.append("Set-Cookie", cookie(SESSION_COOKIE, session.id, session.maxAge));
-    response.headers.append("Set-Cookie", cookie("pikud_google_state", "", 0));
-    return response;
+    return redirectWithCookies(`${origin}/`, [
+      cookie(SESSION_COOKIE, session.id, session.maxAge),
+      cookie("pikud_google_state", "", 0),
+    ]);
   } catch {
     return fail("google-failed");
   }

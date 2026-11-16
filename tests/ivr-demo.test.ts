@@ -110,7 +110,7 @@ test("demo screen splits spoken menus into options with their keys", () => {
     { kind: "option", key: "1", label: "הפעלה" },
   ]);
   assert.deepEqual(spokenParts("למספר אפס חמש שמונה שלוש הקש אחד, לביטול הקש אפס")[0], { kind: "option", key: "1", label: "מספר 0583" });
-  assert.deepEqual(spokenParts("לשעת הדלקה הקש ארבע ספרות. לעשר בבוקר הקש אחת אפס אפס אפס"), [
-    { kind: "text", text: "לשעת הדלקה הקש ארבע ספרות. לעשר בבוקר הקש אחת אפס אפס אפס" },
+  assert.deepEqual(spokenParts("הזינו שעת הדלקה, הקש ארבע ספרות. לעשר בבוקר הקש אחת אפס אפס אפס"), [
+    { kind: "text", text: "הזינו שעת הדלקה, הקש ארבע ספרות. לעשר בבוקר הקש אחת אפס אפס אפס" },
   ]);
 });

@@ -139,29 +139,35 @@ function clockFlow(device: MenuDevice, devices: MenuDevice[], values: MenuValues
   if (!repeat || !["1", "2", "3", "4", "5"].includes(repeat)) return readRepeat(repeat ? "הבחירה לא קיימת, " : "");
 
   let weekdays: number[] = [];
-  if (repeat === "3") weekdays = [0, 1, 2, 3, 4, 5, 6];
-  else if (repeat === "4") weekdays = [0, 1, 2, 3, 4];
-  else if (repeat === "5") {
+  let choice = "";
+  if (repeat === "3") {
+    weekdays = [0, 1, 2, 3, 4, 5, 6];
+    choice = "הגדרת שעון לכל יום";
+  } else if (repeat === "4") {
+    weekdays = [0, 1, 2, 3, 4];
+    choice = "הגדרת שעון לכל יום חוץ משישי ושבת";
+  } else if (repeat === "2") {
     const parsed = values.week ? parseWeek(values.week) : null;
     if (!parsed) return readWeek(values.week ? "הימים לא תקינים, " : "");
     weekdays = parsed;
+    choice = `הגדרת שעון ל${spokenDayList(parsed)}`;
   }
 
   let day: string | null = null;
-  let heard = "";
   if (repeat === "1") {
     day = israelDate();
-    heard = `שעון להיום, ${spokenDateWords(day)}, `;
-  } else if (repeat === "2") {
+    choice = "הגדרת שעון להיום";
+  } else if (repeat === "5") {
     if (!values.date) return readDate(values.date === "" ? "לא הוקש תאריך, " : "");
     const parsed = parsePhoneDate(values.date);
     if (!parsed.iso) return readDate(`${parsed.reason}, `);
     day = parsed.iso;
-    heard = `${spokenCapturedDate(day)}, `;
+    choice = `הגדרת שעון לתאריך ${spokenDateWords(day)}`;
   }
 
+  const heard = `${choice}. `;
   const side = values.side;
-  if (side !== "1" && side !== "2") return readSide(side ? "הבחירה לא קיימת, " : heard);
+  if (side !== "1" && side !== "2") return readSide(side ? `הבחירה לא קיימת, ${heard}` : heard);
 
   if (side === "1") {
     const on = clockTime(values.on, readOn);
@@ -201,7 +207,7 @@ function commitClock(
 ): MenuDecision {
   if (devices.length > 1) {
     if (!values.sockets || (values.sockets !== "1" && values.sockets !== "2")) {
-      return readSockets(values.sockets ? "הבחירה לא קיימת, " : "");
+      return readSockets(values.sockets ? "הבחירה לא קיימת, " : "", label(device));
     }
   }
   const chosen = devices.length > 1 && values.sockets === "2" ? devices : [device];
@@ -219,7 +225,7 @@ function commitClock(
 function readRepeat(prefix: string): MenuRead {
   return {
     type: "read",
-    message: `${prefix}לשעון להיום הקש אחד, לתאריך מסוים הקש שתיים, לכל יום הקש שלוש, לכל יום חוץ משישי ושבת הקש ארבע, לבחירת ימים הקש חמש`,
+    message: `${prefix}להגדרת שעון להיום הקש אחד, לבחירת ימים הקש שתיים, לכל יום הקש שלוש, לכל יום חוץ משישי ושבת הקש ארבע, לתאריך מסוים הקש חמש`,
     field: "pikud_repeat",
     min: 1,
     max: 1,
@@ -231,12 +237,12 @@ function readRepeat(prefix: string): MenuRead {
 function readWeek(prefix: string): MenuRead {
   return {
     type: "read",
-    message: `${prefix}הקש את הימים ברצף. אחד ליום ראשון, שתיים לשני, שלוש לשלישי, ארבע לרביעי, חמש לחמישי, שש לשישי, שבע לשבת`,
+    message: `${prefix}הקש את הימים ברצף. יום א אחד, יום ב שתיים, יום ג שלוש, יום ד ארבע, יום ה חמש, יום ו שש, שבת שבע`,
     field: "pikud_week",
     min: 1,
     max: 7,
     allowed: "1234567",
-    mode: "Number",
+    mode: "No",
     seconds: 3,
   };
 }
@@ -259,7 +265,7 @@ function readDate(prefix: string): MenuRead {
 function readSide(prefix: string): MenuRead {
   return {
     type: "read",
-    message: `${prefix}להגדרת הדלקה הקש אחד, להגדרת כיבוי הקש שתיים`,
+    message: `${prefix}להגדרת תזמון הדלקה הקש אחד, להגדרת תזמון כיבוי הקש שתיים`,
     field: "pikud_side",
     min: 1,
     max: 1,
@@ -287,7 +293,7 @@ function readContinue(next: "on" | "off", prefix: string): MenuRead {
 function readOn(prefix: string): MenuRead {
   return {
     type: "read",
-    message: `${prefix}לשעת הדלקה הקש ארבע ספרות. לעשר בבוקר הקש אחת אפס אפס אפס`,
+    message: `${prefix}הזינו שעת הדלקה, הקש ארבע ספרות. לעשר בבוקר הקש אחת אפס אפס אפס`,
     field: "pikud_on",
     min: 4,
     max: 4,
@@ -298,7 +304,7 @@ function readOn(prefix: string): MenuRead {
 function readOff(prefix: string): MenuRead {
   return {
     type: "read",
-    message: `${prefix}לשעת כיבוי הקש ארבע ספרות. לשתים עשרה הקש אחת שתיים אפס אפס`,
+    message: `${prefix}הזינו שעת כיבוי, הקש ארבע ספרות. לשתים עשרה הקש אחת שתיים אפס אפס`,
     field: "pikud_off",
     min: 4,
     max: 4,
@@ -306,10 +312,10 @@ function readOff(prefix: string): MenuRead {
   };
 }
 
-function readSockets(prefix: string): MenuRead {
+function readSockets(prefix: string, name: string): MenuRead {
   return {
     type: "read",
-    message: `${prefix}לשמור על השקע הזה הקש אחד, על כל השקעים הקש שתיים`,
+    message: `${prefix}להפעלה על ${name} הקש אחד, להגדרת שעון זה על כל הערוצים הקש שתיים`,
     field: "pikud_sockets",
     min: 1,
     max: 1,
@@ -377,8 +383,13 @@ export function spokenDateWords(iso: string): string {
   return `${spokenCount(day, "m")} ${MONTH_IN[month]} ${spokenYear(year)}, ${WEEKDAYS[weekday]}`;
 }
 
-function spokenCapturedDate(iso: string): string {
-  return `נקלט ${spokenDateWords(iso)}`;
+const SHORT_DAYS = ["יום א", "יום ב", "יום ג", "יום ד", "יום ה", "יום ו", "שבת"];
+
+function spokenDayList(days: number[]): string {
+  const names = days.map((day) => SHORT_DAYS[day] ?? "");
+  if (names.length <= 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} ו${names[1]}`;
+  return `${names.slice(0, -1).join(", ")} ו${names.at(-1)}`;
 }
 
 export function spokenClockTime(value: string): string {

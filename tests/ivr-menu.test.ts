@@ -145,11 +145,11 @@ test("timer turns on for the requested minutes and the clock accepts four digits
   if (repeat.type === "read") {
     assert.equal(repeat.field, "pikud_repeat");
     assert.equal(repeat.allowed, "12345");
-    assert.match(repeat.message, /לשעון להיום הקש אחד/);
-    assert.match(repeat.message, /לתאריך מסוים הקש שתיים/);
+    assert.match(repeat.message, /להגדרת שעון להיום הקש אחד/);
+    assert.match(repeat.message, /לבחירת ימים הקש שתיים/);
     assert.match(repeat.message, /לכל יום הקש שלוש/);
     assert.match(repeat.message, /לכל יום חוץ משישי ושבת הקש ארבע/);
-    assert.match(repeat.message, /לבחירת ימים הקש חמש/);
+    assert.match(repeat.message, /לתאריך מסוים הקש חמש/);
   }
 
   const today = decideMenu([ac], { device: "1", action: "3", repeat: "1" });
@@ -177,49 +177,63 @@ test("timer turns on for the requested minutes and the clock accepts four digits
     assert.equal(saved.offTime, "12:00");
     assert.deepEqual(saved.devices.map((item) => item.deviceId), ["ac"]);
   }
-  const custom = decideMenu([ac], { device: "1", action: "3", repeat: "5", week: "15", side: "1", on: "2200", more: "1", off: "0600" });
+  const chosenDays = decideMenu([ac], { device: "1", action: "3", repeat: "2", week: "135" });
+  assert.equal(chosenDays.type, "read");
+  if (chosenDays.type === "read") {
+    assert.equal(chosenDays.field, "pikud_side");
+    assert.equal(chosenDays.mode, "No");
+    assert.match(chosenDays.message, /הגדרת שעון ליום א, יום ג ויום ה/);
+    assert.equal(chosenDays.message.includes("135"), false);
+  }
+  const askDays = decideMenu([ac], { device: "1", action: "3", repeat: "2" });
+  assert.equal(askDays.type, "read");
+  if (askDays.type === "read") {
+    assert.equal(askDays.field, "pikud_week");
+    assert.equal(askDays.mode, "No");
+  }
+  const custom = decideMenu([ac], { device: "1", action: "3", repeat: "2", week: "15", side: "1", on: "2200", more: "1", off: "0600" });
   assert.equal(custom.type, "clock-save");
   if (custom.type === "clock-save") {
     assert.deepEqual(custom.weekdays, [0, 4]);
     assert.equal(custom.onTime, "22:00");
     assert.equal(custom.offTime, "06:00");
   }
-  const once = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "03112026", side: "2", off: "1800", more: "2" });
+  const once = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "03112026", side: "2", off: "1800", more: "2" });
   assert.equal(once.type, "clock-save");
   if (once.type === "clock-save") {
     assert.equal(once.day, "2026-11-03");
     assert.equal(once.onTime, null);
     assert.equal(once.offTime, "18:00");
   }
-  const invalidTime = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "03112026", side: "1", on: "1860" });
+  const invalidTime = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "03112026", side: "1", on: "1860" });
   assert.equal(invalidTime.type, "read");
   if (invalidTime.type === "read") {
     assert.equal(invalidTime.field, "pikud_on");
     assert.equal(invalidTime.mode, "No");
     assert.match(invalidTime.message, /השעה לא תקינה/);
   }
-  const notSkip = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "03112026", side: "1", on: "9999", more: "2" });
+  const notSkip = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "03112026", side: "1", on: "9999", more: "2" });
   assert.equal(notSkip.type, "read");
   if (notSkip.type === "read") {
     assert.equal(notSkip.field, "pikud_on");
     assert.equal(notSkip.message.includes("תשע תשע תשע תשע"), false);
   }
-  const heard = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "11112026" });
+  const heard = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "11112026" });
   assert.equal(heard.type, "read");
   if (heard.type === "read") {
     assert.equal(heard.field, "pikud_side");
-    assert.match(heard.message, /נקלט אחד עשר בנובמבר אלפיים עשרים ושש, יום רביעי/);
+    assert.match(heard.message, /הגדרת שעון לתאריך אחד עשר בנובמבר אלפיים עשרים ושש, יום רביעי/);
     assert.equal(heard.message.includes("11112026"), false);
-    assert.match(heard.message, /להגדרת הדלקה הקש אחד, להגדרת כיבוי הקש שתיים/);
+    assert.match(heard.message, /להגדרת תזמון הדלקה הקש אחד, להגדרת תזמון כיבוי הקש שתיים/);
     const menu = decideMenu([ac], { device: "1" });
     assert.equal(menu.type, "read");
     if (menu.type === "read") assert.equal(playbackAt(yemotRead(heard)), playbackAt(yemotRead(menu)));
     assert.equal(playbackAt(yemotRead(heard)), "No");
   }
-  const saturday = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "07112026" });
+  const saturday = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "07112026" });
   assert.equal(saturday.type, "read");
-  if (saturday.type === "read") assert.match(saturday.message, /נקלט שבעה בנובמבר אלפיים עשרים ושש, שבת/);
-  const atEleven = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "11112026", side: "1", on: "1100" });
+  if (saturday.type === "read") assert.match(saturday.message, /הגדרת שעון לתאריך שבעה בנובמבר אלפיים עשרים ושש, שבת/);
+  const atEleven = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "11112026", side: "1", on: "1100" });
   assert.equal(atEleven.type, "read");
   if (atEleven.type === "read") {
     assert.equal(atEleven.field, "pikud_more");
@@ -232,7 +246,7 @@ test("timer turns on for the requested minutes and the clock accepts four digits
   assert.equal(daily.type, "read");
   if (daily.type === "read") {
     assert.equal(daily.field, "pikud_side");
-    assert.equal(daily.message, "להגדרת הדלקה הקש אחד, להגדרת כיבוי הקש שתיים");
+    assert.equal(daily.message, "הגדרת שעון לכל יום. להגדרת תזמון הדלקה הקש אחד, להגדרת תזמון כיבוי הקש שתיים");
     assert.equal(daily.message.includes("9999"), false);
   }
   const dailyOn = decideMenu([ac], { device: "1", action: "3", repeat: "3", side: "1", on: "1000", more: "2" });
@@ -245,7 +259,7 @@ test("timer turns on for the requested minutes and the clock accepts four digits
   const offThenOn = decideMenu([ac], {
     device: "1",
     action: "3",
-    repeat: "2",
+    repeat: "5",
     date: "03112026",
     side: "2",
     off: "1800",
@@ -257,7 +271,7 @@ test("timer turns on for the requested minutes and the clock accepts four digits
     assert.equal(offThenOn.onTime, "10:00");
     assert.equal(offThenOn.offTime, "18:00");
   }
-  const askDate = decideMenu([ac], { device: "1", action: "3", repeat: "2" });
+  const askDate = decideMenu([ac], { device: "1", action: "3", repeat: "5" });
   assert.equal(askDate.type, "read");
   if (askDate.type === "read") {
     assert.equal(askDate.field, "pikud_date");
@@ -282,21 +296,24 @@ test("timer turns on for the requested minutes and the clock accepts four digits
     assert.equal(askTime.max, 4);
     assertKeypress(yemotRead(askTime), { field: "pikud_on", max: "4", min: "4", playback: "No" });
   }
-  const badDay = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "31022026" });
+  const badDay = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "31022026" });
   assert.equal(badDay.type, "read");
   if (badDay.type === "read") assert.match(badDay.message, /היום לא קיים בחודש הזה/);
-  const badMonth = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "03132026" });
+  const badMonth = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "03132026" });
   assert.equal(badMonth.type, "read");
   if (badMonth.type === "read") assert.match(badMonth.message, /החודש לא תקין/);
-  const shortDate = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "031126" });
+  const shortDate = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "031126" });
   assert.equal(shortDate.type, "read");
   if (shortDate.type === "read") assert.match(shortDate.message, /חסרות ספרות/);
-  const missingDate = decideMenu([ac], { device: "1", action: "3", repeat: "2", date: "" });
+  const missingDate = decideMenu([ac], { device: "1", action: "3", repeat: "5", date: "" });
   assert.equal(missingDate.type, "read");
   if (missingDate.type === "read") assert.match(missingDate.message, /לא הוקש תאריך/);
   const both = decideMenu([ac, light], { device: "1", action: "3", repeat: "3", side: "1", on: "1000", more: "1", off: "1200" });
   assert.equal(both.type, "read");
-  if (both.type === "read") assert.equal(both.field, "pikud_sockets");
+  if (both.type === "read") {
+    assert.equal(both.field, "pikud_sockets");
+    assert.match(both.message, /להפעלה על מזגן הקש אחד, להגדרת שעון זה על כל הערוצים הקש שתיים/);
+  }
 
   const turnOn = decideMenu([ac], { device: "1", action: "1" });
   assert.equal(turnOn.type, "turn");
@@ -352,7 +369,7 @@ test("a caller can correct a full date and an empty date asks again", async () =
     ApiPhone: "035551001",
     pikud_device: "1",
     pikud_action: "3",
-    pikud_repeat: "2",
+    pikud_repeat: "5",
   };
   const ask = await phonePress(entered);
   const askText = await ask.text();
@@ -386,8 +403,8 @@ test("a caller can correct a full date and an empty date asks again", async () =
 
   const corrected = await phonePress({ ...entered, pikud_date: "03112026" });
   const correctedText = await corrected.text();
-  assert.match(correctedText, /נקלט שלושה בנובמבר אלפיים עשרים ושש, יום שלישי/);
-  assert.match(correctedText, /להגדרת הדלקה הקש אחד, להגדרת כיבוי הקש שתיים/);
+  assert.match(correctedText, /הגדרת שעון לתאריך שלושה בנובמבר אלפיים עשרים ושש, יום שלישי/);
+  assert.match(correctedText, /להגדרת תזמון הדלקה הקש אחד, להגדרת תזמון כיבוי הקש שתיים/);
   assert.match(correctedText, /pikud_side,no,1,1,8,No,yes,,,12,/);
   assert.equal(correctedText.includes("pikud_date"), false);
   assert.equal(correctedText.includes("pikud_on"), false);
@@ -402,13 +419,13 @@ test("a one-time clock speaks the date and saves the chosen on or off time", asy
     ApiPhone: "035551002",
     pikud_device: "1",
     pikud_action: "3",
-    pikud_repeat: "2",
+    pikud_repeat: "5",
     pikud_date: "03112026",
   };
   const heard = await phonePress(base);
   const heardText = await heard.text();
-  assert.match(heardText, /נקלט שלושה בנובמבר אלפיים עשרים ושש, יום שלישי/);
-  assert.match(heardText, /להגדרת הדלקה הקש אחד, להגדרת כיבוי הקש שתיים/);
+  assert.match(heardText, /הגדרת שעון לתאריך שלושה בנובמבר אלפיים עשרים ושש, יום שלישי/);
+  assert.match(heardText, /להגדרת תזמון הדלקה הקש אחד, להגדרת תזמון כיבוי הקש שתיים/);
   assert.match(heardText, /pikud_side,no,1,1,8,No,yes,,,12,/);
   assert.equal(heardText.includes("אפס שלוש אחד אחד"), false);
   assert.equal(heardText.includes("9999"), false);
@@ -417,7 +434,7 @@ test("a one-time clock speaks the date and saves the chosen on or off time", asy
 
   const again = await phonePress({ ...base, pikud_side: "9" });
   const againText = await again.text();
-  assert.match(againText, /הבחירה לא קיימת, להגדרת הדלקה הקש אחד, להגדרת כיבוי הקש שתיים/);
+  assert.match(againText, /הבחירה לא קיימת, הגדרת שעון לתאריך שלושה בנובמבר אלפיים עשרים ושש, יום שלישי. להגדרת תזמון הדלקה הקש אחד/);
   assert.match(againText, /pikud_side,/);
   assert.equal(againText.includes("go_to_folder=hangup"), false);
 
@@ -426,7 +443,7 @@ test("a one-time clock speaks the date and saves the chosen on or off time", asy
   assert.match(onAskText, /pikud_on,no,4,4,/);
   assertKeypress(onAskText, { field: "pikud_on", max: "4", min: "4", playback: "No" });
   assert.equal(playbackAt(onAskText), playbackAt(heardText));
-  assert.match(onAskText, /לשעת הדלקה הקש ארבע ספרות/);
+  assert.match(onAskText, /הזינו שעת הדלקה/);
   assert.equal(onAskText.includes("תשע תשע תשע תשע"), false);
   assert.equal(onAskText.includes("9999"), false);
   assert.equal(onAskText.includes("go_to_folder=hangup"), false);
@@ -459,7 +476,7 @@ test("a one-time clock speaks the date and saves the chosen on or off time", asy
   const offAskText = await offAsk.text();
   assert.match(offAskText, /pikud_off,no,4,4,/);
   assertKeypress(offAskText, { field: "pikud_off", max: "4", min: "4", playback: "No" });
-  assert.match(offAskText, /לשעת כיבוי הקש ארבע ספרות/);
+  assert.match(offAskText, /הזינו שעת כיבוי/);
   assert.equal(offAskText.includes("תשע תשע תשע תשע"), false);
 
   const afterOff = await phonePress({ ...base, pikud_side: "2", pikud_off: "1800" });
@@ -486,7 +503,7 @@ test("a one-time clock speaks the date and saves the chosen on or off time", asy
 
   const dated = await phonePress({ ...base, pikud_date: "11112026" });
   const datedText = await dated.text();
-  assert.match(datedText, /נקלט אחד עשר בנובמבר אלפיים עשרים ושש, יום רביעי/);
+  assert.match(datedText, /הגדרת שעון לתאריך אחד עשר בנובמבר אלפיים עשרים ושש, יום רביעי/);
   assert.equal(datedText.includes("11112026"), false);
   assert.equal(datedText.includes(",Digits,"), false);
   assert.equal(datedText.includes(",Number,"), false);
@@ -494,7 +511,7 @@ test("a one-time clock speaks the date and saves the chosen on or off time", asy
 
   const weekday = await phonePress({ ApiPhone: "035551002", pikud_device: "1", pikud_action: "3", pikud_repeat: "4" });
   const weekdayText = await weekday.text();
-  assert.match(weekdayText, /להגדרת הדלקה הקש אחד, להגדרת כיבוי הקש שתיים/);
+  assert.match(weekdayText, /הגדרת שעון לכל יום חוץ משישי ושבת. להגדרת תזמון הדלקה הקש אחד, להגדרת תזמון כיבוי הקש שתיים/);
   assert.equal(weekdayText.includes("9999"), false);
   assert.equal(weekdayText.includes("תשע תשע תשע תשע"), false);
   assert.equal(weekdayText.includes("go_to_folder=hangup"), false);

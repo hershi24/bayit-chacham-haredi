@@ -339,6 +339,10 @@
   line-height: 1.75;
 }
 
+.ksh-landing .hero-text + .hero-text {
+  margin-top: 14px;
+}
+
 .ksh-landing .actions {
   display: flex;
   flex-wrap: wrap;

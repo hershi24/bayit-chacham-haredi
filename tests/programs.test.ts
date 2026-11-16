@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_CLOCK, formatClock, monthBoard, upcomingPrograms } from "../lib/hebrew/calendar";
+import { DEFAULT_CLOCK, formatClock, hebrewMonthCaption, monthBoard, upcomingPrograms } from "../lib/hebrew/calendar";
 import { handleMenu } from "../lib/ivr/menu";
 import { mergeVisibleDevices } from "../lib/programs/devices";
 import { looseId, programId, syncTenantPrograms } from "../lib/programs/sync";
@@ -59,6 +59,11 @@ test("november puts the parsha on saturday and keeps candle times as labels", as
   assert.equal(friday?.candles, "16:05");
   assert.equal(saturday?.havdalah, "17:23");
   assert.equal(days[0]?.date, "2026-11-01");
+});
+
+test("a civil month shows the Hebrew months it spans", async () => {
+  assert.equal(await hebrewMonthCaption(2026, 11), "חשוון – כסלו תשפ״ז");
+  assert.equal(await hebrewMonthCaption(2026, 9), "אלול תשפ״ו – תשרי תשפ״ז");
 });
 
 test("the phone reads every program clock in order and can edit one", async () => {

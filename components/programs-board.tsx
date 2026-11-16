@@ -29,7 +29,7 @@ type Board = {
   devices: Array<{ deviceId: string; name: string; icon: string | null }>;
   programs: Program[];
   clocks: Clock[];
-  month: { year: number; month: number; days: MonthDay[] };
+  month: { year: number; month: number; hebrew: string; days: MonthDay[] };
 };
 
 type Picker = { tenants: TenantView[]; programs: null };
@@ -284,7 +284,12 @@ export function ProgramsBoard() {
               <button type="button" className="grid size-9 place-items-center rounded-lg border text-sm" aria-label="הקודם" onClick={() => move(-1)}>
                 ‹
               </button>
-              <h2 className="min-w-28 px-2 text-center text-sm font-semibold sm:min-w-40">{heading}</h2>
+              <div className="min-w-28 px-2 text-center sm:min-w-48">
+                <h2 className="text-sm font-semibold leading-tight">{heading}</h2>
+                {view === "month" || view === "list" ? (
+                  <p className="mt-0.5 text-[11px] leading-tight whitespace-nowrap text-muted-foreground">{board.month.hebrew}</p>
+                ) : null}
+              </div>
               <button type="button" className="grid size-9 place-items-center rounded-lg border text-sm" aria-label="הבא" onClick={() => move(1)}>
                 ›
               </button>

@@ -295,6 +295,28 @@ export async function hebrewLabels(dates: string[]): Promise<Record<string, stri
   return labels;
 }
 
+export async function hebrewMonthCaption(year: number, month: number): Promise<string> {
+  const { HDate } = await hebcal();
+  const first = `${year}-${String(month).padStart(2, "0")}-01`;
+  const last = addDays(first, new Date(year, month, 0).getDate() - 1);
+  const start = hebrewMonthYear(new HDate(dateOf(first)).renderGematriya(true));
+  const end = hebrewMonthYear(new HDate(dateOf(last)).renderGematriya(true));
+  if (start.label === end.label) return start.label;
+  if (start.year === end.year) return `${start.month} – ${end.month} ${start.year}`;
+  return `${start.label} – ${end.label}`;
+}
+
+function hebrewMonthYear(value: string) {
+  const parts = plainHebrew(value).split(" ");
+  const year = parts.at(-1) ?? "";
+  const month = spellMonth(parts.slice(1, -1).join(" "));
+  return { month, year, label: `${month} ${year}`.trim() };
+}
+
+function spellMonth(name: string) {
+  return name.replaceAll("חשון", "חשוון");
+}
+
 function shortHebrew(value: string): string {
   const parts = plainHebrew(value).split(" ");
   if (parts.length >= 3) parts.pop();

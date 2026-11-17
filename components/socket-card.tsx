@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Power, Timer } from "lucide-react";
+import { Power, Timer } from "lucide-react";
 import { DeviceGlyph, glyphFor } from "@/components/device-glyph";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -136,7 +136,7 @@ export function SocketCard({
     >
       <span className="power-switch-ring" aria-hidden="true" />
       <span className="power-switch-face">
-        {busy !== null ? <Loader2 className="size-6 animate-spin" /> : <Power className="size-6" strokeWidth={2.5} />}
+        <Power className="size-6" strokeWidth={2.5} />
       </span>
     </button>
   );

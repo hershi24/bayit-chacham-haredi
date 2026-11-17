@@ -249,11 +249,19 @@ export function MarketingLanding({ fontClass, onLogin }: { fontClass: string; on
                 alt="שני ההתקנים: שקע חכם לקיר ובקר תלת־ערוצי ללוח החשמל"
               />
               <figcaption>
-                <span>
-                  <Plug size={16} /> שקע חכם · ללא צורך בחשמלאי
+                <span className="device-note">
+                  <Plug size={18} />
+                  <span>
+                    <b>שקע חכם</b>
+                    <small>ללא צורך בחשמלאי</small>
+                  </span>
                 </span>
-                <span>
-                  <CircuitBoard size={16} /> בקר ללוח החשמל · שליטה בשלושה מעגלים
+                <span className="device-note">
+                  <CircuitBoard size={18} />
+                  <span>
+                    <b>בקר ללוח החשמל</b>
+                    <small>שליטה בשלושה מעגלים</small>
+                  </span>
                 </span>
               </figcaption>
             </figure>

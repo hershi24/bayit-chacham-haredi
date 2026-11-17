@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Power, Timer } from "lucide-react";
+import { Loader2, Power, Timer } from "lucide-react";
 import { DeviceGlyph, glyphFor } from "@/components/device-glyph";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";

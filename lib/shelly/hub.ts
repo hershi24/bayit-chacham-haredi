@@ -10,6 +10,7 @@ import {
   readDeviceInfoId,
   switchSetCall,
 } from "@/lib/shelly/rpc";
+import { staleRelayReport, type RelayHold } from "@/lib/shelly/relay-hold";
 import type { RelayAction } from "@/lib/types";
 
 type Socket = WebSocket & {
@@ -38,6 +39,8 @@ class ShellyHub {
   private readonly sockets = new Map<string, Socket>();
   private readonly pending = new Map<string, Pending>();
   private readonly polls = new Map<string, Promise<boolean>>();
+  /** Commanded relay that a status sample already in flight must not overwrite. */
+  private readonly relayHold = new Map<string, RelayHold>();
   private nextId = 1;
   private mockOnline = new Set<string>();
   private mockState = new Map<string, boolean>();
@@ -118,6 +121,7 @@ class ShellyHub {
       return { status: "FAILED", message: "התקן Shelly אינו מחובר כעת" };
     }
     const id = this.nextId++;
+    this.relayHold.set(deviceId, { on, at: Date.now() });
     try {
       await this.request(socket, id, switchSetCall(id, parsed.channel, on));
       const view = await updateDeviceState(deviceId, {
@@ -129,6 +133,7 @@ class ShellyHub {
       if (view) publishDevice(view);
       return { status: "SUCCESS" };
     } catch (error) {
+      this.relayHold.delete(deviceId);
       const message = error instanceof Error ? error.message : "פקודת Shelly נכשלה";
       await updateDeviceState(deviceId, { lastError: message });
       return { status: "FAILED", message };
@@ -367,8 +372,11 @@ class ShellyHub {
       const known = byChannel.get(state.channel);
       const deviceId = known?.deviceId ?? shellyChannelDeviceId(devices[0]?.externalId ?? shellyId, state.channel);
       if (!(await getDevice(deviceId))) continue;
+      const hold = this.relayHold.get(deviceId);
+      const ignoreRelay = staleRelayReport(hold, state.on, Date.now());
+      if (hold && state.on === hold.on) this.relayHold.delete(deviceId);
       const view = await updateDeviceState(deviceId, {
-        relayOn: state.on,
+        ...(ignoreRelay ? {} : { relayOn: state.on }),
         connectivity: "ONLINE",
         stateUpdatedAt: at,
         lastError: null,

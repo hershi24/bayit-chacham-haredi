@@ -202,6 +202,69 @@ test("a missed Shelly heartbeat marks channels offline without waiting for TCP t
   }
 });
 
+test("a status sample already in flight does not undo a Shelly command", async () => {
+  const tenant = await createTenant({ name: `Shelly hold ${Date.now()}`, phone: null });
+  const shellyId = `shellypro3g3-hd${String(Date.now()).slice(-6)}`;
+  try {
+    await createShellyPro3({
+      shellyId,
+      tenantId: tenant.id,
+      kind: "panel",
+      channels: ["החזקה א", "החזקה ב", "החזקה ג"],
+    });
+    const handlers = new Map<string, (data?: unknown) => void>();
+    const sent: string[] = [];
+    const socket = {
+      OPEN: 1,
+      readyState: 1,
+      on(event: string, fn: (data?: unknown) => void) {
+        handlers.set(event, fn);
+      },
+      once(event: string, fn: (data?: unknown) => void) {
+        handlers.set(event, fn);
+      },
+      send(payload: string) {
+        sent.push(payload);
+      },
+      ping() {},
+      close() {},
+      terminate() {},
+    };
+    getShellyHub().attach(socket as never);
+    const info = JSON.parse(sent.at(-1) ?? "{}") as { id?: number };
+    handlers.get("message")?.(JSON.stringify({ id: info.id, result: { id: shellyId } }));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const statusCall = [...sent].reverse().find((line) => line.includes("Shelly.GetStatus"));
+    const statusId = (JSON.parse(statusCall ?? "{}") as { id?: number }).id;
+
+    const pending = getShellyHub().command(`${shellyId}_ch0`, "ON");
+    const setCall = [...sent].reverse().find((line) => line.includes("Switch.Set"));
+    const setId = (JSON.parse(setCall ?? "{}") as { id?: number }).id;
+    handlers.get("message")?.(JSON.stringify({ id: setId, result: { was_on: false } }));
+    const result = await pending;
+    assert.equal(result.status, "SUCCESS");
+
+    handlers.get("message")?.(
+      JSON.stringify({
+        id: statusId,
+        result: { "switch:0": { output: false }, "switch:1": { output: false }, "switch:2": { output: false } },
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal((await getDevice(`${shellyId}_ch0`))?.relayOn, true);
+  } finally {
+    getShellyHub().mockDisconnect(shellyId);
+    for (const channel of [0, 1, 2]) {
+      try {
+        await deleteDevice(`${shellyId}_ch${channel}`);
+      } catch {
+        // ignore
+      }
+    }
+    await deleteTenant(tenant.id);
+  }
+});
+
 test("admin can paste the short MAC from the Shelly app and still resolve the unit", async () => {
   const tenant = await createTenant({ name: `Shelly MAC ${Date.now()}`, phone: null });
   const mac = `8c4f00${String(Date.now()).slice(-6)}`;

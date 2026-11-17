@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { SocketCard } from "@/components/socket-card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { mergeBoardDevices } from "@/lib/board-merge";
 import { boardLine } from "@/lib/board-summary";
 import { api } from "@/lib/client-api";
 import type { DeviceIconKey } from "@/lib/devices/icons";
@@ -33,6 +34,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
   // Desired relay while a click is still waiting on the device. A status report of the old
   // state arrives with a newer timestamp and would otherwise paint the switch back.
   const pendingRelay = useRef(new Map<string, boolean>());
+  const pendingStamp = useRef(new Map<string, number>());
 
   const applyDevice = useCallback((next: DeviceView) => {
     setDevices((current) => {
@@ -90,7 +92,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
       ]);
       setRole(session.user.role);
       setName(session.user.name);
-      setDevices(board.devices);
+      setDevices((current) => mergeBoardDevices(current, board.devices, pendingRelay.current));
       setStatus(board.status);
       setError(null);
     } catch (cause) {
@@ -158,7 +160,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
 
       setRefreshNote("מעדכן את הלוח…");
       const board = await api<Payload>("/api/devices");
-      setDevices(board.devices);
+      setDevices((current) => mergeBoardDevices(current, board.devices, pendingRelay.current));
       setStatus(board.status);
       setError(null);
       toast.success("מצב ההתקנים עודכן");
@@ -181,7 +183,13 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
   useEffect(() => {
     const source = new EventSource("/api/events");
     source.addEventListener("device", (event) => {
-      applyDevice(JSON.parse((event as MessageEvent).data) as DeviceView);
+      const next = JSON.parse((event as MessageEvent).data) as DeviceView;
+      const wanted = pendingRelay.current.get(next.deviceId);
+      if (wanted !== undefined && next.relayOn === wanted) {
+        pendingRelay.current.delete(next.deviceId);
+        pendingStamp.current.delete(next.deviceId);
+      }
+      applyDevice(next);
     });
     source.addEventListener("status", (event) => {
       setStatus(JSON.parse((event as MessageEvent).data) as BridgeStatus);
@@ -193,7 +201,14 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
 
   async function command(device: DeviceView, action: RelayAction, options?: { quiet?: boolean }) {
     const wanted = action === "ON";
+    const stamp = Date.now();
     pendingRelay.current.set(device.deviceId, wanted);
+    pendingStamp.current.set(device.deviceId, stamp);
+    window.setTimeout(() => {
+      if (pendingStamp.current.get(device.deviceId) !== stamp) return;
+      pendingRelay.current.delete(device.deviceId);
+      pendingStamp.current.delete(device.deviceId);
+    }, 20_000);
     // Flip the switch color immediately so the tap feels instant.
     applyDevice({
       ...device,
@@ -207,7 +222,10 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
         method: "POST",
         body: JSON.stringify({ action }),
       });
-      pendingRelay.current.delete(device.deviceId);
+      if (result.status !== "SUCCESS" || result.device.relayOn === wanted) {
+        pendingRelay.current.delete(device.deviceId);
+        pendingStamp.current.delete(device.deviceId);
+      }
       applyDevice(result.device);
       if (options?.quiet) return result.status;
       const label = result.device.name?.trim() || device.name?.trim() || "השקע";
@@ -218,11 +236,11 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
       return result.status;
     } catch (cause) {
       pendingRelay.current.delete(device.deviceId);
+      pendingStamp.current.delete(device.deviceId);
       if (!options?.quiet) toast.error(cause instanceof Error ? cause.message : "הפקודה נכשלה");
       if (!options?.quiet) await load(false);
       throw cause;
     } finally {
-      pendingRelay.current.delete(device.deviceId);
       setBusy((current) => ({ ...current, [device.deviceId]: null }));
       if (!options?.quiet) void loadAudit();
     }

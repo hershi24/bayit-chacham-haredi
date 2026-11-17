@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ListOrdered, Power, PowerOff, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { SocketCard } from "@/components/socket-card";
@@ -30,6 +30,9 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
   const [refreshingIds, setRefreshingIds] = useState<string[]>([]);
   const [focusTenant, setFocusTenant] = useState<string | null>(null);
   const [orderOpen, setOrderOpen] = useState(false);
+  // Desired relay while a click is still waiting on the device. A status report of the old
+  // state arrives with a newer timestamp and would otherwise paint the switch back.
+  const pendingRelay = useRef(new Map<string, boolean>());
 
   const applyDevice = useCallback((next: DeviceView) => {
     setDevices((current) => {
@@ -38,8 +41,10 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
       const index = current.findIndex((device) => device.deviceId === next.deviceId);
       if (index === -1) return [...current, next];
       const previous = current[index];
+      const wanted = pendingRelay.current.get(next.deviceId);
       const merged: DeviceView = {
         ...next,
+        relayOn: wanted === undefined ? next.relayOn : wanted,
         icon: next.icon !== undefined ? next.icon : previous.icon,
         next: next.next === undefined ? previous.next : next.next,
       };
@@ -187,10 +192,12 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
   }, [applyDevice]);
 
   async function command(device: DeviceView, action: RelayAction, options?: { quiet?: boolean }) {
+    const wanted = action === "ON";
+    pendingRelay.current.set(device.deviceId, wanted);
     // Flip the switch color immediately so the tap feels instant.
     applyDevice({
       ...device,
-      relayOn: action === "ON",
+      relayOn: wanted,
       stateUpdatedAt: new Date().toISOString(),
       lastError: null,
     });
@@ -200,6 +207,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
         method: "POST",
         body: JSON.stringify({ action }),
       });
+      pendingRelay.current.delete(device.deviceId);
       applyDevice(result.device);
       if (options?.quiet) return result.status;
       const label = result.device.name?.trim() || device.name?.trim() || "השקע";
@@ -209,10 +217,12 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
       else toast.warning(`הפקודה ל${label} לא אושרה סופית. המצב שבכרטיס נקרא מההתקן`);
       return result.status;
     } catch (cause) {
+      pendingRelay.current.delete(device.deviceId);
       if (!options?.quiet) toast.error(cause instanceof Error ? cause.message : "הפקודה נכשלה");
       if (!options?.quiet) await load(false);
       throw cause;
     } finally {
+      pendingRelay.current.delete(device.deviceId);
       setBusy((current) => ({ ...current, [device.deviceId]: null }));
       if (!options?.quiet) void loadAudit();
     }

@@ -467,6 +467,7 @@ export function ProgramsBoard() {
                 day={cursor}
                 programs={shownPrograms}
                 clocks={board.clocks}
+                devices={board.devices}
                 filter={filter}
                 onOpen={(source, id) => {
                   if (source === "program") {

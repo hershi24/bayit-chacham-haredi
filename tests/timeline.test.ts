@@ -107,6 +107,30 @@ test("clocks of one program stay on their own weekday", () => {
   assert.equal(dayBars("2026-11-08", [], [weekend]).length, 0);
 });
 
+test("each slot runs only on the devices chosen for that slot", () => {
+  const split = {
+    id: "prog_split",
+    name: "משולבת",
+    enabled: true,
+    weekdays: [0],
+    onTime: "06:00",
+    offTime: "08:00",
+    slots: [
+      { onTime: "06:00", offTime: "08:00", deviceIds: ["boiler"] },
+      { onTime: "13:00", offTime: "15:00", deviceIds: ["ac"] },
+    ],
+    deviceIds: ["boiler", "ac"],
+  };
+  const bars = dayBars("2026-12-06", [], [split]);
+  assert.deepEqual(
+    bars.map((bar) => [bar.deviceId, bar.start, bar.end, bar.name]),
+    [
+      ["boiler", 6 * 60, 8 * 60, "משולבת"],
+      ["ac", 13 * 60, 15 * 60, "משולבת"],
+    ],
+  );
+});
+
 test("one program with several clocks draws one strip per on period", () => {
   const daily = {
     id: "prog_daily",

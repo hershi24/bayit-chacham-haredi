@@ -19,7 +19,7 @@ export type TimelineProgram = {
   weekdays: number[];
   onTime: string | null;
   offTime: string | null;
-  slots?: Array<{ onTime: string | null; offTime: string | null; weekdays?: number[] }>;
+  slots?: Array<{ onTime: string | null; offTime: string | null; weekdays?: number[]; deviceIds?: string[] }>;
   deviceIds: string[];
   startDate?: string | null;
   endDate?: string | null;
@@ -147,9 +147,10 @@ export function dayBars(date: string, clocks: TimelineClock[], programs: Timelin
         ? [{ offset: 0, slots: slotsFor(program, weekday) }]
         : []),
     ];
-    programSpans(groups).forEach(([start, end], index) => {
-      const title = `${program.name} ${formatMin(start)}–${formatMin(end)}`;
-      for (const deviceId of program.deviceIds) {
+    let index = 0;
+    for (const [deviceId, deviceGroups] of spansByDevice(groups, program.deviceIds)) {
+      for (const [start, end] of programSpans(deviceGroups)) {
+        const title = `${program.name} ${formatMin(start)}–${formatMin(end)}`;
         bars.push({
           key: `${program.id}:${index}:${deviceId}`,
           deviceId,
@@ -161,20 +162,44 @@ export function dayBars(date: string, clocks: TimelineClock[], programs: Timelin
           source: "program",
           sourceId: program.id,
         });
+        index += 1;
       }
-    });
+    }
   }
 
   return bars;
 }
 
-function slotsFor(program: TimelineProgram, weekday: number) {
+type TimelineSlot = { onTime: string | null; offTime: string | null; weekdays?: number[]; deviceIds?: string[] };
+
+function slotsFor(program: TimelineProgram, weekday: number): TimelineSlot[] {
   const slots = program.slots?.length
     ? program.slots
     : program.onTime || program.offTime
       ? [{ onTime: program.onTime, offTime: program.offTime }]
       : [];
   return slots.filter((slot) => !slot.weekdays?.length || slot.weekdays.includes(weekday));
+}
+
+/** A slot with its own devices runs only on those. Otherwise it runs on the program's devices. */
+function spansByDevice(groups: Array<{ offset: number; slots: TimelineSlot[] }>, fallback: string[]) {
+  const byDevice = new Map<string, Array<{ offset: number; slots: Array<{ onTime: string | null; offTime: string | null }> }>>();
+  for (const group of groups) {
+    for (const slot of group.slots) {
+      const deviceIds = slot.deviceIds?.length ? slot.deviceIds : fallback;
+      for (const deviceId of deviceIds) {
+        const list = byDevice.get(deviceId) ?? [];
+        let bucket = list.find((item) => item.offset === group.offset);
+        if (!bucket) {
+          bucket = { offset: group.offset, slots: [] };
+          list.push(bucket);
+        }
+        bucket.slots.push(slot);
+        byDevice.set(deviceId, list);
+      }
+    }
+  }
+  return byDevice;
 }
 
 function programSpans(groups: Array<{ offset: number; slots: Array<{ onTime: string | null; offTime: string | null }> }>) {

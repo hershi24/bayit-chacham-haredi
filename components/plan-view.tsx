@@ -4,15 +4,38 @@ import { Pause, Pencil } from "lucide-react";
 import { DeviceGlyph } from "@/components/device-glyph";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { PlannerClock, PlannerDevice, PlannerProgram } from "@/components/plan-dialog";
+import { clockGroups, clocksShareDevices, dateTitle, type ClockGroup } from "@/lib/programs/plan-view";
 import { repeatCaption } from "@/lib/programs/weekdays";
 import { cn } from "cn";
 
-function slotLabel(onTime: string | null | undefined, offTime: string | null | undefined) {
-  const on = onTime || null;
-  const off = offTime || null;
-  if (on && off) return `${on}–${off}`;
-  if (on) return `הדלקה ב־${on}`;
-  if (off) return `כיבוי ב־${off}`;
+function ClockTime({ onTime, offTime }: { onTime: string | null; offTime: string | null }) {
+  if (onTime && offTime) {
+    return (
+      <span dir="ltr" className="tabular-nums">
+        {onTime}–{offTime}
+      </span>
+    );
+  }
+  if (onTime) {
+    return (
+      <>
+        הדלקה ב־
+        <span dir="ltr" className="tabular-nums">
+          {onTime}
+        </span>
+      </>
+    );
+  }
+  if (offTime) {
+    return (
+      <>
+        כיבוי ב־
+        <span dir="ltr" className="tabular-nums">
+          {offTime}
+        </span>
+      </>
+    );
+  }
   return null;
 }
 
@@ -40,23 +63,22 @@ export function PlanViewDialog({
   const title = program?.name ?? "שעון";
   const ids = program?.deviceIds ?? clock?.deviceIds ?? [];
   const skipped = program?.skippedDates ?? [];
-  const owned = program ? clocks.filter((item) => !item.recurring && item.programId === program.id) : [];
-  const rows = program
-    ? program.weekdays.length
-      ? program.slots
-          .map((slot) => slotLabel(slot.onTime, slot.offTime))
-          .filter((item): item is string => Boolean(item))
-      : owned
-          .map((item) => {
-            const hours = slotLabel(item.onTime, item.offTime);
-            return hours ? `${item.day} · ${hours}` : null;
-          })
-          .filter((item): item is string => Boolean(item))
-    : (() => {
-        const hours = slotLabel(clock?.onTime, clock?.offTime);
-        if (!hours) return [] as string[];
-        return clock?.day ? [`${clock.day} · ${hours}`] : [hours];
-      })();
+  const groups: ClockGroup[] = program
+    ? clockGroups(
+        program,
+        clocks.filter((item) => !item.recurring && item.programId === program.id),
+      )
+    : clock
+      ? [
+          {
+            key: clock.id,
+            title: clock.day ? dateTitle(clock.day) : "שעון",
+            clocks: [{ onTime: clock.onTime, offTime: clock.offTime, deviceIds: clock.deviceIds }],
+          },
+        ]
+      : [];
+  const sharedDevices = clocksShareDevices(groups);
+  const clockCount = groups.reduce((sum, group) => sum + group.clocks.length, 0);
 
   return (
     <Dialog
@@ -98,16 +120,37 @@ export function PlanViewDialog({
             </div>
           ) : null}
 
-          {rows.length ? (
+          {groups.length ? (
             <div>
-              <p className="mb-2 text-[11px] font-bold tracking-wide text-muted-foreground">שעות</p>
-              <ul className="space-y-2">
-                {rows.map((row) => (
-                  <li key={row} className="rounded-xl bg-muted/60 px-3 py-2.5 text-sm font-medium" dir="ltr">
-                    {row}
-                  </li>
+              <p className="mb-2 text-[11px] font-bold tracking-wide text-muted-foreground">
+                {clockCount === 1 ? "שעון" : `${clockCount} שעונים`}
+              </p>
+              <div className="space-y-3">
+                {groups.map((group) => (
+                  <section key={group.key}>
+                    <h4 className="mb-1.5 text-sm font-bold">{group.title}</h4>
+                    <ul className="space-y-1.5">
+                      {group.clocks.map((item, index) => (
+                        <li key={`${group.key}:${index}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-muted/60 px-3 py-2.5">
+                          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-card text-[11px] font-bold text-muted-foreground">
+                            {index + 1}
+                          </span>
+                          <span className="text-sm font-semibold">
+                            <ClockTime onTime={item.onTime} offTime={item.offTime} />
+                          </span>
+                          {sharedDevices ? null : (
+                            <span className="text-[11px] font-medium text-muted-foreground">
+                              {item.deviceIds
+                                .map((id) => devices.find((entry) => entry.deviceId === id)?.name ?? id)
+                                .join(" · ")}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
                 ))}
-              </ul>
+              </div>
             </div>
           ) : null}
 

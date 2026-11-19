@@ -1,10 +1,12 @@
 "use client";
 
-import { DeviceGlyph } from "@/components/device-glyph";
 import { dayBars, type DayBar, type TimelineClock, type TimelineProgram } from "@/lib/programs/timeline";
 import { cn } from "cn";
 
 export type DayDevice = { deviceId: string; name: string; icon: string | null };
+
+const COLORS = ["#1766e0", "#0c8f62", "#d4650a", "#6d28d9", "#be185d", "#0e7490", "#b45309", "#334155"];
+const HOURS = [0, 6, 12, 18, 24];
 
 function clock(minutes: number) {
   if (minutes >= 1440) return "24:00";
@@ -13,8 +15,27 @@ function clock(minutes: number) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function runsLabel(count: number) {
-  return count === 1 ? "הפעלה אחת" : `${count} הפעלות`;
+function colorFor(deviceId: string, devices: DayDevice[]) {
+  const index = devices.findIndex((device) => device.deviceId === deviceId);
+  if (index >= 0) return COLORS[index % COLORS.length];
+  let hash = 0;
+  for (const char of deviceId) hash = (hash + char.charCodeAt(0)) % COLORS.length;
+  return COLORS[hash];
+}
+
+function place(bars: DayBar[]) {
+  const sorted = [...bars].sort((left, right) => left.start - right.start || left.end - right.end);
+  const ends: number[] = [];
+  return sorted.map((bar) => {
+    let lane = ends.findIndex((end) => end <= bar.start);
+    if (lane < 0) {
+      lane = ends.length;
+      ends.push(bar.end);
+    } else {
+      ends[lane] = bar.end;
+    }
+    return { ...bar, lane, lanes: 0, laneCount: ends.length };
+  }).map((bar, _, all) => ({ ...bar, laneCount: Math.max(...all.map((item) => item.lane)) + 1 }));
 }
 
 export function DayTimeline({
@@ -39,94 +60,81 @@ export function DayTimeline({
     list.push(bar);
     byDevice.set(bar.deviceId, list);
   }
-
   const known = devices.filter((device) => filter === "all" || device.deviceId === filter);
   const knownIds = new Set(known.map((device) => device.deviceId));
   const rows = [
-    ...known.map((device) => ({ ...device, bars: (byDevice.get(device.deviceId) ?? []).sort(byStart) })),
+    ...known.map((device) => ({ ...device, bars: place(byDevice.get(device.deviceId) ?? []) })),
     ...[...byDevice.keys()]
       .filter((id) => !knownIds.has(id))
-      .map((id) => ({ deviceId: id, name: id, icon: null, bars: (byDevice.get(id) ?? []).sort(byStart) })),
+      .map((id) => ({ deviceId: id, name: id, icon: null, bars: place(byDevice.get(id) ?? []) })),
   ];
   const active = rows.filter((row) => row.bars.length > 0);
   const idle = rows.filter((row) => row.bars.length === 0);
 
-  if (!rows.length) {
-    return <p className="px-2 py-8 text-center text-sm text-muted-foreground">אין התקנים להצגה ביום זה.</p>;
+  if (!active.length) {
+    return <p className="px-2 py-8 text-center text-sm text-muted-foreground">אין הפעלות ביום זה.</p>;
   }
 
   return (
-    <div className="grid gap-2">
-      {active.map((row) => (
-        <article key={row.deviceId} className="rounded-xl border border-border/80 bg-card p-3">
-          <header className="flex items-center gap-2.5">
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground">
-              <DeviceGlyph name={row.name} icon={row.icon} className="size-4" />
-            </span>
-            <div className="min-w-0">
-              <h4 className="truncate text-sm font-semibold">{row.name}</h4>
-              <p className="text-[11px] text-muted-foreground">{runsLabel(row.bars.length)}</p>
+    <div className="rounded-xl border border-border/80 bg-card p-3">
+      <div className="flex" dir="rtl">
+        <div className="w-28 shrink-0" />
+        <div className="flex min-w-0 flex-1 justify-between text-[10px] font-medium text-muted-foreground tabular-nums" dir="ltr">
+          {HOURS.map((hour) => (
+            <span key={hour}>{String(hour).padStart(2, "0")}</span>
+          ))}
+        </div>
+      </div>
+      <div>
+        {active.map((row) => {
+          const color = colorFor(row.deviceId, devices);
+          const laneCount = row.bars[0]?.laneCount ?? 1;
+          return (
+            <div key={row.deviceId} className="flex items-stretch border-t border-border/60" dir="rtl">
+              <div className="flex w-28 shrink-0 items-center gap-1.5 pe-2">
+                <span className="size-2.5 shrink-0 rounded-full" style={{ background: color }} />
+                <span className="min-w-0 truncate text-xs font-semibold">{row.name}</span>
+              </div>
+              <div className="relative min-w-0 flex-1" dir="ltr" style={{ height: Math.max(36, laneCount * 28 + 8) }}>
+                {HOURS.map((hour) => (
+                  <span key={hour} className="absolute inset-y-0 border-s border-border/50" style={{ left: `${(hour / 24) * 100}%` }} />
+                ))}
+                {row.bars.map((bar) => {
+                      const wide = bar.end - bar.start >= 8 * 60;
+                      return (
+                        <button
+                          key={bar.key}
+                          type="button"
+                          className={cn("absolute overflow-hidden rounded-md px-1 text-[10px] font-semibold text-white", bar.muted && "opacity-45")}
+                      style={{
+                        background: color,
+                        top: 4 + bar.lane * 28,
+                        height: 24,
+                        left: `${(bar.start / 1440) * 100}%`,
+                        width: `${((bar.end - bar.start) / 1440) * 100}%`,
+                      }}
+                      title={`${row.name} ${clock(bar.start)}–${clock(bar.end)} ${bar.name}${bar.muted ? " מושהית" : ""}`}
+                      aria-label={`${row.name} ${clock(bar.start)} עד ${clock(bar.end)} ${bar.name}${bar.muted ? " מושהית" : ""}`}
+                      onClick={() => onOpen(bar.source, bar.sourceId)}
+                    >
+                      {wide ? (
+                        <span dir="ltr">
+                          {clock(bar.start)}–{clock(bar.end)}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </header>
-          <div className="relative mt-3 h-2 rounded-full bg-muted" dir="ltr" aria-hidden="true">
-            {row.bars.map((bar) => (
-              <span
-                key={bar.key}
-                className={cn("absolute inset-y-0 rounded-full", bar.muted ? "bg-muted-foreground/35" : "bg-primary")}
-                style={{ left: `${(bar.start / 1440) * 100}%`, width: `${((bar.end - bar.start) / 1440) * 100}%` }}
-              />
-            ))}
-          </div>
-          <div className="mt-1 flex justify-between text-[10px] text-muted-foreground tabular-nums" dir="ltr">
-            <span>00:00</span>
-            <span>06:00</span>
-            <span>12:00</span>
-            <span>18:00</span>
-            <span>24:00</span>
-          </div>
-          <ul className="mt-2 grid gap-1">
-            {row.bars.map((bar) => (
-              <li key={bar.key}>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-muted/70"
-                  onClick={() => onOpen(bar.source, bar.sourceId)}
-                >
-                  <span className="shrink-0 text-sm font-semibold tabular-nums" dir="ltr">
-                    {clock(bar.start)}–{clock(bar.end)}
-                  </span>
-                  <span className={cn("min-w-0 flex-1 truncate text-xs", bar.muted ? "text-muted-foreground" : "text-foreground/80")}>
-                    {bar.name}
-                    {bar.muted ? " · מושהית" : ""}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </article>
-      ))}
-      {(filter !== "all" || active.length === 0 ? idle : []).map((row) => (
-        <article key={row.deviceId} className="rounded-xl border border-dashed border-border/80 bg-card p-3">
-          <header className="flex items-center gap-2.5">
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground">
-              <DeviceGlyph name={row.name} icon={row.icon} className="size-4" />
-            </span>
-            <div className="min-w-0">
-              <h4 className="truncate text-sm font-semibold">{row.name}</h4>
-              <p className="text-[11px] text-muted-foreground">אין הפעלה ביום זה</p>
-            </div>
-          </header>
-        </article>
-      ))}
-      {filter === "all" && active.length > 0 && idle.length > 0 ? (
-        <p className="px-1 pt-1 text-xs leading-relaxed text-muted-foreground">
+          );
+        })}
+      </div>
+      {idle.length ? (
+        <p className="border-t border-border/60 px-1 pt-2 text-xs text-muted-foreground">
           לא פועלים ביום זה: {idle.map((row) => row.name).join(" · ")}
         </p>
       ) : null}
     </div>
   );
-}
-
-function byStart(left: DayBar, right: DayBar) {
-  return left.start - right.start || left.end - right.end;
 }

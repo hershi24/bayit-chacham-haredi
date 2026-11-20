@@ -73,15 +73,15 @@ export function actionsForUnit(
   shellyId: string,
   channels: ReadonlyMap<string, { channel: ShellyChannel; frozen: boolean }>,
   block: BackupBlock,
-  now: Date,
+  _now: Date,
 ): BackupAction[] {
   const start = Date.parse(block.start);
   const end = Date.parse(block.end);
-  const notBefore = Math.max(start, now.getTime() - 30_000);
   const actions: BackupAction[] = [];
   for (const run of runs) {
     const atMs = Date.parse(run.runAt);
-    if (!Number.isFinite(atMs) || atMs < notBefore || atMs > end) continue;
+    // Keep edges that already passed. After a power cut the device replays the latest one.
+    if (!Number.isFinite(atMs) || atMs < start || atMs > end) continue;
     const parsed = parseShellyChannelId(run.deviceId);
     if (!parsed || parsed.shellyId !== shellyId) continue;
     const channel = channels.get(run.deviceId);
@@ -139,6 +139,30 @@ export function chooseBackupMode(input: { jobCount: number; foreignSchedules: nu
   const free = SHELLY_SCHEDULE_LIMIT - input.foreignSchedules;
   if (input.jobCount <= free) return "schedule";
   return "script";
+}
+
+/** Latest commanded state of each channel at `now`, for a plan that is still inside its window. */
+export function desiredOutputs(actions: BackupAction[], nowSeconds: number, endSeconds: number): Array<{ channel: ShellyChannel; on: boolean }> {
+  if (nowSeconds < 1_700_000_000 || nowSeconds > endSeconds + 180) return [];
+  const latest = new Map<ShellyChannel, BackupAction>();
+  for (const action of actions) {
+    if (action.at > nowSeconds) continue;
+    const previous = latest.get(action.channel);
+    if (!previous || action.at >= previous.at) latest.set(action.channel, action);
+  }
+  return [...latest.values()].map((action) => ({ channel: action.channel, on: action.on }));
+}
+
+export function relayFixes(
+  states: Array<{ channel: number; on: boolean | null }>,
+  actions: BackupAction[],
+  nowSeconds: number,
+  endSeconds: number,
+): Array<{ channel: ShellyChannel; on: boolean }> {
+  return desiredOutputs(actions, nowSeconds, endSeconds).filter((want) => {
+    const actual = states.find((state) => state.channel === want.channel);
+    return !actual || actual.on !== want.on;
+  });
 }
 
 export function planHash(actions: BackupAction[], block: BackupBlock): string {

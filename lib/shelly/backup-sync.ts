@@ -7,6 +7,7 @@ import {
   jobSignature,
   mergeBackupBlock,
   planHash,
+  relayFixes,
   sameJobs,
   shouldPushBackup,
   type BackupAction,
@@ -14,6 +15,7 @@ import {
   type ScheduleJob,
 } from "@/lib/shelly/backup-plan";
 import { expiryFromScript, expiryScript, idleScript, planFromScript, planScript, scriptName } from "@/lib/shelly/backup-script";
+import { channelStatesFromStatus } from "@/lib/shelly/rpc";
 import { parseShellyChannelId, type ShellyChannel } from "@/lib/shelly/ids";
 import { getShellyHub } from "@/lib/shelly/hub";
 import type { ShellyBackupRow } from "@/lib/shelly/backup-record";
@@ -135,6 +137,7 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
     previous.windowStart === block.start &&
     previous.windowEnd === block.end
   ) {
+    if (insideBlock(block, now)) await reconcileRelays(rpc, actions, Math.floor(Date.parse(block.end) / 1000), now);
     return previous;
   }
 
@@ -154,8 +157,9 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
   try {
     await ensureClock(rpc, now);
     const endSeconds = Math.floor(Date.parse(block.end) / 1000);
-    const written = await writePlan(rpc, actions, endSeconds, previous?.scheduleIds ?? [], now >= new Date(block.start));
+    const written = await writePlan(rpc, actions, endSeconds, previous?.scheduleIds ?? [], now >= new Date(block.start), now);
     await verifyPlan(rpc, written, actions, endSeconds);
+    if (insideBlock(block, now)) await reconcileRelays(rpc, actions, endSeconds, now);
     const saved = await saveShellyBackup({
       ...(previous ?? emptyRow(unit)),
       tenantId: unit.tenantId,
@@ -265,14 +269,31 @@ async function ensureClock(rpc: ShellyRpc, now: Date) {
 
 type Written = { mode: "schedule" | "script"; ids: number[]; jobs: ScheduleJob[] };
 
-async function writePlan(rpc: ShellyRpc, actions: BackupAction[], endSeconds: number, rememberedIds: number[], windowStarted: boolean): Promise<Written> {
+function insideBlock(block: BackupBlock, now: Date) {
+  const at = now.getTime();
+  return at >= Date.parse(block.start) && at <= Date.parse(block.end);
+}
+
+async function reconcileRelays(rpc: ShellyRpc, actions: BackupAction[], endSeconds: number, now: Date) {
+  let status: unknown;
+  try {
+    status = await rpc("Sys.GetStatus");
+  } catch {
+    return;
+  }
+  const fixes = relayFixes(channelStatesFromStatus(status), actions, Math.floor(now.getTime() / 1000), endSeconds);
+  for (const fix of fixes) await rpc("Switch.Set", { id: fix.channel, on: fix.on });
+}
+
+async function writePlan(rpc: ShellyRpc, actions: BackupAction[], endSeconds: number, rememberedIds: number[], windowStarted: boolean, now: Date): Promise<Written> {
   const listed = await listSchedules(rpc);
   const owned = new Set<number>([...rememberedIds, ...(await kvsIds(rpc))]);
   for (const id of owned) {
     if (listed.some((job) => job.id === id)) await rpc("Schedule.Delete", { id });
   }
   const foreign = listed.filter((job) => !owned.has(job.id)).length;
-  const jobs = jobsFor(actions);
+  const future = actions.filter((action) => action.at * 1000 > now.getTime() + 20_000);
+  const jobs = jobsFor(future);
   let mode = actions.length ? chooseBackupMode({ jobCount: jobs.length, foreignSchedules: foreign, windowStarted }) : "script";
   let ids: number[] = [];
   if (mode === "schedule") {
@@ -294,10 +315,17 @@ async function writePlan(rpc: ShellyRpc, actions: BackupAction[], endSeconds: nu
     const code = actions.length ? planScript(actions, endSeconds) : idleScript();
     await installScript(rpc, code, actions.length > 0);
   } else {
-    await installScript(rpc, expiryScript(ids, endSeconds), true);
+    await installScript(rpc, expiryScript(actions, endSeconds, ids), true);
   }
   await rpc("KVS.Set", { key: "pikud/ids", value: ids.join(",") });
   return { mode, ids, jobs: mode === "schedule" ? jobs : [] };
+}
+
+function sameActions(left: BackupAction[], right: BackupAction[]) {
+  const sign = (action: BackupAction) => `${action.at}:${action.channel}:${action.on ? 1 : 0}`;
+  const a = left.map(sign).sort();
+  const b = right.map(sign).sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
 async function verifyPlan(rpc: ShellyRpc, written: Written, actions: BackupAction[], endSeconds: number) {
@@ -309,8 +337,12 @@ async function verifyPlan(rpc: ShellyRpc, written: Written, actions: BackupActio
       throw new Error("השעונים שנקראו מההתקן לא תואמים את התכנון");
     }
     const expiry = code ? expiryFromScript(code) : null;
+    const stored = code ? planFromScript(code) : null;
     if (!expiry || expiry.end !== endSeconds || expiry.ids.join(",") !== written.ids.join(",")) {
       throw new Error("סקריפט ניקוי השעונים בהתקן לא תואם את התכנון");
+    }
+    if (!stored || !sameActions(stored.actions, actions)) {
+      throw new Error("תוכנית השחזור שנקראה מההתקן לא תואמת את התכנון");
     }
     return;
   }

@@ -4,10 +4,12 @@ import vm from "node:vm";
 import { upcomingAgenda } from "../lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "../lib/hebrew/calendar";
 import {
+  actionsForUnit,
   assessClock,
   chooseBackupMode,
   mergeBackupBlock,
   planHash,
+  relayFixes,
   shellyTimespec,
   SHELLY_SCHEDULE_LIMIT,
   type BackupAction,
@@ -106,9 +108,74 @@ test("the device script runs the plan with the server and the network gone, incl
   assert.equal(nextYear.switches.length, 0);
   assert.deepEqual([...methods].sort(), ["KVS.Get", "KVS.Set", "Switch.Set"]);
 
-  const expiry = play(expiryScript([4, 9], start + 86_400), start + 86_400 + 400, new Set());
+  const expiry = play(expiryScript([], start + 86_400, [4, 9]), start + 86_400 + 400, new Set());
   assert.deepEqual(expiry.deleted, [4, 9]);
   assert.equal(expiry.switches.length, 0);
+});
+
+test("after a power cut the device waits for a real clock, then applies the state that should already be on", () => {
+  const start = Math.floor(Date.parse("2026-11-20T14:05:00.000Z") / 1000);
+  const actions: BackupAction[] = [
+    { at: start, channel: 0, on: true },
+    { at: start + 2 * 3600, channel: 1, on: true },
+    { at: start + 30 * 3600, channel: 0, on: false },
+    { at: start + 40 * 3600, channel: 2, on: true },
+  ];
+  const end = start + 50 * 3600;
+  const restoredAt = start + 20 * 3600;
+  const code = planScript(actions, end);
+  const methods = new Set<string>();
+  const boot = play(code, 1_000_000, methods);
+  assert.equal(boot.switches.length, 0);
+  boot.advance(restoredAt);
+  assert.deepEqual(
+    boot.switches.map((item) => [item.id, item.on] as const).sort((left, right) => left[0] - right[0]),
+    [
+      [0, true],
+      [1, true],
+    ],
+  );
+  boot.advance(start + 40 * 3600 + 30);
+  assert.equal(boot.switches.some((item) => item.id === 2), true);
+
+  const scheduled = play(expiryScript(actions, end, [4, 9]), 1_000_000, new Set());
+  assert.equal(scheduled.switches.length, 0);
+  scheduled.advance(restoredAt);
+  assert.deepEqual(
+    scheduled.switches.map((item) => [item.id, item.on] as const).sort((left, right) => left[0] - right[0]),
+    [
+      [0, true],
+      [1, true],
+    ],
+  );
+  scheduled.advance(start + 40 * 3600 + 30);
+  assert.equal(scheduled.switches.filter((item) => item.id === 2).length, 0);
+  assert.equal(scheduled.deleted.length, 0);
+  const missedSchedule = play(expiryScript(actions, end, [4, 9]), start + 40 * 3600 + 30, new Set());
+  assert.ok(missedSchedule.switches.some((item) => item.id === 2 && item.on));
+  assert.ok(missedSchedule.switches.some((item) => item.id === 0 && !item.on));
+});
+
+test("missed edges stay in the plan, and the server corrects a relay that came back in the wrong state", () => {
+  const at = Date.parse("2026-11-20T15:00:00.000Z");
+  const actions: BackupAction[] = [
+    { at: Math.floor(at / 1000) - 3600, channel: 0, on: true },
+    { at: Math.floor(at / 1000) + 3600, channel: 0, on: false },
+  ];
+  const kept = actionsForUnit(
+    [
+      { deviceId: "shelly_ch0", action: "ON", runAt: new Date(at - 3600_000).toISOString() },
+      { deviceId: "shelly_ch0", action: "OFF", runAt: new Date(at + 3600_000).toISOString() },
+    ],
+    "shelly",
+    new Map([["shelly_ch0", { channel: 0, frozen: false }]]),
+    { start: new Date(at - 7200_000).toISOString(), end: new Date(at + 86_400_000).toISOString(), label: "שבת" },
+    new Date(at),
+  );
+  assert.equal(kept.length, 2);
+  assert.deepEqual(relayFixes([{ channel: 0, on: false }], actions, Math.floor(at / 1000), Math.floor(at / 1000) + 86_400), [{ channel: 0, on: true }]);
+  assert.deepEqual(relayFixes([{ channel: 0, on: true }], actions, Math.floor(at / 1000), Math.floor(at / 1000) + 86_400), []);
+  assert.deepEqual(relayFixes([{ channel: 0, on: false }], actions, Math.floor(at / 1000) + 90_000, Math.floor(at / 1000) + 86_400), []);
 });
 
 test("an admin sync writes only this Shelly's Shabbat plan, checks it, and leaves other schedules in place", async () => {

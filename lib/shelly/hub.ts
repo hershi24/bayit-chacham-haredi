@@ -8,6 +8,7 @@ import {
   getStatusCall,
   parseShellyFrame,
   readDeviceInfoId,
+  shellyCall,
   switchSetCall,
 } from "@/lib/shelly/rpc";
 import { staleRelayReport, type RelayHold } from "@/lib/shelly/relay-hold";
@@ -138,6 +139,13 @@ class ShellyHub {
       await updateDeviceState(deviceId, { lastError: message });
       return { status: "FAILED", message };
     }
+  }
+
+  async rpc(shellyId: string, method: string, params?: Record<string, unknown>): Promise<unknown> {
+    const socket = this.socketFor(shellyId);
+    if (!socket || socket.readyState !== socket.OPEN) throw new Error("התקן Shelly אינו מחובר כעת");
+    const id = this.nextId++;
+    return this.request(socket, id, shellyCall(id, method, params));
   }
 
   isOnline(shellyId: string) {

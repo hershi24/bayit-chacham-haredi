@@ -13,6 +13,7 @@ import { isNewerIso, parseCommandResponse, parseDeviceResponse, parseWsEvent } f
 import { REQUIRED_SCOPES } from "@/lib/wlte/policy";
 import { createIdempotencyKey } from "@/lib/wlte/retry";
 import { startLiveSocket } from "@/lib/wlte/socket";
+import { reconcileWlteReturn, wlteCameBack } from "@/lib/wlte/reconcile";
 import { TokenManager } from "@/lib/wlte/token-manager";
 
 type Gateway = {
@@ -212,7 +213,7 @@ class Bridge {
   async command(input: {
     deviceId: string;
     action: RelayAction;
-    source: Extract<AuditSource, "web" | "ivr">;
+    source: Extract<AuditSource, "web" | "ivr" | "system">;
     actor: string;
   }): Promise<{ device: DeviceView; commandId: string | null; status: string; idempotencyKey: string; requestId: string | null }> {
     await this.ready;
@@ -300,7 +301,7 @@ class Bridge {
     input: {
       deviceId: string;
       action: RelayAction;
-      source: Extract<AuditSource, "web" | "ivr">;
+      source: Extract<AuditSource, "web" | "ivr" | "system">;
       actor: string;
     },
     current: DeviceView,
@@ -435,6 +436,9 @@ class Bridge {
     }
     publishDevice(view);
     this.pushStatus();
+    if (wlteCameBack(before, event)) {
+      void reconcileWlteReturn(event.deviceId).catch((error: unknown) => this.note(error));
+    }
   }
 
   private note(error: unknown) {

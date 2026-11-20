@@ -355,6 +355,11 @@ export async function replaceProgramRuns(programId: string, runs: ProgramRunInpu
   return sqlite.replaceProgramRuns(programId, runs);
 }
 
+export async function listDeviceProgramRuns(deviceId: string, fromIso: string, toIso: string) {
+  if (remoteOn()) return remote.listDeviceProgramRuns(deviceId, fromIso, toIso);
+  return sqlite.listDeviceProgramRuns(deviceId, fromIso, toIso);
+}
+
 export async function listProgramRuns(tenantId: string) {
   if (remoteOn()) return remote.listProgramRuns(tenantId);
   return sqlite.listProgramRuns(tenantId);

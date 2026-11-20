@@ -43,6 +43,11 @@ export async function syncTenantPrograms(tenantId: string, now = new Date()) {
   );
   await replaceProgramRuns(looseId(tenantId), runsFor("שעון", loose, allowed, now));
   refreshed.set(tenantId, Date.now());
+  void import("@/lib/shelly/backup-sync")
+    .then((mod) => mod.syncShellyBackupsForTenant(tenantId, now))
+    .catch((error: unknown) => {
+      console.error("[pikud] shelly backup", error);
+    });
 }
 
 export async function syncProgramsIfStale() {

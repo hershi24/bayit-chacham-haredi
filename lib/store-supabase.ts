@@ -15,6 +15,7 @@ import type { PlanItem } from "@/lib/devices/upcoming";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { presentDevice, type StatePatch } from "@/lib/store-sqlite";
 import type { AuditSource, AuditView, CallerNumber, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
+import type { ShellyBackupRow } from "@/lib/shelly/backup-record";
 import { shellyIdsMatch, shellyMac } from "@/lib/shelly/ids";
 import { isNewerIso } from "@/lib/wlte/parse";
 
@@ -1675,4 +1676,90 @@ export async function failSchedule(id: string, detail: string) {
     })
     .eq("id", id);
   if (result.error) fail(result.error, "עדכון טיימר נכשל");
+}
+
+function missingBackup(error: DbError) {
+  return error.code === "42P01" || error.code === "PGRST205" || /shelly_backups/i.test(error.message);
+}
+
+export async function getShellyBackup(shellyId: string): Promise<ShellyBackupRow | null> {
+  await ready();
+  const result = await client().from("shelly_backups").select("*").eq("shelly_id", shellyId).maybeSingle();
+  if (result.error) {
+    if (missingBackup(result.error)) return null;
+    fail(result.error, "לא ניתן לקרוא גיבוי Shelly");
+  }
+  return result.data ? mapShellyBackup(result.data) : null;
+}
+
+export async function listShellyBackups(tenantId: string): Promise<ShellyBackupRow[]> {
+  await ready();
+  const result = await client().from("shelly_backups").select("*").eq("tenant_id", tenantId).order("shelly_id");
+  if (result.error) {
+    if (missingBackup(result.error)) return [];
+    fail(result.error, "לא ניתן לקרוא גיבוי Shelly");
+  }
+  return (result.data ?? []).map(mapShellyBackup);
+}
+
+export async function saveShellyBackup(row: ShellyBackupRow): Promise<ShellyBackupRow> {
+  await ready();
+  const result = await client().from("shelly_backups").upsert(shellyBackupRecord(row), { onConflict: "shelly_id" });
+  if (result.error) {
+    if (missingBackup(result.error)) throw new HttpError(500, "טבלת גיבוי Shelly חסרה. הריצו את supabase/migrations/20261120_shelly_backup.sql");
+    fail(result.error, "שמירת גיבוי Shelly נכשלה");
+  }
+  return row;
+}
+
+function shellyBackupRecord(row: ShellyBackupRow) {
+  return {
+    shelly_id: row.shellyId,
+    tenant_id: row.tenantId,
+    status: row.status,
+    mode: row.mode,
+    window_start: row.windowStart,
+    window_end: row.windowEnd,
+    window_label: row.windowLabel,
+    plan_hash: row.planHash,
+    action_count: row.actionCount,
+    schedule_ids: JSON.stringify(row.scheduleIds),
+    synced_at: row.syncedAt,
+    verified_at: row.verifiedAt,
+    error: row.error,
+    attempts: row.attempts,
+    alerted_at: row.alertedAt,
+    updated_at: row.updatedAt,
+  };
+}
+
+function mapShellyBackup(row: Record<string, unknown>): ShellyBackupRow {
+  let scheduleIds: number[] = [];
+  const raw = row.schedule_ids;
+  try {
+    const parsed = JSON.parse(typeof raw === "string" ? raw : "[]") as unknown;
+    if (Array.isArray(parsed)) scheduleIds = parsed.filter((id): id is number => typeof id === "number");
+  } catch {
+    scheduleIds = [];
+  }
+  const status = String(row.status ?? "idle");
+  const mode = row.mode == null ? null : String(row.mode);
+  return {
+    shellyId: String(row.shelly_id),
+    tenantId: String(row.tenant_id),
+    status: status === "verified" || status === "failed" || status === "pending" ? status : "idle",
+    mode: mode === "schedule" || mode === "script" ? mode : null,
+    windowStart: row.window_start == null ? null : String(row.window_start),
+    windowEnd: row.window_end == null ? null : String(row.window_end),
+    windowLabel: row.window_label == null ? null : String(row.window_label),
+    planHash: row.plan_hash == null ? null : String(row.plan_hash),
+    actionCount: Number(row.action_count ?? 0),
+    scheduleIds,
+    syncedAt: row.synced_at == null ? null : String(row.synced_at),
+    verifiedAt: row.verified_at == null ? null : String(row.verified_at),
+    error: row.error == null ? null : String(row.error),
+    attempts: Number(row.attempts ?? 0),
+    alertedAt: row.alerted_at == null ? null : String(row.alerted_at),
+    updatedAt: String(row.updated_at ?? ""),
+  };
 }

@@ -1,5 +1,6 @@
 import { HttpError } from "@/lib/http-error";
 import { syncProgramsIfStale } from "@/lib/programs/sync";
+import { shellyBackupCoversRun, syncShellyBackups } from "@/lib/shelly/backup-sync";
 import { failProgramRun, failSchedule, finishProgramRun, finishSchedule, getDevice, listDueProgramRuns, listDueSchedules } from "@/lib/store";
 import { getBridge } from "@/lib/wlte/bridge";
 
@@ -25,6 +26,11 @@ export async function runDueSchedules() {
   } catch (error) {
     console.error("[pikud] programs", error);
   }
+  try {
+    await syncShellyBackups();
+  } catch (error) {
+    console.error("[pikud] shelly backup", error);
+  }
   const due = await listDueSchedules();
   const bridge = getBridge();
   for (const job of due) {
@@ -45,6 +51,10 @@ export async function runDueSchedules() {
   }
   for (const job of await listDueProgramRuns()) {
     try {
+      if (await shellyBackupCoversRun(job.deviceId, job.runAt)) {
+        await finishProgramRun(job.id);
+        continue;
+      }
       if ((await getDevice(job.deviceId))?.frozen) continue;
       const result = await bridge.command({
         deviceId: job.deviceId,

@@ -21,6 +21,7 @@ import type {
   TenantView,
   UserView,
 } from "@/lib/types";
+import type { ShellyBackupRow } from "@/lib/shelly/backup-record";
 import { shellyIdsMatch, shellyMac } from "@/lib/shelly/ids";
 import { isNewerIso } from "@/lib/wlte/parse";
 
@@ -266,6 +267,30 @@ function migrate(database: DatabaseSync) {
   addDeviceColumn(database, "frozen", "frozen INTEGER NOT NULL DEFAULT 0");
   addDeviceColumn(database, "sort_order", "sort_order INTEGER NOT NULL DEFAULT 0");
   ensureAccessTables(database);
+  ensureShellyBackups(database);
+}
+
+function ensureShellyBackups(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS shelly_backups (
+      shelly_id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      mode TEXT,
+      window_start TEXT,
+      window_end TEXT,
+      window_label TEXT,
+      plan_hash TEXT,
+      action_count INTEGER NOT NULL DEFAULT 0,
+      schedule_ids TEXT NOT NULL DEFAULT '[]',
+      synced_at TEXT,
+      verified_at TEXT,
+      error TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      alerted_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+  `);
 }
 
 function ensureAccessTables(database: DatabaseSync) {
@@ -1456,6 +1481,91 @@ export function failProgramRun(id: string, detail: string) {
        WHERE id = ?`,
     )
     .run(detail.slice(0, 300), now, id);
+}
+
+export function getShellyBackup(shellyId: string): ShellyBackupRow | null {
+  const row = db().prepare("SELECT * FROM shelly_backups WHERE shelly_id = ?").get(shellyId) as Row | undefined;
+  return row ? mapShellyBackup(row) : null;
+}
+
+export function listShellyBackups(tenantId: string): ShellyBackupRow[] {
+  const rows = db().prepare("SELECT * FROM shelly_backups WHERE tenant_id = ? ORDER BY shelly_id").all(tenantId) as Row[];
+  return rows.map(mapShellyBackup);
+}
+
+export function saveShellyBackup(row: ShellyBackupRow): ShellyBackupRow {
+  db()
+    .prepare(
+      `INSERT INTO shelly_backups (
+        shelly_id, tenant_id, status, mode, window_start, window_end, window_label, plan_hash,
+        action_count, schedule_ids, synced_at, verified_at, error, attempts, alerted_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(shelly_id) DO UPDATE SET
+        tenant_id = excluded.tenant_id,
+        status = excluded.status,
+        mode = excluded.mode,
+        window_start = excluded.window_start,
+        window_end = excluded.window_end,
+        window_label = excluded.window_label,
+        plan_hash = excluded.plan_hash,
+        action_count = excluded.action_count,
+        schedule_ids = excluded.schedule_ids,
+        synced_at = excluded.synced_at,
+        verified_at = excluded.verified_at,
+        error = excluded.error,
+        attempts = excluded.attempts,
+        alerted_at = excluded.alerted_at,
+        updated_at = excluded.updated_at`,
+    )
+    .run(
+      row.shellyId,
+      row.tenantId,
+      row.status,
+      row.mode,
+      row.windowStart,
+      row.windowEnd,
+      row.windowLabel,
+      row.planHash,
+      row.actionCount,
+      JSON.stringify(row.scheduleIds),
+      row.syncedAt,
+      row.verifiedAt,
+      row.error,
+      row.attempts,
+      row.alertedAt,
+      row.updatedAt,
+    );
+  return row;
+}
+
+function mapShellyBackup(row: Row): ShellyBackupRow {
+  let scheduleIds: number[] = [];
+  try {
+    const parsed = JSON.parse(text(row, "schedule_ids") || "[]") as unknown;
+    if (Array.isArray(parsed)) scheduleIds = parsed.filter((id): id is number => typeof id === "number");
+  } catch {
+    scheduleIds = [];
+  }
+  const status = text(row, "status");
+  const mode = textOrNull(row, "mode");
+  return {
+    shellyId: text(row, "shelly_id"),
+    tenantId: text(row, "tenant_id"),
+    status: status === "verified" || status === "failed" || status === "pending" ? status : "idle",
+    mode: mode === "schedule" || mode === "script" ? mode : null,
+    windowStart: textOrNull(row, "window_start"),
+    windowEnd: textOrNull(row, "window_end"),
+    windowLabel: textOrNull(row, "window_label"),
+    planHash: textOrNull(row, "plan_hash"),
+    actionCount: Number(row.action_count ?? 0),
+    scheduleIds,
+    syncedAt: textOrNull(row, "synced_at"),
+    verifiedAt: textOrNull(row, "verified_at"),
+    error: textOrNull(row, "error"),
+    attempts: Number(row.attempts ?? 0),
+    alertedAt: textOrNull(row, "alerted_at"),
+    updatedAt: text(row, "updated_at"),
+  };
 }
 
 function mapRun(row: Row): ProgramRun {

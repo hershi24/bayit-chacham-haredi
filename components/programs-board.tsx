@@ -12,7 +12,7 @@ import { api } from "@/lib/client-api";
 import type { MonthDay } from "@/lib/hebrew/calendar";
 import { occurrencesOn, type Occurrence } from "@/lib/programs/occurrences";
 import { repeatCaption, weekdayOf } from "@/lib/programs/weekdays";
-import { israelDate, shiftDate } from "@/lib/time";
+import { formatIsrael, israelDate, shiftDate } from "@/lib/time";
 import type { TenantView } from "@/lib/types";
 import { cn } from "cn";
 
@@ -20,6 +20,17 @@ type Clock = PlannerClock & { hebrew: string };
 type Program = PlannerProgram & {
   onTime: string | null;
   offTime: string | null;
+};
+
+type ShellyBackup = {
+  shellyId: string;
+  name: string;
+  status: "idle" | "pending" | "verified" | "failed";
+  mode: "schedule" | "script" | null;
+  windowLabel: string | null;
+  actionCount: number;
+  verifiedAt: string | null;
+  error: string | null;
 };
 
 type Board = {
@@ -30,6 +41,7 @@ type Board = {
   programs: Program[];
   clocks: Clock[];
   month: { year: number; month: number; hebrew: string; days: MonthDay[] };
+  shellyBackup?: ShellyBackup[];
 };
 
 type Picker = { tenants: TenantView[]; programs: null };
@@ -262,6 +274,37 @@ export function ProgramsBoard() {
           ＋ תוכנית חדשה
         </Button>
       </div>
+      {board.shellyBackup?.length ? (
+        <ul className="mb-3 grid gap-2 md:mb-6">
+          {board.shellyBackup.map((item) => (
+            <li
+              key={item.shellyId}
+              className={`rounded-2xl border px-4 py-3 ${item.status === "failed" ? "border-destructive/50 bg-destructive/5" : item.status === "verified" ? "border-emerald-600/40 bg-emerald-600/5" : "bg-card"}`}
+            >
+              <p className="text-sm font-semibold">{item.name}</p>
+              <p className="mt-1 text-[13px] leading-5">
+                {item.status === "verified"
+                  ? item.actionCount
+                    ? "תוכניות השבת והחג נשמרו ואומתו בהתקן עצמו."
+                    : "אין פעולות לשבת ולחג הקרובים, ואין על ההתקן תוכנית גיבוי ישנה."
+                  : item.status === "failed"
+                    ? "הסנכרון להתקן לא הושלם. המערכת תנסה שוב אוטומטית."
+                    : item.status === "pending"
+                      ? "שולח את תוכניות השבת והחג להתקן."
+                      : "תוכניות השבת והחג יישמרו בהתקן לפני הכניסה."}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {item.windowLabel ? `${item.windowLabel}. ` : ""}
+                {item.status === "verified" && item.actionCount
+                  ? `${item.actionCount} פעולות${item.mode === "script" ? " בזיכרון המקומי של ההתקן" : " בשעוני ההתקן"}. `
+                  : ""}
+                {item.verifiedAt ? `סנכרון אחרון ${formatIsrael(item.verifiedAt)}. ` : ""}
+                {item.error ?? ""}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="mb-3 grid grid-cols-3 gap-2 md:mb-6 md:gap-3">
         <div className="rounded-xl border bg-card px-2 py-2 md:rounded-2xl md:px-5 md:py-4">
           <p className="text-[10px] leading-tight text-muted-foreground md:text-xs">תוכניות שמורות</p>

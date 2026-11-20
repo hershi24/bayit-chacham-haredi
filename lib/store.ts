@@ -360,6 +360,21 @@ export async function listProgramRuns(tenantId: string) {
   return sqlite.listProgramRuns(tenantId);
 }
 
+export async function getShellyBackup(shellyId: string) {
+  if (remoteOn()) return remote.getShellyBackup(shellyId);
+  return sqlite.getShellyBackup(shellyId);
+}
+
+export async function listShellyBackups(tenantId: string) {
+  if (remoteOn()) return remote.listShellyBackups(tenantId);
+  return sqlite.listShellyBackups(tenantId);
+}
+
+export async function saveShellyBackup(row: Parameters<typeof sqlite.saveShellyBackup>[0]) {
+  if (remoteOn()) return remote.saveShellyBackup(row);
+  return sqlite.saveShellyBackup(row);
+}
+
 export async function listDueProgramRuns(now = new Date().toISOString()) {
   if (remoteOn()) return remote.listDueProgramRuns(now);
   return sqlite.listDueProgramRuns(now);

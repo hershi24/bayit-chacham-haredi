@@ -602,6 +602,17 @@
   color: var(--ink);
 }
 
+.ksh-landing .plan-points li.point-hero {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--green-soft);
+}
+
+.ksh-landing .plan-points li.point-hero svg {
+  background: white;
+  color: var(--green);
+}
+
 .ksh-landing .phone {
   width: min(380px, 100%);
   margin-inline: auto;

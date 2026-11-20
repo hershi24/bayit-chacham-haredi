@@ -754,7 +754,7 @@ function CustomerEditorForm({
                           <span dir="ltr" className="block truncate text-left font-mono text-xs text-muted-foreground">
                             {device.deviceId}
                           </span>
-                          {logId === device.deviceId ? <DeviceChangeLog deviceId={device.deviceId} /> : null}
+                          {logId === device.deviceId ? <DeviceChangeLog deviceId={device.deviceId} tenantId={tenant.id} /> : null}
                         </span>
                         <span className="flex shrink-0 flex-wrap justify-end gap-1">
                           <Button type="button" variant="outline" size="sm" disabled={socketBusy !== null} onClick={() => startRename(device)}>
@@ -908,13 +908,13 @@ function CustomerEditorForm({
   );
 }
 
-function DeviceChangeLog({ deviceId }: { deviceId: string }) {
+function DeviceChangeLog({ deviceId, tenantId }: { deviceId: string; tenantId: string }) {
   const [entries, setEntries] = useState<AuditView[] | null>(null);
   useEffect(() => {
-    void api<{ entries: AuditView[] }>("/api/audit")
-      .then((payload) => setEntries(payload.entries.filter((entry) => entry.deviceId === deviceId).slice(0, 8)))
+    void api<{ entries: AuditView[] | null }>(`/api/audit?tenantId=${encodeURIComponent(tenantId)}`)
+      .then((payload) => setEntries((payload.entries ?? []).filter((entry) => entry.deviceId === deviceId).slice(0, 8)))
       .catch(() => setEntries([]));
-  }, [deviceId]);
+  }, [deviceId, tenantId]);
   if (!entries) return <p className="text-xs text-muted-foreground">טוען יומן…</p>;
   if (!entries.length) return <p className="text-xs text-muted-foreground">אין שינויים אחרונים ביומן של ההתקן.</p>;
   return (

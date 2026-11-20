@@ -1127,17 +1127,19 @@ export async function addAudit(entry: {
   if (removed.error) fail(removed.error, "כתיבת יומן נכשלה");
 }
 
-export async function listAudit(user: { role: Role; tenantId: string | null }, limit = 100): Promise<AuditView[]> {
+export async function listAudit(user: { role: Role; tenantId: string | null }, limit = 100, onlyTenant?: string | null): Promise<AuditView[]> {
   await ready();
+  const tenantId = user.role === "admin" ? onlyTenant || null : user.tenantId;
   let deviceIds: string[] | null = null;
   const names = new Map<string, string>();
-  if (user.role !== "admin") {
-    if (!user.tenantId) return [];
-    const owned = await client().from("devices").select("device_id, name").eq("tenant_id", user.tenantId);
+  if (tenantId) {
+    const owned = await client().from("devices").select("device_id, name").eq("tenant_id", tenantId);
     if (owned.error) fail(owned.error, "לא ניתן לקרוא יומן");
     for (const row of owned.data ?? []) names.set(String(row.device_id), String(row.name));
     deviceIds = [...names.keys()];
     if (!deviceIds.length) return [];
+  } else if (user.role !== "admin") {
+    return [];
   }
   let query = client().from("audit_log").select("*").order("at", { ascending: false }).limit(limit);
   if (deviceIds) query = query.in("device_id", deviceIds);

@@ -1441,6 +1441,18 @@ export function replaceProgramRuns(programId: string, runs: ProgramRunInput[]) {
   }
 }
 
+export function listDeviceProgramRuns(deviceId: string, fromIso: string, toIso: string): Array<{ action: "ON" | "OFF"; runAt: string }> {
+  const rows = db()
+    .prepare(
+      `SELECT action, run_at
+       FROM program_runs
+       WHERE device_id = ? AND run_at >= ? AND run_at <= ?
+       ORDER BY run_at`,
+    )
+    .all(deviceId, fromIso, toIso) as Row[];
+  return rows.map((row) => ({ action: text(row, "action") === "OFF" ? "OFF" : "ON", runAt: text(row, "run_at") }));
+}
+
 export function listProgramRuns(tenantId: string): ProgramRun[] {
   const rows = db()
     .prepare(

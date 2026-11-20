@@ -76,12 +76,18 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
 
   const loadAudit = useCallback(async () => {
     try {
-      const payload = await api<{ entries: AuditView[] }>("/api/audit");
-      setAudit(payload.entries);
+      const query = focusTenant ? `?tenantId=${encodeURIComponent(focusTenant)}` : "";
+      const payload = await api<{ entries: AuditView[] | null }>(`/api/audit${query}`);
+      setAudit(payload.entries ?? []);
     } catch {
       setAudit((current) => current ?? []);
     }
-  }, []);
+  }, [focusTenant]);
+
+  useEffect(() => {
+    if (!focusTenant) return;
+    void loadAudit();
+  }, [focusTenant, loadAudit]);
 
   const load = useCallback(async (refresh: boolean) => {
     void loadAudit();
@@ -412,7 +418,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
     <div className="min-w-0">
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h2 className="text-[13px] font-medium text-muted-foreground">פעילות אחרונה</h2>
-        <Link href="/audit" className="shrink-0 text-[12px] text-primary hover:underline">
+        <Link href={focusTenant ? `/audit?tenantId=${encodeURIComponent(focusTenant)}` : "/audit"} className="shrink-0 text-[12px] text-primary hover:underline">
           ליומן
         </Link>
       </div>

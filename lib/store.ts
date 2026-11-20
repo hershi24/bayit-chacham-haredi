@@ -295,9 +295,9 @@ export async function addAudit(entry: Parameters<typeof sqlite.addAudit>[0]) {
   return sqlite.addAudit(entry);
 }
 
-export async function listAudit(user: { role: Role; tenantId: string | null }, limit = 100) {
-  if (remoteOn()) return remote.listAudit(user, limit);
-  return sqlite.listAudit(user, limit);
+export async function listAudit(user: { role: Role; tenantId: string | null }, limit = 100, onlyTenant?: string | null) {
+  if (remoteOn()) return remote.listAudit(user, limit, onlyTenant);
+  return sqlite.listAudit(user, limit, onlyTenant);
 }
 
 export async function saveSchedule(input: { deviceId: string; kind: ScheduleKind; runAt: string }) {

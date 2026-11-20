@@ -1032,28 +1032,29 @@ export function addAudit(entry: {
     .run();
 }
 
-export function listAudit(user: { role: Role; tenantId: string | null }, limit = 100): AuditView[] {
-  const rows =
-    user.role === "admin"
-      ? (db()
-          .prepare(
-            `SELECT a.*, d.name AS device_name
-             FROM audit_log a
-             LEFT JOIN devices d ON d.device_id = a.device_id
-             ORDER BY a.at DESC
-             LIMIT ?`,
-          )
-          .all(limit) as Row[])
-      : (db()
-          .prepare(
-            `SELECT a.*, d.name AS device_name
-             FROM audit_log a
-             JOIN devices d ON d.device_id = a.device_id
-             WHERE d.tenant_id = ?
-             ORDER BY a.at DESC
-             LIMIT ?`,
-          )
-          .all(user.tenantId, limit) as Row[]);
+export function listAudit(user: { role: Role; tenantId: string | null }, limit = 100, onlyTenant?: string | null): AuditView[] {
+  const tenantId = user.role === "admin" ? onlyTenant || null : user.tenantId;
+  if (!tenantId && user.role !== "admin") return [];
+  const rows = tenantId
+    ? (db()
+        .prepare(
+          `SELECT a.*, d.name AS device_name
+           FROM audit_log a
+           JOIN devices d ON d.device_id = a.device_id
+           WHERE d.tenant_id = ?
+           ORDER BY a.at DESC
+           LIMIT ?`,
+        )
+        .all(tenantId, limit) as Row[])
+    : (db()
+        .prepare(
+          `SELECT a.*, d.name AS device_name
+           FROM audit_log a
+           LEFT JOIN devices d ON d.device_id = a.device_id
+           ORDER BY a.at DESC
+           LIMIT ?`,
+        )
+        .all(limit) as Row[]);
   return rows.map((row) => ({
     id: text(row, "id"),
     at: text(row, "at"),

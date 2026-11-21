@@ -1,4 +1,5 @@
 import type { MenuDevice } from "@/lib/ivr/flow";
+import { speechFor } from "@/lib/ivr/speech";
 
 export type VoiceCommand =
   | { kind: "on"; device: MenuDevice }
@@ -170,16 +171,11 @@ export function parseVoiceCommand(transcript: string, devices: MenuDevice[]): Vo
   return { kind: "timer", device: best.device, minutes };
 }
 
-/** Phase-one reply: say what was understood. Do not claim a device changed. */
+/** Words for a command that does not switch a relay: a question, or a state check. */
 export function voiceCheckSpeech(command: VoiceCommand): string {
   if (command.kind === "clarify") return command.speech;
-  const name = command.device.name;
   if (command.kind === "status") {
-    const state = command.device.relayOn === true ? "פועל כעת" : command.device.relayOn === false ? "כבוי כעת" : "מצבו אינו ידוע";
-    return `${name} ${state}. לא בוצע שינוי`;
+    return speechFor({ kind: "status", relayOn: command.device.relayOn, name: command.device.name });
   }
-  if (command.device.connectivity === "OFFLINE") return `זיהיתי את ${name}, והוא אינו מחובר. לא בוצע שינוי`;
-  if (command.kind === "off") return `זיהיתי לכבות את ${name}. בשלב הבדיקה ההתקן לא כובה`;
-  if (command.kind === "timer") return `זיהיתי טיימר של ${command.minutes} דקות על ${name}. בשלב הבדיקה ההתקן לא הופעל`;
-  return `זיהיתי להדליק את ${name}. בשלב הבדיקה ההתקן לא הופעל`;
+  return speechFor({ kind: "failed" });
 }

@@ -6,6 +6,7 @@ import { answerSettings } from "@/lib/ivr/settings";
 import { allDoneMessage, allIdleMessage } from "@/lib/ivr/settings-menu";
 import { speechFor } from "@/lib/ivr/speech";
 import { awaitStatusCheck, ensureStatusCheck } from "@/lib/ivr/status-check";
+import type { VoiceCommand } from "@/lib/ivr/voice-command";
 import { answerVoice } from "@/lib/ivr/voice-turn";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
 import { listIvrTargets, saveSchedule } from "@/lib/store";
@@ -80,6 +81,42 @@ function sendCommand(deviceId: string, action: "ON" | "OFF", actor: string) {
     });
 }
 
+async function freshDevice(device: MenuDevice): Promise<MenuDevice> {
+  try {
+    const live = await awaitStatusCheck(device.deviceId);
+    if (!live) return device;
+    return { ...device, relayOn: live.relayOn, connectivity: live.connectivity };
+  } catch (error) {
+    if (isWlteError(error) && error.code === "DEVICE_OFFLINE") return { ...device, connectivity: "OFFLINE" };
+    return device;
+  }
+}
+
+/** Same on, off, and timer path as the keypad. A question or an unclear sentence does not switch a relay. */
+async function performVoice(command: VoiceCommand, allowed: MenuDevice[], frozen: Set<string>, actor: string) {
+  if (command.kind === "clarify") return command.speech;
+  if (!allowed.some((item) => item.deviceId === command.device.deviceId)) return speechFor({ kind: "unauthorized" });
+  const device = await freshDevice(command.device);
+  if (command.kind === "status") return speechFor({ kind: "status", relayOn: device.relayOn, name: device.name });
+  if (frozen.has(device.deviceId)) return speechFor({ kind: "frozen", name: device.name });
+  if (command.kind === "on" || command.kind === "off") {
+    if (device.connectivity === "OFFLINE") return speechFor({ kind: "offline", name: device.name });
+    sendCommand(device.deviceId, command.kind === "on" ? "ON" : "OFF", actor);
+    return speechFor({ kind: command.kind === "on" ? "on-success" : "off-success", name: device.name });
+  }
+  if (device.relayOn !== true) {
+    if (device.connectivity === "OFFLINE") return speechFor({ kind: "offline", name: device.name });
+    sendCommand(device.deviceId, "ON", actor);
+  }
+  await saveSchedule({
+    deviceId: device.deviceId,
+    kind: "timer_off",
+    runAt: new Date(Date.now() + command.minutes * 60_000).toISOString(),
+  });
+  const lead = device.relayOn === true ? `${device.name} פועל` : `${device.name} הופעל`;
+  return `${lead}, הוא יכבה בעוד ${command.minutes} דקות`;
+}
+
 export async function handleMenu(request: Request) {
   const input = await incoming(request);
   if (input.values.hangup === "yes") return reply(input.format, "noop=hangup\n");
@@ -103,6 +140,7 @@ export async function handleMenu(request: Request) {
     devices,
     callId: input.values.apicallid || "",
     phone: input.phone,
+    perform: (command) => performVoice(command, devices, frozen, caller(input.phone)),
   });
   if (voiced) return reply(input.format, voiced);
 

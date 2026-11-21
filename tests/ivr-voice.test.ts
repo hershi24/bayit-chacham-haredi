@@ -150,7 +150,7 @@ test("star records on the current menu and a clear sentence switches the socket"
     },
     transcribe: async () => {
       transcripts += 1;
-      return script;
+      return script || null;
     },
     remove: async (path) => {
       removed.push(path);
@@ -175,10 +175,37 @@ test("star records on the current menu and a clear sentence switches the socket"
     assert.deepEqual(removed, ["ivr2:/6/v1123.wav"]);
     await waitForRelay("rct063285302", true);
 
+    const loadsAfter = loads.length;
     const again = await yemotPost({ pikud_device: "*", ApiCallId: "555", pikud_v1: "/6/v1123.wav" });
-    assert.equal(await again.text(), heardText);
+    const againText = await again.text();
+    assert.match(againText, /דבר אליי:/);
+    assert.match(againText, /pikud_v2,no,record,/);
+    assert.equal(againText.includes("הופעל בהצלחה"), false);
     assert.equal(transcripts, 1);
+    assert.equal(loads.length, loadsAfter);
     assert.equal((await getDevice("rct063285302"))?.relayOn, true);
+
+    script = "";
+    const missed = await yemotPost({ pikud_device: "*", ApiCallId: "559", pikud_v1: "/6/v1127.wav" });
+    assert.match(await missed.text(), /לא הצלחתי לזהות את הדיבור/);
+    const missedAgain = await yemotPost({ pikud_device: "*", ApiCallId: "559", pikud_v1: "/6/v1127.wav" });
+    const missedAgainText = await missedAgain.text();
+    assert.match(missedAgainText, /דבר אליי:/);
+    assert.match(missedAgainText, /pikud_v2,no,record,/);
+    assert.equal(missedAgainText.includes("לא הצלחתי לזהות"), false);
+
+    script = "כבה את האולם";
+    const second = await yemotPost({
+      pikud_device: "*",
+      ApiCallId: "559",
+      pikud_v1: "/6/v1127.wav",
+      pikud_v2: "/6/v1128.wav",
+    });
+    assert.match(await second.text(), /שקע אולם נכבה בהצלחה/);
+    await waitForRelay("rct063285302", false);
+    script = "תדליק את האולם";
+    await yemotPost({ pikud_device: "*", ApiCallId: "560", pikud_v1: "/6/v1129.wav" });
+    await waitForRelay("rct063285302", true);
 
     script = "תכבה לי את כל האורות";
     const group = await yemotPost({ pikud_device: "*", ApiCallId: "556", pikud_v1: "/6/v1124.wav" });

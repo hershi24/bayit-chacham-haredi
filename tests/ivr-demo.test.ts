@@ -25,7 +25,10 @@ test("demo opens with the same device list as the live line", () => {
   const live = decideMenu(home.devices, {});
   assert.equal(live.type, "read");
   assert.equal(text(demoAnswer(home, {})), live.type === "read" ? live.message : "");
-  assert.match(text(demoAnswer(home, {})), /^לדוד שמש הקש אחד, למזגן בסלון הקש שתיים, לתאורת חצר הקש שלוש ולהגדרות הקש אפס$/);
+  assert.match(
+    text(demoAnswer(home, {})),
+    /^לדוד שמש הקש אחד, למזגן בסלון הקש שתיים, לתאורת חצר הקש שלוש ולהגדרות הקש אפס\. לפקודה קולית הקש כוכבית$/,
+  );
 });
 
 test("choosing a device reads its menu right away and switches it", () => {

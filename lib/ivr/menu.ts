@@ -6,6 +6,7 @@ import { answerSettings } from "@/lib/ivr/settings";
 import { allDoneMessage, allIdleMessage } from "@/lib/ivr/settings-menu";
 import { speechFor } from "@/lib/ivr/speech";
 import { awaitStatusCheck, ensureStatusCheck } from "@/lib/ivr/status-check";
+import { answerVoice } from "@/lib/ivr/voice-turn";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
 import { listIvrTargets, saveSchedule } from "@/lib/store";
 import { getBridge } from "@/lib/wlte/bridge";
@@ -96,6 +97,14 @@ export async function handleMenu(request: Request) {
     }))
     .slice(0, 9);
   if (!devices.length) return reply(input.format, yemotSpeak("המספר הזה לא משויך לשקע"));
+
+  const voiced = await answerVoice({
+    values: input.values,
+    devices,
+    callId: input.values.apicallid || "",
+    phone: input.phone,
+  });
+  if (voiced) return reply(input.format, voiced);
 
   const tenantId = targets[0]?.tenantId;
   if (present(input.values.pikud_device) === "0") {

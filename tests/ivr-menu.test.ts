@@ -69,8 +69,12 @@ test("reads the sockets and then the action that matches the relay", () => {
   assert.match(list.message, /לתאורה הקש שתיים/);
   assert.match(list.message, /ולהגדרות הקש אפס/);
   assert.equal(list.message.includes(", להגדרות"), false);
-  assert.equal(list.allowed, "012");
+  assert.equal(list.allowed, "*012");
+  assert.equal(list.type === "read" && list.allowStar, true);
+  assert.match(list.message, /לפקודה קולית הקש כוכבית/);
   const spoken = yemotRead(list);
+  assert.equal(readSlots(spoken)[6], "");
+  assert.equal(readSlots(spoken)[9].includes("*"), true);
   assert.equal(spoken.startsWith("read=t-"), true);
   assert.equal(spoken.includes("=&"), false);
   assert.match(spoken, /,No,/);
@@ -87,6 +91,7 @@ test("reads the sockets and then the action that matches the relay", () => {
   assert.match(off.message, /לתוכניות הקש ארבע/);
   assert.equal(off.message.includes("לכיבוי הקש"), false);
   assert.equal(off.allowed, "1234");
+  assert.equal(readSlots(yemotRead(off))[6], "yes");
   assertMenuOptions(off.message);
 
   const on = decideMenu([ac, light], { device: "2" });

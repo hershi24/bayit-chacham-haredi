@@ -23,8 +23,13 @@ export function yemotRead(input: {
    * Default 2 matches the rest of the menu. Use 1 for one-shot wait lines.
    */
   attempts?: number;
+  /**
+   * Yemot's 7th keypress value blocks * when it is `yes` (the default we send).
+   * Leave it empty only where * is a real menu choice.
+   */
+  allowStar?: boolean;
 }): string {
-  // Keypress list: field, reuse, max, min, seconds, playback, then confirm last.
+  // Keypress list: field, reuse, max, min, seconds, playback, block *, then confirm last.
   // max and min are the capture length. playback is how Yemot speaks the buffer:
   // No is silent, Number speaks a number and drops a leading zero.
   // The final no is confirm, which only skips "לאישור הקישו אחת".
@@ -37,7 +42,7 @@ export function yemotRead(input: {
     String(input.min),
     String(input.seconds ?? 8),
     playback,
-    "yes",
+    input.allowStar ? "" : "yes",
     "",
     "",
     input.allowed ?? "",
@@ -47,6 +52,25 @@ export function yemotRead(input: {
     "",
     "no",
   ].join(",");
+  return `read=t-${cleanYemotText(input.message)}=${capture}\n`;
+}
+
+/** Speak a line and then capture the next key, on the same API extension. */
+export function yemotContinue(message: string, read: string): string {
+  return `id_list_message=t-${cleanYemotText(message)}&${read.trim()}\n`;
+}
+
+/**
+ * Record on the current extension. Value order matches Yemot's `record` read:
+ * name, reuse, record, folder, file, skip the confirm menu, save on hangup,
+ * append, minimum seconds, maximum seconds.
+ * An empty folder keeps the file on this extension (or `api_dir` when that is set).
+ * `no` in the confirm slot ends the recording on # without the extra menu.
+ * Record mode has no silence timeout; the maximum seconds is what stops a stuck call.
+ */
+export function yemotRecord(input: { message: string; field: string; fileName: string; maxSeconds?: number }): string {
+  const fileName = input.fileName.replace(/[^a-z0-9]/gi, "").slice(0, 24) || "voice";
+  const capture = [input.field, "no", "record", "", fileName, "no", "", "no", "1", String(input.maxSeconds ?? 8)].join(",");
   return `read=t-${cleanYemotText(input.message)}=${capture}\n`;
 }
 

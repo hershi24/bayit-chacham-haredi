@@ -33,6 +33,8 @@ export type MenuRead = {
   mode?: "No" | "Number" | "Time" | "Digits" | "Date";
   seconds?: number;
   allowEmpty?: boolean;
+  /** Yemot blocks * unless this is set. Only the socket list turns it on. */
+  allowStar?: boolean;
 };
 
 export type PhoneClockPlan = {
@@ -83,12 +85,13 @@ function deviceList(devices: MenuDevice[]): MenuDecision {
   const sockets = devices.map((device, index) => `ל${label(device)} הקש ${DIGIT_WORD[index + 1]}`).join(", ");
   return {
     type: "read",
-    message: `${sockets} ולהגדרות הקש אפס`,
+    message: `${sockets} ולהגדרות הקש אפס. לפקודה קולית הקש כוכבית`,
     field: "pikud_device",
     min: 1,
     max: 1,
-    allowed: `0${devices.map((_, index) => String(index + 1)).join("")}`,
+    allowed: `*0${devices.map((_, index) => String(index + 1)).join("")}`,
     mode: "No",
+    allowStar: true,
   };
 }
 

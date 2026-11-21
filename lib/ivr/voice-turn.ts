@@ -6,7 +6,6 @@ import { yemotContinue, yemotRead, yemotRecord } from "@/lib/ivr/yemot";
 const YEMOT_API = "https://www.call2all.co.il/ym/api";
 const RECORD_SECONDS = 8;
 const STEP_TIMEOUT_MS = 8_000;
-const REPLAY_MS = 25_000;
 const MEMORY_MS = 10 * 60_000;
 
 const PROMPT = "דבר אליי:";
@@ -20,20 +19,16 @@ type VoicePorts = {
 
 let ports: VoicePorts | null = null;
 const done = new Map<string, number>();
-const replay = new Map<string, { at: number; body: string }>();
 
 export function setVoicePorts(next: VoicePorts | null) {
   ports = next;
   done.clear();
-  replay.clear();
 }
 
-function remember(key: string, body: string) {
+function remember(key: string) {
   const now = Date.now();
   for (const [name, at] of done) if (now - at > MEMORY_MS) done.delete(name);
-  for (const [name, item] of replay) if (now - item.at > REPLAY_MS) replay.delete(name);
   done.set(key, now);
-  replay.set(key, { at: now, body });
 }
 
 function isStar(value: string | undefined) {
@@ -175,9 +170,8 @@ export async function answerVoice(input: {
 
   const target = recordingTarget(latest.value);
   const key = `${callKey}|${target ?? latest.value}`;
+  // Yemot keeps posting the previous path. A finished path must not be spoken or run again.
   if (done.has(key)) {
-    const cached = replay.get(key);
-    if (cached && Date.now() - cached.at < REPLAY_MS) return cached.body;
     return yemotRecord({
       message: PROMPT,
       field: `pikud_v${next}`,
@@ -211,7 +205,6 @@ export async function answerVoice(input: {
     }
   }
 
-  const body = back(speech, input.devices);
-  remember(key, body);
-  return body;
+  remember(key);
+  return back(speech, input.devices);
 }

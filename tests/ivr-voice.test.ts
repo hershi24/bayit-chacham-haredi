@@ -47,6 +47,8 @@ test("the recording request uses Yemot record syntax on the same read", () => {
 test("a recording path is a Yemot file, not an address the server would fetch", () => {
   assert.equal(recordingTarget("/6/v1123.wav"), "ivr2:/6/v1123.wav");
   assert.equal(recordingTarget("ivr2:/6/v1123.wav"), "ivr2:/6/v1123.wav");
+  assert.equal(recordingTarget("8/2/001.wav"), "ivr2:/8/2/001.wav");
+  assert.equal(recordingTarget("ivr2:8/2/001.wav"), "ivr2:/8/2/001.wav");
   assert.equal(recordingTarget("https://evil.example/6/v1123.wav"), null);
   assert.equal(recordingTarget("/6/../../etc/passwd"), null);
   assert.equal(recordingTarget("None"), null);

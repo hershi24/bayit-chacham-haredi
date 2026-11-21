@@ -47,18 +47,25 @@ function filled(value: string | undefined) {
   return trimmed;
 }
 
-/** A recording path Yemot posts back. Full URLs are refused so the server never fetches them. */
+/**
+ * A recording path Yemot posts back, such as `/12/34/567.wav` or `8/2/001.wav`.
+ * Full URLs are refused so the server never fetches them.
+ * DownloadFile wants the same path with an `ivr2:` root.
+ */
 export function recordingTarget(raw: string): string | null {
-  let path = raw.trim();
+  let path = raw.trim().replace(/^\uFEFF/, "").replace(/\\/g, "/");
   try {
     path = decodeURIComponent(path);
   } catch {
-    return null;
+    // Keep the original text when it is not percent-encoded.
   }
-  if (path.startsWith("ivr2:")) path = path.slice(5);
-  if (!path.startsWith("/") || path.includes("..") || path.includes("//")) return null;
-  if (!/^\/(?:\d+\/)+[A-Za-z0-9._-]+\.wav$/i.test(path)) return null;
-  return `ivr2:${path}`;
+  path = path.trim().replace(/^['"]|['"]$/g, "");
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path) && !path.toLowerCase().startsWith("ivr2:")) return null;
+  if (path.toLowerCase().startsWith("ivr2:")) path = path.slice(5);
+  path = path.replace(/^\.?\//, "").replace(/^\/+/, "");
+  if (!path || path.includes("..") || path.includes("//") || /\s/.test(path)) return null;
+  if (!/^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.wav$/i.test(path)) return null;
+  return `ivr2:/${path}`;
 }
 
 function yemotToken() {
@@ -181,6 +188,7 @@ export async function answerVoice(input: {
   const engine = activePorts();
   let speech: string;
   if (!target) {
+    console.error("[pikud] voice path", latest.value.slice(0, 180));
     speech = "ההקלטה לא התקבלה בנתיב תקין";
   } else {
     const audio = await engine.load(target);

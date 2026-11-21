@@ -31,8 +31,8 @@ test("a spoken command names one real device and leaves a tie alone", () => {
 });
 
 test("the recording request uses Yemot record syntax on the same read", () => {
-  const line = yemotRecord({ message: "אנא אמור בקול ברור איזו פעולה ברצונך לבצע.", field: "pikud_v1", fileName: "v1123", maxSeconds: 8 });
-  assert.match(line, /^read=t-אנא אמור בקול ברור איזו פעולה ברצונך לבצע,=/);
+  const line = yemotRecord({ message: "דבר אליי:", field: "pikud_v1", fileName: "v1123", maxSeconds: 8 });
+  assert.match(line, /^read=t-דבר אליי:=/);
   assert.match(line, /=pikud_v1,no,record,,v1123,no,,no,1,8\n$/);
   assert.equal(line.includes(",voice"), false);
   const list = decideMenu([salon], {});
@@ -159,7 +159,8 @@ test("star records on the current menu and a clear sentence switches the socket"
   try {
     const star = await yemotPost({ pikud_device: "*", ApiCallId: "555" });
     const starText = await star.text();
-    assert.match(starText, /אנא אמור בקול ברור איזו פעולה ברצונך לבצע/);
+    assert.match(starText, /דבר אליי:/);
+    assert.equal(starText.includes("אנא אמור"), false);
     assert.match(starText, /pikud_v1,no,record,/);
     assert.equal(starText.includes("go_to_folder"), false);
     assert.equal(loads.length, 0);

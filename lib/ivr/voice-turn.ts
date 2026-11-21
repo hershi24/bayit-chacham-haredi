@@ -9,7 +9,7 @@ const STEP_TIMEOUT_MS = 8_000;
 const REPLAY_MS = 25_000;
 const MEMORY_MS = 10 * 60_000;
 
-const PROMPT = "אנא אמור בקול ברור איזו פעולה ברצונך לבצע.";
+const PROMPT = "דבר אליי:";
 const BACK = "חוזרים לתפריט המקשים";
 
 type VoicePorts = {

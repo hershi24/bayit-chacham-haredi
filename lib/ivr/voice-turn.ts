@@ -1,5 +1,5 @@
 import { decideMenu, type MenuDevice } from "@/lib/ivr/flow";
-import { parseVoiceCommand, voiceCheckSpeech } from "@/lib/ivr/voice-command";
+import { parseVoiceCommand, voiceCheckSpeech, type VoiceCommand } from "@/lib/ivr/voice-command";
 import { transcribeHebrew } from "@/lib/ivr/voice-audio";
 import { yemotContinue, yemotRead, yemotRecord } from "@/lib/ivr/yemot";
 
@@ -146,8 +146,8 @@ function back(speech: string, devices: MenuDevice[]) {
 
 /**
  * Star on the socket list starts a recording on this same API extension.
- * A later post of the file path is transcribed and spoken back.
- * Nothing here switches a relay: this pass only checks that the sentence was understood.
+ * A clear on, off, or timer command is handed to `perform`, which uses the keypad actions.
+ * An unclear sentence is only spoken back.
  * Returns null when this request is an ordinary keypress.
  */
 export async function answerVoice(input: {
@@ -155,6 +155,7 @@ export async function answerVoice(input: {
   devices: MenuDevice[];
   callId: string;
   phone: string;
+  perform?: (command: VoiceCommand) => Promise<string>;
 }): Promise<string | null> {
   if (!isStar(input.values.pikud_device)) return null;
 
@@ -196,9 +197,12 @@ export async function answerVoice(input: {
     else if (!audio) speech = "לא הצלחתי לקרוא את ההקלטה";
     else {
       const transcript = await engine.transcribe(audio);
-      speech = transcript
-        ? voiceCheckSpeech(parseVoiceCommand(transcript, input.devices))
-        : "לא הצלחתי לזהות את הדיבור";
+      if (!transcript) speech = "לא הצלחתי לזהות את הדיבור";
+      else {
+        const command = parseVoiceCommand(transcript, input.devices);
+        speech =
+          command.kind !== "clarify" && input.perform ? await input.perform(command) : voiceCheckSpeech(command);
+      }
     }
     try {
       await engine.remove(target);

@@ -6,7 +6,8 @@ import { parseVoiceCommand, voiceCheckSpeech } from "../lib/ivr/voice-command";
 import { googleTranscript, pcmToFlac, readWavPcm } from "../lib/ivr/voice-audio";
 import { answerVoice, recordingTarget, setVoicePorts } from "../lib/ivr/voice-turn";
 import { yemotRead, yemotRecord } from "../lib/ivr/yemot";
-import { getDevice, updateDeviceState } from "../lib/store";
+import { resetStatusChecks } from "../lib/ivr/status-check";
+import { getDevice, listDueSchedules, updateDeviceState } from "../lib/store";
 import { getBridge } from "../lib/wlte/bridge";
 
 const salon: MenuDevice = { deviceId: "light-salon", name: "תאורה בסלון", relayOn: false, connectivity: "ONLINE" };
@@ -26,9 +27,7 @@ test("a spoken command names one real device and leaves a tie alone", () => {
   assert.match(voiceCheckSpeech(parseVoiceCommand("תכבה לי את כל האורות", devices)), /התקן אחד/);
   assert.equal(parseVoiceCommand("כבה את הדוד", [boiler, boilerSun]).kind, "clarify");
   assert.match(voiceCheckSpeech(parseVoiceCommand("כבה את הדוד", [boiler, boilerSun])), /השם המדויק/);
-  assert.match(voiceCheckSpeech(parseVoiceCommand("תדליק את האור בסלון", devices)), /בשלב הבדיקה ההתקן לא הופעל/);
-  assert.match(voiceCheckSpeech(parseVoiceCommand("מה המצב של התאורה במטבח", devices)), /כבוי כעת/);
-  assert.match(voiceCheckSpeech(parseVoiceCommand("מה המצב של התאורה במטבח", devices)), /לא בוצע שינוי/);
+  assert.match(voiceCheckSpeech(parseVoiceCommand("מה המצב של התאורה במטבח", devices)), /תאורה במטבח כבוי כעת/);
 });
 
 test("the recording request uses Yemot record syntax on the same read", () => {
@@ -105,95 +104,101 @@ test("a recording without the Yemot file token returns to the keypad menu", asyn
   }
 });
 
-test("star records on the current menu and the transcript does not switch the socket", async () => {
+async function waitForRelay(deviceId: string, relayOn: boolean) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const device = await getDevice(deviceId);
+    if (device?.relayOn === relayOn) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal((await getDevice(deviceId))?.relayOn, relayOn);
+}
+
+function yemotPost(fields: Record<string, string>) {
+  return handleMenu(
+    new Request("http://127.0.0.1/api/ivr/menu", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
+      body: new URLSearchParams({ ApiPhone: "035551001", ...fields }),
+    }),
+  );
+}
+
+test("star records on the current menu and a clear sentence switches the socket", async () => {
+  resetStatusChecks();
   await updateDeviceState("rct063285302", {
     connectivity: "ONLINE",
     relayOn: false,
     stateUpdatedAt: new Date().toISOString(),
     lastError: null,
   });
+  await updateDeviceState("rct063285417", {
+    connectivity: "OFFLINE",
+    relayOn: false,
+    stateUpdatedAt: new Date().toISOString(),
+    lastError: null,
+  });
   await getBridge().simulate("rct063285302", { online: true, relayOn: false });
+  await getBridge().simulate("rct063285417", { online: false, relayOn: false });
+  let script = "תדליק את האולם";
   let transcripts = 0;
   const removed: string[] = [];
-  let loads = 0;
+  const loads: string[] = [];
   setVoicePorts({
     load: async (path) => {
-      loads += 1;
-      assert.equal(path, "ivr2:/6/v1123.wav");
+      loads.push(path);
       return wav([0, 1, -1, 0]);
     },
     transcribe: async () => {
       transcripts += 1;
-      return "תדליק את האולם";
+      return script;
     },
     remove: async (path) => {
       removed.push(path);
     },
   });
   try {
-    const star = await handleMenu(
-      new Request("http://127.0.0.1/api/ivr/menu", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
-        body: new URLSearchParams({ ApiPhone: "035551001", pikud_device: "*", ApiCallId: "555" }),
-      }),
-    );
+    const star = await yemotPost({ pikud_device: "*", ApiCallId: "555" });
     const starText = await star.text();
     assert.match(starText, /אנא אמור בקול ברור איזו פעולה ברצונך לבצע/);
     assert.match(starText, /pikud_v1,no,record,/);
     assert.equal(starText.includes("go_to_folder"), false);
-    assert.equal(loads, 0);
+    assert.equal(loads.length, 0);
 
-    const heard = await handleMenu(
-      new Request("http://127.0.0.1/api/ivr/menu", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
-        body: new URLSearchParams({
-          ApiPhone: "035551001",
-          pikud_device: "*",
-          ApiCallId: "555",
-          pikud_v1: "/6/v1123.wav",
-        }),
-      }),
-    );
+    const heard = await yemotPost({ pikud_device: "*", ApiCallId: "555", pikud_v1: "/6/v1123.wav" });
     const heardText = await heard.text();
-    assert.match(heardText, /זיהיתי להדליק את שקע אולם/);
-    assert.match(heardText, /בשלב הבדיקה ההתקן לא הופעל/);
+    assert.match(heardText, /שקע אולם הופעל בהצלחה/);
     assert.match(heardText, /חוזרים לתפריט המקשים/);
     assert.match(heardText, /read=t-/);
     assert.equal(heardText.includes("go_to_folder=hangup"), false);
     assert.equal(transcripts, 1);
     assert.deepEqual(removed, ["ivr2:/6/v1123.wav"]);
+    await waitForRelay("rct063285302", true);
 
-    const again = await handleMenu(
-      new Request("http://127.0.0.1/api/ivr/menu", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
-        body: new URLSearchParams({
-          ApiPhone: "035551001",
-          pikud_device: "*",
-          ApiCallId: "555",
-          pikud_v1: "/6/v1123.wav",
-        }),
-      }),
-    );
+    const again = await yemotPost({ pikud_device: "*", ApiCallId: "555", pikud_v1: "/6/v1123.wav" });
     assert.equal(await again.text(), heardText);
     assert.equal(transcripts, 1);
+    assert.equal((await getDevice("rct063285302"))?.relayOn, true);
 
-    const refused = await handleMenu(
-      new Request("http://127.0.0.1/api/ivr/menu", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "yemot-core-api/1.0" },
-        body: new URLSearchParams({
-          ApiPhone: "035551001",
-          pikud_device: "1",
-          pikud_v1: "https://evil.example/a.wav",
-        }),
-      }),
-    );
+    script = "תכבה לי את כל האורות";
+    const group = await yemotPost({ pikud_device: "*", ApiCallId: "556", pikud_v1: "/6/v1124.wav" });
+    assert.match(await group.text(), /התקן אחד/);
+    assert.equal((await getDevice("rct063285302"))?.relayOn, true);
+
+    script = "תדליק את המזגן";
+    const offline = await yemotPost({ pikud_device: "*", ApiCallId: "557", pikud_v1: "/6/v1125.wav" });
+    assert.match(await offline.text(), /שקע מזגן אינו מחובר כעת/);
+    assert.equal((await getDevice("rct063285417"))?.relayOn, false);
+
+    script = "תדליק את האולם לחצי שעה";
+    const timer = await yemotPost({ pikud_device: "*", ApiCallId: "558", pikud_v1: "/6/v1126.wav" });
+    assert.match(await timer.text(), /הוא יכבה בעוד 30 דקות/);
+    const due = await listDueSchedules(new Date(Date.now() + 31 * 60_000).toISOString());
+    assert.equal(due.some((item) => item.deviceId === "rct063285302" && item.kind === "timer_off"), true);
+
+    const refused = await yemotPost({ pikud_device: "1", pikud_v1: "https://evil.example/a.wav" });
     assert.equal((await refused.text()).includes("evil.example"), false);
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    assert.equal((await getDevice("rct063285302"))?.relayOn, false);
+    assert.equal(loads.includes("https://evil.example/a.wav"), false);
+    assert.equal((await getDevice("rct063285302"))?.relayOn, true);
   } finally {
     setVoicePorts(null);
   }

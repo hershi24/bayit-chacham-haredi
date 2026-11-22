@@ -8,6 +8,16 @@ import { PlanDialog, type PlannerClock, type PlannerDraft, type PlannerProgram }
 import { PlanViewDialog } from "@/components/plan-view";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/client-api";
 import type { MonthDay } from "@/lib/hebrew/calendar";
 import { occurrencesOn, type Occurrence } from "@/lib/programs/occurrences";
@@ -60,6 +70,30 @@ type Picker = { tenants: TenantView[]; programs: null };
 type View = "month" | "list" | "week" | "day";
 
 const WEEKDAYS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "שבת"];
+const ZMANIM_KEY = "pikud-zmanim-view";
+
+type ZmanimView = {
+  shabbat: boolean;
+  sunset: boolean;
+  tzeit: boolean;
+  rabbeinuTam: boolean;
+};
+
+const DEFAULT_ZMANIM: ZmanimView = { shabbat: true, sunset: true, tzeit: true, rabbeinuTam: false };
+
+function readZmanim(): ZmanimView {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ZMANIM_KEY) ?? "") as Partial<ZmanimView>;
+    return {
+      shabbat: raw.shabbat !== false,
+      sunset: raw.sunset !== false,
+      tzeit: raw.tzeit !== false,
+      rabbeinuTam: raw.rabbeinuTam === true,
+    };
+  } catch {
+    return DEFAULT_ZMANIM;
+  }
+}
 
 export function ProgramsBoard() {
   const [board, setBoard] = useState<Board | null>(null);
@@ -67,6 +101,7 @@ export function ProgramsBoard() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [view, setView] = useState<View>("month");
+  const [zmanim, setZmanim] = useState<ZmanimView>(DEFAULT_ZMANIM);
   const [cursor, setCursor] = useState(() => israelDate());
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -103,6 +138,16 @@ export function ProgramsBoard() {
     const timer = window.setTimeout(() => void load(null), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setZmanim(readZmanim()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function saveZmanim(next: ZmanimView) {
+    setZmanim(next);
+    localStorage.setItem(ZMANIM_KEY, JSON.stringify(next));
+  }
 
   async function send(body: Record<string, unknown>, key: string) {
     if (!board) return null;
@@ -342,6 +387,7 @@ export function ProgramsBoard() {
               <button type="button" className="h-9 rounded-lg border px-3 text-sm" onClick={jumpToday}>
                 היום
               </button>
+              <ZmanimMenu view={zmanim} onChange={saveZmanim} />
             </div>
             <div className="grid grid-cols-4 rounded-lg bg-secondary p-1" role="tablist" aria-label="תצוגת הלוח">
               {(
@@ -517,9 +563,9 @@ export function ProgramsBoard() {
                     {longDay(cursor)}
                     {dayMeta?.hebrew ? <span className="ms-2 text-xs font-medium text-muted-foreground sm:text-sm">{dayMeta.hebrew}</span> : null}
                   </h3>
-                  {festivalOf(dayMeta) ? <FestivalMark name={festivalOf(dayMeta)!.name} kind={festivalOf(dayMeta)!.kind} large /> : null}
-                  {clockLine(dayMeta) ? <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{clockLine(dayMeta)}</p> : null}
-                  {sunLine(dayMeta) ? <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{sunLine(dayMeta)}</p> : null}
+                  {festivalOf(dayMeta, zmanim.shabbat) ? <FestivalMark name={festivalOf(dayMeta, zmanim.shabbat)!.name} kind={festivalOf(dayMeta, zmanim.shabbat)!.kind} large /> : null}
+                  {clockLine(dayMeta, zmanim) ? <p className="mt-0.5 text-[12px] text-muted-foreground">{clockLine(dayMeta, zmanim)}</p> : null}
+                  {sunLine(dayMeta, zmanim) ? <p className="mt-0.5 text-[12px] text-muted-foreground">{sunLine(dayMeta, zmanim)}</p> : null}
                 </div>
                 <button
                   type="button"
@@ -594,7 +640,7 @@ export function ProgramsBoard() {
                             {Number(day.slice(8))}
                           </span>
                           {meta?.hebrew ? <HebrewDate value={meta.hebrew} /> : null}
-                          {festivalOf(meta) ? <FestivalMark name={festivalOf(meta)!.name} kind={festivalOf(meta)!.kind} /> : null}
+                          {festivalOf(meta, zmanim.shabbat) ? <FestivalMark name={festivalOf(meta, zmanim.shabbat)!.name} kind={festivalOf(meta, zmanim.shabbat)!.kind} /> : null}
                         </button>
                         <button
                           type="button"
@@ -632,12 +678,12 @@ export function ProgramsBoard() {
                           +{events.length - cap}
                         </button>
                       ) : null}
-                      {clockLine(meta, true) ? (
-                        <p className={cn("mt-0.5 truncate text-[10px] font-medium leading-4 text-muted-foreground sm:text-[11px]", !meta?.eve && "hidden sm:block")}>
-                          {clockLine(meta, true)}
+                      {clockLine(meta, zmanim, true) ? (
+                        <p className="mt-0.5 text-[8px] font-medium leading-3 text-muted-foreground sm:text-[11px] sm:leading-4" title={clockLine(meta, zmanim) ?? undefined}>
+                          {clockLine(meta, zmanim, true)}
                         </p>
                       ) : null}
-                      <SunFooter meta={meta} />
+                      <SunFooter meta={meta} view={zmanim} />
                     </div>
                   );
                 })}
@@ -752,7 +798,10 @@ export function ProgramsBoard() {
                 ))}
               </select>
             </label>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">כניסה, יציאה, שקיעה וצאת הכוכבים לפי העיר שנבחרה.</p>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              {zmanim.shabbat && zmanim.rabbeinuTam ? "יציאת שבת לפי רבנו תם. " : ""}
+              כניסה, יציאה, שקיעה וצאת הכוכבים לפי העיר שנבחרה.
+            </p>
             {board.month.days.some((day) => day.sunset) ? (
               <a className="mt-2 inline-block text-xs font-medium text-primary underline" href="https://mevarhim.co.il/" target="_blank" rel="noreferrer">
                 זמנים מאתר מברכים
@@ -1085,51 +1134,99 @@ function marked(meta: MonthDay | undefined) {
   return Boolean(meta?.yomTov || meta?.cholHaMoed || meta?.eve);
 }
 
-function festivalOf(meta: MonthDay | undefined): { name: string; kind: "yom-tov" | "chol" | "eve" } | null {
+function festivalOf(meta: MonthDay | undefined, showTimes: boolean): { name: string; kind: "yom-tov" | "chol" | "eve" } | null {
   if (!meta) return null;
   if (meta.yomTov) return { name: meta.yomTov, kind: "yom-tov" };
   if (meta.cholHaMoed) return { name: meta.cholHaMoed, kind: "chol" };
-  if (meta.eve) return { name: meta.candles ? `ערב ${meta.eve} ${meta.candles}` : `ערב ${meta.eve}`, kind: "eve" };
+  if (meta.eve) return { name: showTimes && meta.candles ? `ערב ${meta.eve} ${meta.candles}` : `ערב ${meta.eve}`, kind: "eve" };
   return null;
 }
 
-function sunLine(meta: MonthDay | undefined) {
-  if (!meta?.sunset && !meta?.tzeit) return null;
-  return [meta.sunset ? `שקיעה ${meta.sunset}` : null, meta.tzeit ? `צאת הכוכבים ${meta.tzeit}` : null].filter(Boolean).join(" · ");
+function sunLine(meta: MonthDay | undefined, view: ZmanimView) {
+  if (!meta) return null;
+  return [view.sunset && meta.sunset ? `שקיעה ${meta.sunset}` : null, view.tzeit && meta.tzeit ? `צאת הכוכבים ${meta.tzeit}` : null]
+    .filter(Boolean)
+    .join(" · ");
 }
 
-function SunFooter({ meta }: { meta: MonthDay | undefined }) {
-  if (!meta?.sunset && !meta?.tzeit) return null;
+function SunFooter({ meta, view }: { meta: MonthDay | undefined; view: ZmanimView }) {
+  const sunset = view.sunset ? meta?.sunset : null;
+  const tzeit = view.tzeit ? meta?.tzeit : null;
+  if (!meta || (!sunset && !tzeit)) return null;
   return (
-    <div className="mt-auto grid gap-px pt-1 text-[8px] leading-3 text-muted-foreground sm:text-[11px] sm:leading-4" title={sunLine(meta) ?? undefined}>
-      {meta.sunset ? (
+    <div className="mt-auto grid gap-px pt-1 text-[8px] leading-3 text-muted-foreground sm:text-[11px] sm:leading-4" title={sunLine(meta, view) || undefined}>
+      {sunset ? (
         <p className="flex items-baseline justify-start gap-1 whitespace-nowrap">
           <span>ש׳</span>
-          <span dir="ltr" className="tabular-nums">{meta.sunset}</span>
+          <span dir="ltr" className="tabular-nums">{sunset}</span>
         </p>
       ) : null}
-      {meta.tzeit ? (
+      {tzeit ? (
         <p className="flex items-baseline justify-start gap-1 whitespace-nowrap">
           <span>צה״כ</span>
-          <span dir="ltr" className="tabular-nums">{meta.tzeit}</span>
+          <span dir="ltr" className="tabular-nums">{tzeit}</span>
         </p>
       ) : null}
     </div>
   );
 }
 
-function clockLine(meta: MonthDay | undefined, compact = false) {
+function shabbatExit(meta: MonthDay, view: ZmanimView) {
+  const tam = view.rabbeinuTam && meta.weekday === 6 ? meta.rabbeinuTam : null;
+  const time = tam ?? meta.havdalah;
+  if (!time) return null;
+  if (meta.weekday === 6) return tam ? `יציאת שבת ר״ת ${time}` : `יציאת שבת ${time}`;
+  if (meta.yomTov) return `יציאת החג ${time}`;
+  return `יציאה ${time}`;
+}
+
+function clockLine(meta: MonthDay | undefined, view: ZmanimView, compact = false) {
   if (!meta) return null;
+  const showParsha = view.shabbat || view.sunset || view.tzeit;
   const parts = [
-    meta.parsha ? (compact ? meta.parsha : `פרשת ${meta.parsha}`) : null,
-    meta.candles && meta.eve && meta.cholHaMoed ? `כניסת ${meta.eve} ${meta.candles}` : null,
-    meta.candles && !meta.eve && meta.weekday === 5 ? `כניסת שבת ${meta.candles}` : null,
-    meta.candles && !meta.eve && meta.weekday !== 5 ? `כניסה ${meta.candles}` : null,
-    meta.havdalah && meta.weekday === 6 ? `יציאת שבת ${meta.havdalah}` : null,
-    meta.havdalah && meta.weekday !== 6 && meta.yomTov ? `יציאת החג ${meta.havdalah}` : null,
-    meta.havdalah && meta.weekday !== 6 && !meta.yomTov ? `יציאה ${meta.havdalah}` : null,
+    showParsha && meta.parsha ? (compact ? meta.parsha : `פרשת ${meta.parsha}`) : null,
+    view.shabbat && meta.candles && meta.eve && meta.cholHaMoed ? `כניסת ${meta.eve} ${meta.candles}` : null,
+    view.shabbat && meta.candles && !meta.eve && meta.weekday === 5 ? `כניסת שבת ${meta.candles}` : null,
+    view.shabbat && meta.candles && !meta.eve && meta.weekday !== 5 ? `כניסה ${meta.candles}` : null,
+    view.shabbat ? shabbatExit(meta, view) : null,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
+}
+
+function ZmanimMenu({ view, onChange }: { view: ZmanimView; onChange: (next: ZmanimView) => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="h-9 rounded-lg border bg-card px-3 text-sm" aria-label="מה להציג בלוח">
+        זמנים
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuGroup>
+        <DropdownMenuLabel>מה להציג</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem checked={view.shabbat} onCheckedChange={(checked) => onChange({ ...view, shabbat: checked })}>
+          כניסת ויציאת שבת וחג
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem checked={view.sunset} onCheckedChange={(checked) => onChange({ ...view, sunset: checked })}>
+          שקיעה
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem checked={view.tzeit} onCheckedChange={(checked) => onChange({ ...view, tzeit: checked })}>
+          צאת הכוכבים
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem
+          checked={view.rabbeinuTam}
+          disabled={!view.shabbat}
+          onCheckedChange={(checked) => onChange({ ...view, rabbeinuTam: checked })}
+        >
+          יציאת שבת לפי רבנו תם
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => onChange({ ...view, shabbat: false, sunset: false, tzeit: false })}>
+          הסתר הכל
+        </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function FestivalMark({ name, kind, large = false }: { name: string; kind: "yom-tov" | "chol" | "eve"; large?: boolean }) {

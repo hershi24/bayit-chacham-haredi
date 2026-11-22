@@ -45,13 +45,14 @@ export async function applyMevarhimTimes(input: {
   havdalah: Map<string, Date>;
   yomTovDays: readonly string[];
   everyDay: boolean;
-}): Promise<{ sunset: Map<string, string>; tzeit: Map<string, string> } | null> {
+}): Promise<{ sunset: Map<string, string>; tzeit: Map<string, string>; rabbeinuTam: Map<string, string> } | null> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.from) || !/^\d{4}-\d{2}-\d{2}$/.test(input.to) || input.from > input.to) return null;
   const city = mevarhimCity(input.locationId);
   const sunset = new Map<string, string>();
   const tzeit = new Map<string, string>();
   const sunsetAt = new Map<string, Date>();
   const tzeitAt = new Map<string, Date>();
+  const rabbeinuTam = new Map<string, string>();
   const candleDays = new Set<string>();
   const endDays = new Set<string>();
   let offset = defaultOffset(city);
@@ -80,13 +81,15 @@ export async function applyMevarhimTimes(input: {
 
   const shabbat = await pool(probes(input.from, input.to), 4, async (date) => {
     const body = await readJson(`shabbat?city=${city}&date=${date}`);
-    return body as { data?: { candle_lighting?: Timed; shabbat_end?: Timed; candle_offset?: number } } | null;
+    return body as { data?: { candle_lighting?: Timed; shabbat_end?: Timed; rabbeinu_tam?: Timed; candle_offset?: number } } | null;
   });
   for (const body of shabbat) {
     if (!body?.data) continue;
     if (typeof body.data.candle_offset === "number" && body.data.candle_offset > 0) offset = Math.round(body.data.candle_offset);
     const candles = instant(body.data.candle_lighting);
     const end = instant(body.data.shabbat_end);
+    const tam = instant(body.data.rabbeinu_tam);
+    if (tam) rabbeinuTam.set(tam.day, tam.label);
     if (candles) {
       input.candles.set(candles.day, candles.at);
       candleDays.add(candles.day);
@@ -111,7 +114,7 @@ export async function applyMevarhimTimes(input: {
     }
   }
 
-  return found ? { sunset, tzeit } : null;
+  return found ? { sunset, tzeit, rabbeinuTam } : null;
 }
 
 async function liveGet(path: string): Promise<unknown> {

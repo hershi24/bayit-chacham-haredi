@@ -15,11 +15,15 @@ const bedroom: MenuDevice = { deviceId: "ac-bed", name: "מזגן חדר שינ�
 const boiler: MenuDevice = { deviceId: "boiler", name: "דוד", relayOn: true, connectivity: "ONLINE" };
 const boilerSun: MenuDevice = { deviceId: "boiler-sun", name: "דוד שמש", relayOn: false, connectivity: "ONLINE" };
 const kitchen: MenuDevice = { deviceId: "kitchen", name: "תאורה במטבח", relayOn: false, connectivity: "ONLINE" };
+const channel: MenuDevice = { deviceId: "light-channel", name: "ערוץ תאורה", relayOn: false, connectivity: "ONLINE" };
 const devices = [salon, bedroom, boiler, kitchen];
 
 test("a spoken command names one real device and leaves a tie alone", () => {
   assert.deepEqual(parseVoiceCommand("תדליק את האור בסלון", devices), { kind: "on", device: salon });
   assert.deepEqual(parseVoiceCommand("הפעל מזגן בחדר שינה", devices), { kind: "on", device: bedroom });
+  assert.deepEqual(parseVoiceCommand("מפעיל את הערוץ תאורה", [channel]), { kind: "on", device: channel });
+  assert.deepEqual(parseVoiceCommand("מדליק את התאורה", [channel]), { kind: "on", device: channel });
+  assert.deepEqual(parseVoiceCommand("מכבה את הערוץ תאורה", [channel]), { kind: "off", device: channel });
   assert.deepEqual(parseVoiceCommand("כבה את הדוד", devices), { kind: "off", device: boiler });
   assert.deepEqual(parseVoiceCommand("מה המצב של התאורה במטבח", devices), { kind: "status", device: kitchen });
   assert.equal(parseVoiceCommand("תדליק את הדוד לחצי שעה", devices).kind, "timer");

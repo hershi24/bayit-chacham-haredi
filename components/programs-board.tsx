@@ -31,6 +31,7 @@ type ShellyBackup = {
   actionCount: number;
   verifiedAt: string | null;
   error: string | null;
+  code: string | null;
 };
 
 type Board = {
@@ -61,6 +62,7 @@ export function ProgramsBoard() {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<PlannerDraft | null>(null);
   const [inspect, setInspect] = useState<{ program: Program | null; clock: Clock | null } | null>(null);
+  const [backup, setBackup] = useState<ShellyBackup | null>(null);
   const [pauseId, setPauseId] = useState<string | null>(null);
   const [pauseDate, setPauseDate] = useState("");
   const [token, setToken] = useState(0);
@@ -276,37 +278,6 @@ export function ProgramsBoard() {
           ＋ תוכנית חדשה
         </Button>
       </div>
-      {board.shellyBackup?.length ? (
-        <ul className="mb-3 grid gap-2 md:mb-6">
-          {board.shellyBackup.map((item) => (
-            <li
-              key={item.shellyId}
-              className={`rounded-2xl border px-4 py-3 ${item.status === "failed" ? "border-destructive/50 bg-destructive/5" : item.status === "verified" ? "border-emerald-600/40 bg-emerald-600/5" : "bg-card"}`}
-            >
-              <p className="text-sm font-semibold">{item.name}</p>
-              <p className="mt-1 text-[13px] leading-5">
-                {item.status === "verified"
-                  ? item.actionCount
-                    ? "תוכניות השבת והחג נשמרו ואומתו בהתקן עצמו."
-                    : "אין פעולות לשבת ולחג הקרובים, ואין על ההתקן תוכנית גיבוי ישנה."
-                  : item.status === "failed"
-                    ? "הסנכרון להתקן לא הושלם. המערכת תנסה שוב אוטומטית."
-                    : item.status === "pending"
-                      ? "שולח את תוכניות השבת והחג להתקן."
-                      : "תוכניות השבת והחג יישמרו בהתקן לפני הכניסה."}
-              </p>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {item.windowLabel ? `${item.windowLabel}. ` : ""}
-                {item.status === "verified" && item.actionCount
-                  ? `${item.actionCount} פעולות${item.mode === "script" ? " בזיכרון המקומי של ההתקן" : " בשעוני ההתקן"}. `
-                  : ""}
-                {item.verifiedAt ? `סנכרון אחרון ${formatIsrael(item.verifiedAt)}. ` : ""}
-                {item.error ?? ""}
-              </p>
-            </li>
-          ))}
-        </ul>
-      ) : null}
       <div className="mb-3 grid grid-cols-3 gap-2 md:mb-6 md:gap-3">
         <div className="rounded-xl border bg-card px-2 py-2 md:rounded-2xl md:px-5 md:py-4">
           <p className="text-[10px] leading-tight text-muted-foreground md:text-xs">תוכניות שמורות</p>
@@ -658,6 +629,27 @@ export function ProgramsBoard() {
                 );
               })}
             </div>
+            {board.shellyBackup?.length ? (
+              <div className="mt-1 border-t border-border/70 pt-1">
+                {board.shellyBackup.map((item) => (
+                  <button
+                    key={item.shellyId}
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-start text-xs hover:bg-muted"
+                    onClick={() => setBackup(item)}
+                  >
+                    <i
+                      className={cn(
+                        "size-2 shrink-0 rounded-full",
+                        item.status === "failed" ? "bg-destructive" : item.status === "verified" ? "bg-online" : "bg-muted-foreground",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1 truncate">גיבוי {item.name}</span>
+                    <span className="shrink-0 text-muted-foreground">{backupStatus(item)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </section>
           <section className="rounded-2xl border bg-card px-5 py-5">
             <h3 className="mb-1 text-sm font-semibold">פעולות קרובות</h3>
@@ -720,6 +712,26 @@ export function ProgramsBoard() {
           </section>
         </aside>
       </div>
+      {backup ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setBackup(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-2xl">
+            <DialogTitle>גיבוי {backup.name}</DialogTitle>
+            <DialogDescription>{backupSummary(backup)}</DialogDescription>
+            {backup.code ? (
+              <pre dir="ltr" className="max-h-[55vh] overflow-auto rounded-xl bg-muted p-3 text-left text-[11px] leading-5 text-foreground">
+                {backup.code}
+              </pre>
+            ) : (
+              <p className="text-sm text-muted-foreground">עדיין לא נשלח קוד להתקן.</p>
+            )}
+          </DialogContent>
+        </Dialog>
+      ) : null}
       {pausing ? (
         <Dialog
           open
@@ -902,6 +914,29 @@ function jerusalemTime(date = new Date()) {
     minute: "2-digit",
     hourCycle: "h23",
   }).format(date);
+}
+
+function backupStatus(item: ShellyBackup) {
+  if (item.status === "failed") return "נכשל";
+  if (item.status === "pending") return "נשלח";
+  if (item.status === "verified") return item.actionCount ? "נשמר" : "ריק";
+  return "ממתין";
+}
+
+function backupSummary(item: ShellyBackup) {
+  const detail =
+    item.status === "verified"
+      ? item.actionCount
+        ? "הקוד הזה נשמר ואומת בהתקן."
+        : "אין פעולות לשבת ולחג הקרובים."
+      : item.status === "failed"
+        ? "הסנכרון לא הושלם. המערכת תנסה שוב."
+        : item.status === "pending"
+          ? "הקוד בדרך להתקן."
+          : "הקוד יישלח להתקן לפני הכניסה.";
+  return [item.windowLabel, detail, item.verifiedAt ? `סנכרון אחרון ${formatIsrael(item.verifiedAt)}` : null, item.error]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function marked(meta: MonthDay | undefined) {

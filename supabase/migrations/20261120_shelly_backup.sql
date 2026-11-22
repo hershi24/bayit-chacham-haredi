@@ -8,6 +8,7 @@ create table if not exists shelly_backups (
   window_label text,
   plan_hash text,
   action_count integer not null default 0,
+  plan_code text,
   schedule_ids text not null default '[]',
   synced_at text,
   verified_at text,

@@ -14,7 +14,7 @@ import {
   type BackupBlock,
   type ScheduleJob,
 } from "@/lib/shelly/backup-plan";
-import { expiryFromScript, expiryScript, idleScript, planFromScript, planScript, scriptName } from "@/lib/shelly/backup-script";
+import { expiryFromScript, expiryScript, idleScript, planFromScript, planScript, scriptName, sentCode } from "@/lib/shelly/backup-script";
 import { channelStatesFromStatus } from "@/lib/shelly/rpc";
 import { parseShellyChannelId, type ShellyChannel } from "@/lib/shelly/ids";
 import { getShellyHub } from "@/lib/shelly/hub";
@@ -48,6 +48,7 @@ export type ShellyBackupView = {
   syncedAt: string | null;
   verifiedAt: string | null;
   error: string | null;
+  code: string | null;
 };
 
 export type ShellyBackupUnit = {
@@ -76,24 +77,31 @@ export async function syncShellyBackupsForTenant(tenantId: string, now = new Dat
   }
 }
 
-export async function shellyBackupViews(tenantId: string): Promise<ShellyBackupView[]> {
+export async function shellyBackupViews(tenantId: string, now = new Date()): Promise<ShellyBackupView[]> {
   const units = await unitsOf(tenantId);
   if (!units.length) return [];
   const saved = new Map((await listShellyBackups(tenantId)).map((row) => [row.shellyId, row]));
+  const block = await blockFor(tenantId, now);
+  const runs = block ? await listProgramRuns(tenantId) : [];
   return units.map((unit) => {
     const row = saved.get(unit.shellyId);
+    const channels = new Map(unit.channels.map((channel) => [channel.deviceId, channel]));
+    const actions = block ? actionsForUnit(runs, unit.shellyId, channels, block, now) : [];
+    const endSeconds = block ? Math.floor(Date.parse(block.end) / 1000) : 0;
+    const preview = actions.length ? planScript(actions, endSeconds) : null;
     return {
       shellyId: unit.shellyId,
       name: unit.name,
       status: row?.status ?? "idle",
       mode: row?.mode ?? null,
-      windowLabel: row?.windowLabel ?? null,
-      windowStart: row?.windowStart ?? null,
-      windowEnd: row?.windowEnd ?? null,
-      actionCount: row?.actionCount ?? 0,
+      windowLabel: row?.windowLabel ?? block?.label ?? null,
+      windowStart: row?.windowStart ?? block?.start ?? null,
+      windowEnd: row?.windowEnd ?? block?.end ?? null,
+      actionCount: row?.actionCount ?? actions.length,
       syncedAt: row?.syncedAt ?? null,
       verifiedAt: row?.verifiedAt ?? null,
       error: row?.error ?? null,
+      code: row?.planCode || preview,
     };
   });
 }
@@ -171,6 +179,7 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
       planHash: hash,
       actionCount: actions.length,
       scheduleIds: written.ids,
+      planCode: written.code,
       syncedAt: now.toISOString(),
       verifiedAt: now.toISOString(),
       error: null,
@@ -267,7 +276,7 @@ async function ensureClock(rpc: ShellyRpc, now: Date) {
   }
 }
 
-type Written = { mode: "schedule" | "script"; ids: number[]; jobs: ScheduleJob[] };
+type Written = { mode: "schedule" | "script"; ids: number[]; jobs: ScheduleJob[]; code: string };
 
 function insideBlock(block: BackupBlock, now: Date) {
   const at = now.getTime();
@@ -311,14 +320,11 @@ async function writePlan(rpc: ShellyRpc, actions: BackupAction[], endSeconds: nu
       if (!(error instanceof Error)) throw error;
     }
   }
-  if (mode === "script") {
-    const code = actions.length ? planScript(actions, endSeconds) : idleScript();
-    await installScript(rpc, code, actions.length > 0);
-  } else {
-    await installScript(rpc, expiryScript(actions, endSeconds, ids), true);
-  }
+  const script = mode === "script" ? (actions.length ? planScript(actions, endSeconds) : idleScript()) : expiryScript(actions, endSeconds, ids);
+  await installScript(rpc, script, mode === "schedule" || actions.length > 0);
   await rpc("KVS.Set", { key: "pikud/ids", value: ids.join(",") });
-  return { mode, ids, jobs: mode === "schedule" ? jobs : [] };
+  const kept = mode === "schedule" ? jobs : [];
+  return { mode, ids, jobs: kept, code: sentCode(mode, script, kept) };
 }
 
 function sameActions(left: BackupAction[], right: BackupAction[]) {
@@ -472,6 +478,7 @@ function emptyRow(unit: ShellyBackupUnit): ShellyBackupRow {
     windowLabel: null,
     planHash: null,
     actionCount: 0,
+    planCode: null,
     scheduleIds: [],
     syncedAt: null,
     verifiedAt: null,

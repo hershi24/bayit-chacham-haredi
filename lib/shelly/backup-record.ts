@@ -8,6 +8,8 @@ export type ShellyBackupRow = {
   windowLabel: string | null;
   planHash: string | null;
   actionCount: number;
+  /** Exact script and schedule calls last written to the device. */
+  planCode: string | null;
   scheduleIds: number[];
   syncedAt: string | null;
   verifiedAt: string | null;

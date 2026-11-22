@@ -69,8 +69,13 @@ test("the calendar marks yom tov and leaves Chanukah and Purim as weekdays", asy
   );
   assert.equal(marked.includes("2025-12-15"), false);
   const pesach = await monthBoard("jerusalem", 2026, 4);
+  assert.equal(pesach.find((day) => day.date === "2026-04-01")?.eve, "פסח");
+  assert.equal(pesach.find((day) => day.date === "2026-04-01")?.yomTov, null);
+  assert.match(pesach.find((day) => day.date === "2026-04-01")?.candles ?? "", /^\d{2}:\d{2}$/);
   assert.equal(pesach.find((day) => day.date === "2026-04-02")?.yomTov, "פסח");
+  assert.equal(pesach.find((day) => day.date === "2026-04-02")?.eve, null);
   assert.equal(pesach.find((day) => day.date === "2026-04-02")?.cholHaMoed, null);
+  assert.equal(pesach.find((day) => day.date === "2026-04-07")?.eve, "פסח");
   assert.equal(pesach.find((day) => day.date === "2026-04-03")?.yomTov, null);
   assert.equal(pesach.find((day) => day.date === "2026-04-03")?.cholHaMoed, "א׳ חול המועד");
   assert.equal(pesach.find((day) => day.date === "2026-04-07")?.cholHaMoed, "ה׳ חול המועד");

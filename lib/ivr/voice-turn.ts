@@ -19,10 +19,37 @@ type VoicePorts = {
 
 let ports: VoicePorts | null = null;
 const done = new Map<string, number>();
+const CONFIRM_MS = 3 * 60_000;
+
+type PendingClock = {
+  deviceId: string;
+  day: string;
+  onTime: string;
+  offTime: string;
+  speech: string;
+  at: number;
+};
+
+const pending = new Map<string, PendingClock>();
 
 export function setVoicePorts(next: VoicePorts | null) {
   ports = next;
   done.clear();
+  pending.clear();
+}
+
+function rememberPending(callKey: string, value: Omit<PendingClock, "at">) {
+  const now = Date.now();
+  for (const [key, item] of pending) if (now - item.at > CONFIRM_MS) pending.delete(key);
+  pending.set(callKey, { ...value, at: now });
+}
+
+function takePending(callKey: string): PendingClock | "expired" | null {
+  const held = pending.get(callKey);
+  pending.delete(callKey);
+  if (!held) return null;
+  if (Date.now() - held.at > CONFIRM_MS) return "expired";
+  return held;
 }
 
 function remember(key: string) {
@@ -142,6 +169,7 @@ function back(speech: string, devices: MenuDevice[]) {
 /**
  * Star on the socket list starts a recording on this same API extension.
  * A clear on, off, or timer command is handed to `perform`, which uses the keypad actions.
+ * A one-time clock is spoken back and saved only after the caller presses 1.
  * An unclear sentence is only spoken back.
  * Returns null when this request is an ordinary keypress.
  */
@@ -166,6 +194,34 @@ export async function answerVoice(input: {
       fileName: fileName(input.callId, input.phone, next),
       maxSeconds: RECORD_SECONDS,
     });
+  }
+
+  if (latest.value === "1" || latest.value === "2") {
+    const confirmKey = `${callKey}|confirm|${latest.n}`;
+    if (done.has(confirmKey)) {
+      return yemotRecord({
+        message: PROMPT,
+        field: `pikud_v${next}`,
+        fileName: fileName(input.callId, input.phone, next),
+        maxSeconds: RECORD_SECONDS,
+      });
+    }
+    remember(confirmKey);
+    const held = takePending(callKey);
+    if (held === "expired") return back("עבר הזמן לאישור התזמון. אמור את הפקודה שוב", input.devices);
+    if (!held) return back("אין תזמון שממתין לאישור", input.devices);
+    if (latest.value === "2") return back("התזמון בוטל", input.devices);
+    const device = input.devices.find((item) => item.deviceId === held.deviceId);
+    if (!device || !input.perform) return back("לא ניתן לשמור את התזמון", input.devices);
+    const speech = await input.perform({
+      kind: "clock",
+      device,
+      day: held.day,
+      onTime: held.onTime,
+      offTime: held.offTime,
+      speech: held.speech,
+    });
+    return back(speech, input.devices);
   }
 
   const target = recordingTarget(latest.value);
@@ -194,6 +250,29 @@ export async function answerVoice(input: {
       if (!transcript) speech = "לא הצלחתי לזהות את הדיבור";
       else {
         const command = parseVoiceCommand(transcript, input.devices);
+        if (command.kind === "clock") {
+          try {
+            await engine.remove(target);
+          } catch (error) {
+            console.error("[pikud] voice delete", error instanceof Error ? error.message : "failed");
+          }
+          remember(key);
+          rememberPending(callKey, {
+            deviceId: command.device.deviceId,
+            day: command.day,
+            onTime: command.onTime,
+            offTime: command.offTime,
+            speech: command.speech,
+          });
+          return yemotRead({
+            message: command.speech,
+            field: `pikud_v${next}`,
+            min: 1,
+            max: 1,
+            allowed: "12",
+            seconds: 12,
+          });
+        }
         speech =
           command.kind !== "clarify" && input.perform ? await input.perform(command) : voiceCheckSpeech(command);
       }

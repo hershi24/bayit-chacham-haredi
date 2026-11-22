@@ -99,6 +99,17 @@ async function performVoice(command: VoiceCommand, allowed: MenuDevice[], frozen
   const device = await freshDevice(command.device);
   if (command.kind === "status") return speechFor({ kind: "status", relayOn: device.relayOn, name: device.name });
   if (frozen.has(device.deviceId)) return speechFor({ kind: "frozen", name: device.name });
+  if (command.kind === "clock") {
+    return savePhoneClock({
+      type: "clock-save",
+      device,
+      devices: [device],
+      day: command.day,
+      weekdays: [],
+      onTime: command.onTime,
+      offTime: command.offTime,
+    });
+  }
   if (command.kind === "on" || command.kind === "off") {
     if (device.connectivity === "OFFLINE") return speechFor({ kind: "offline", name: device.name });
     sendCommand(device.deviceId, command.kind === "on" ? "ON" : "OFF", actor);

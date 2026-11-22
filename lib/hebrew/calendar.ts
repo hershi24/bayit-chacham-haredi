@@ -219,6 +219,10 @@ export type MonthDay = {
   hebrew: string;
   parsha: string | null;
   holiday: string | null;
+  /** Yom tov name in Israel. Chanukah and Purim stay empty: they are weekday festivals. */
+  yomTov: string | null;
+  /** Chol hamoed label, such as א׳ חול המועד. Empty on yom tov, Chanukah, and Purim. */
+  cholHaMoed: string | null;
   candles: string | null;
   havdalah: string | null;
 };
@@ -250,11 +254,17 @@ export async function monthBoard(locationId: string, year: number, month: number
     flags.SPECIAL_SHABBAT;
   const parsha = new Map<string, string>();
   const holiday = new Map<string, string>();
+  const yomTov = new Map<string, string>();
+  const cholHaMoed = new Map<string, string>();
   const candles = new Map<string, Date>();
   const havdalah = new Map<string, Date>();
   for (const event of events) {
     rememberTime(event, "Candle lighting", candles);
     rememberTime(event, "Havdalah", havdalah);
+    const festival = yomTovName(event.getDesc());
+    if (festival) yomTov.set(hebrewDay(event), festival);
+    const intermediate = cholHaMoedName(event.getDesc());
+    if (intermediate) cholHaMoed.set(hebrewDay(event), intermediate);
     if (event.getDesc().startsWith("Parashat ")) {
       parsha.set(hebrewDay(event), parshaName(event));
       continue;
@@ -279,11 +289,46 @@ export async function monthBoard(locationId: string, year: number, month: number
       hebrew: shortHebrew(new HDate(dateOf(date)).renderGematriya(true)),
       parsha: weekday === 6 ? (parsha.get(date) ?? null) : null,
       holiday: holiday.get(date) ?? null,
+      yomTov: yomTov.get(date) ?? null,
+      cholHaMoed: yomTov.has(date) ? null : (cholHaMoed.get(date) ?? null),
       candles: clockText(candles.get(date)),
       havdalah: clockText(havdalah.get(date)),
     });
   }
   return days;
+}
+
+/** Civil dates of yom tov in Israel. Chanukah, Purim, and chol hamoed are not included. */
+export async function yomTovDates(from: string, to: string): Promise<string[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return [];
+  const { HebrewCalendar } = await hebcal();
+  const events = HebrewCalendar.calendar({
+    start: dateOf(from),
+    end: dateOf(to),
+    il: true,
+  });
+  const days = new Set<string>();
+  for (const event of events) {
+    if (!yomTovName(event.getDesc())) continue;
+    days.add(hebrewDay(event));
+  }
+  return [...days].sort();
+}
+
+function yomTovName(description: string): string | null {
+  return HOLIDAYS.find((rule) => rule.match(description))?.name ?? null;
+}
+
+const CHOL_ORDINALS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳"];
+const CHOL_ROMAN = ["II", "III", "IV", "V", "VI", "VII"];
+
+function cholHaMoedName(description: string): string | null {
+  const match = /^(?:Pesach|Sukkot) (II|III|IV|V|VI|VII) /.exec(description);
+  if (!match) return null;
+  const intermediate = description.includes("(CH''M)") || description.includes("Hoshana Raba");
+  if (!intermediate) return null;
+  const ordinal = CHOL_ORDINALS[CHOL_ROMAN.indexOf(match[1])];
+  return ordinal ? `${ordinal} חול המועד` : null;
 }
 
 export async function hebrewLabels(dates: string[]): Promise<Record<string, string>> {

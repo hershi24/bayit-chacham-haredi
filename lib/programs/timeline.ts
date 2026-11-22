@@ -1,3 +1,4 @@
+import { skipsHoliday } from "@/lib/programs/holidays";
 import { coversDay } from "@/lib/programs/span";
 import { weekdayOf } from "@/lib/programs/weekdays";
 import { shiftDate } from "@/lib/time";
@@ -24,6 +25,7 @@ export type TimelineProgram = {
   startDate?: string | null;
   endDate?: string | null;
   skippedDates?: string[];
+  skipHolidays?: boolean;
 };
 
 export type DayBar = {
@@ -109,7 +111,12 @@ function pushSpan(
   }
 }
 
-export function dayBars(date: string, clocks: TimelineClock[], programs: TimelineProgram[]): DayBar[] {
+export function dayBars(
+  date: string,
+  clocks: TimelineClock[],
+  programs: TimelineProgram[],
+  yomTov: ReadonlySet<string> = new Set(),
+): DayBar[] {
   const previous = shiftDate(date, -1);
   const bars: DayBar[] = [];
   const owners = new Map(programs.map((program) => [program.id, program]));
@@ -117,7 +124,7 @@ export function dayBars(date: string, clocks: TimelineClock[], programs: Timelin
   for (const clock of clocks) {
     if (clock.recurring) continue;
     const owner = clock.programId ? owners.get(clock.programId) : undefined;
-    if (owner && (owner.skippedDates ?? []).includes(clock.day)) continue;
+    if (owner && ((owner.skippedDates ?? []).includes(clock.day) || skipsHoliday(owner, clock.day, yomTov))) continue;
     const shared = {
       key: clock.id,
       source: "clock" as const,
@@ -137,6 +144,9 @@ export function dayBars(date: string, clocks: TimelineClock[], programs: Timelin
   for (const program of programs) {
     if (!program.weekdays.length) continue;
     const skipped = new Set(program.skippedDates ?? []);
+    if (program.skipHolidays) {
+      for (const day of yomTov) skipped.add(day);
+    }
     const groups = [
       ...(program.weekdays.includes(previousWeekday) &&
       coversDay(previous, program.startDate ?? null, program.endDate ?? null) &&

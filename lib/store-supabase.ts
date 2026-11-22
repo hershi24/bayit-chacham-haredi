@@ -1381,6 +1381,7 @@ function mapProgram(row: {
   off_time?: string | null;
   slots?: string | null;
   skipped_dates?: string | null;
+  skip_holidays?: boolean | number | null;
 }): StoredProgram {
   return {
     id: String(row.id),
@@ -1397,6 +1398,7 @@ function mapProgram(row: {
     offTime: row.off_time ?? null,
     slots: parseSlots(row.slots, row.on_time ?? null, row.off_time ?? null),
     skippedDates: jsonList(row.skipped_dates).filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)),
+    skipHolidays: row.skip_holidays === true || Number(row.skip_holidays) === 1,
   };
 }
 
@@ -1436,9 +1438,26 @@ export async function upsertProgram(program: StoredProgram) {
   };
   const slots = program.slots ?? [];
   const skipped = program.skippedDates ?? [];
-  let result = await client()
-    .from("programs")
-    .upsert({ ...row, slots: JSON.stringify(slots), skipped_dates: JSON.stringify(skipped) }, { onConflict: "tenant_id,program_key" });
+  let result = await client().from("programs").upsert(
+    {
+      ...row,
+      slots: JSON.stringify(slots),
+      skipped_dates: JSON.stringify(skipped),
+      skip_holidays: Boolean(program.skipHolidays),
+    },
+    { onConflict: "tenant_id,program_key" },
+  );
+  if (result.error && columnMissing(result.error, "skip_holidays")) {
+    if (program.skipHolidays) {
+      throw new HttpError(
+        500,
+        "עמודת החגים חסרה. הריצו: alter table programs add column if not exists skip_holidays boolean not null default false;",
+      );
+    }
+    result = await client()
+      .from("programs")
+      .upsert({ ...row, slots: JSON.stringify(slots), skipped_dates: JSON.stringify(skipped) }, { onConflict: "tenant_id,program_key" });
+  }
   if (result.error && columnMissing(result.error, "skipped_dates")) {
     if (skipped.length) {
       throw new HttpError(

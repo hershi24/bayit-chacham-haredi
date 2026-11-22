@@ -81,3 +81,20 @@ test("a paused plan and a different socket stay off the filtered day", () => {
   assert.equal(occurrencesOn("2026-12-03", [paused], [clock], "ac").length, 0);
   assert.equal(occurrencesOn("2026-12-03", [paused], [clock], "light")[0]?.time, "11:00");
 });
+
+test("skip holidays blocks Pesach and still runs on chol hamoed", () => {
+  const daily: OccurrenceProgram = {
+    ...ac,
+    id: "prog_daily",
+    weekdays: [0, 1, 2, 3, 4, 5, 6],
+    startDate: "2026-03-01",
+    endDate: "2026-04-10",
+    skipHolidays: true,
+  };
+  const festivals = new Set(["2026-04-02", "2026-04-08"]);
+  assert.equal(occurrencesOn("2026-04-02", [daily], [], "all", festivals).length, 0);
+  assert.equal(occurrencesOn("2026-04-08", [daily], [], "all", festivals).length, 0);
+  assert.equal(occurrencesOn("2026-04-03", [daily], [], "all", festivals).length, 2);
+  assert.equal(occurrencesOn("2026-03-03", [daily], [], "all", festivals).length, 2);
+  assert.equal(occurrencesOn("2026-04-02", [{ ...daily, skipHolidays: false }], [], "all", festivals).length, 2);
+});

@@ -154,6 +154,15 @@ test("one program with several clocks draws one strip per on period", () => {
       [16 * 60, 24 * 60],
     ],
   );
+  const bounded = {
+    ...daily,
+    onTime: "08:00",
+    offTime: "09:00",
+    slots: [{ onTime: "08:00", offTime: "09:00" }],
+    skipHolidays: true,
+  };
+  assert.equal(dayBars("2026-04-02", [], [bounded], new Set(["2026-04-02"])).length, 0);
+  assert.equal(dayBars("2026-04-03", [], [bounded], new Set(["2026-04-02"])).length, 1);
   const weekdaysOnly = dayBars("2026-12-06", [], [{ ...daily, weekdays: [0] }]);
   assert.deepEqual(
     weekdaysOnly.map((bar) => [bar.start, bar.end]),

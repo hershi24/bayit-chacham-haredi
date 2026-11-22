@@ -44,6 +44,7 @@ export function DayTimeline({
   clocks,
   devices,
   filter,
+  yomTov,
   onOpen,
 }: {
   day: string;
@@ -51,9 +52,10 @@ export function DayTimeline({
   clocks: TimelineClock[];
   devices: DayDevice[];
   filter: string;
+  yomTov?: ReadonlySet<string>;
   onOpen: (source: "program" | "clock", id: string) => void;
 }) {
-  const bars = dayBars(day, clocks, programs).filter((bar) => filter === "all" || bar.deviceId === filter);
+  const bars = dayBars(day, clocks, programs, yomTov).filter((bar) => filter === "all" || bar.deviceId === filter);
   const byDevice = new Map<string, DayBar[]>();
   for (const bar of bars) {
     const list = byDevice.get(bar.deviceId) ?? [];

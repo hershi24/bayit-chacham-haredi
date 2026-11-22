@@ -73,6 +73,7 @@ type FormState = {
   notify: boolean;
   conflict: boolean;
   skip: boolean;
+  skipHolidays: boolean;
 };
 
 const control =
@@ -215,6 +216,7 @@ function buildForm(draft: PlannerDraft): FormState {
     sunAction: "on",
     deviceIds: draft.devices.length === 1 ? [draft.devices[0].deviceId] : [],
     enabled: true,
+    skipHolidays: false,
     ...readPrefs(null),
   };
   if (draft.mode === "clock" && draft.clock) {
@@ -258,6 +260,7 @@ function buildForm(draft: PlannerDraft): FormState {
     ranges: rangesFromProgram(draft, program),
     deviceIds: knownIds(program.deviceIds, draft.devices),
     enabled: program.enabled,
+    skipHolidays: Boolean(program.skipHolidays),
     ...readPrefs(program.id),
   };
 }
@@ -333,7 +336,8 @@ function summaryText(form: FormState, places: PlannerPlace[]) {
         : `${SUN_LABELS[form.sunEvent]} (${form.sunOffset || "0"} דקות)${city ? `, ${city}` : ""}`;
   const deviceCount =
     form.schedule === "times" ? new Set(form.ranges.flatMap((range) => range.deviceIds)).size : form.deviceIds.length;
-  return `${name} · ${when} · ${how} · ${deviceCount} התקנים`;
+  const holidays = form.skipHolidays ? " · בלי הפעלה בחגים" : "";
+  return `${name} · ${when} · ${how} · ${deviceCount} התקנים${holidays}`;
 }
 
 function durationText(form: FormState) {
@@ -481,6 +485,7 @@ function buildBody(form: FormState) {
       name: form.name.trim(),
       deviceIds,
       enabled: form.enabled,
+      skipHolidays: form.skipHolidays,
       replaceClockId: form.looseClockId,
       days: [...grouped.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
@@ -510,6 +515,7 @@ function buildBody(form: FormState) {
     slots,
     deviceIds,
     enabled: form.enabled,
+    skipHolidays: form.skipHolidays,
     startDate: seriesStart(
       form,
       ranges.map((range) => range.date),
@@ -727,6 +733,20 @@ export function PlanDialog({
                   </div>
                 ) : null}
               </div>
+              <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-2xl border bg-card p-4">
+                <input
+                  type="checkbox"
+                  className="mt-1 size-4 accent-primary"
+                  checked={form.skipHolidays}
+                  onChange={(event) => patch((current) => ({ ...current, skipHolidays: event.target.checked }))}
+                />
+                <span>
+                  <b className="block text-sm">מנע הפעלה בחגים</b>
+                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                    בימי החג התוכנית לא תדליק ולא תכבה. לא כולל חנוכה ופורים, שהם ימי חול.
+                  </span>
+                </span>
+              </label>
             </section>
             <section className="mb-8">
               <SectionTitle n="03">איך ההתקנים יפעלו?</SectionTitle>

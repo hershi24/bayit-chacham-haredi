@@ -1,3 +1,4 @@
+import { skipsHoliday } from "@/lib/programs/holidays";
 import { slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
 import { weekdayOf } from "@/lib/programs/weekdays";
@@ -13,6 +14,7 @@ export type OccurrenceProgram = {
   slots: Array<{ onTime: string | null; offTime: string | null; weekdays?: number[]; deviceIds?: string[] }>;
   deviceIds: string[];
   skippedDates?: string[];
+  skipHolidays?: boolean;
 };
 
 export type OccurrenceClock = {
@@ -43,6 +45,7 @@ export function occurrencesOn(
   programs: OccurrenceProgram[],
   clocks: OccurrenceClock[],
   filter = "all",
+  yomTov: ReadonlySet<string> = new Set(),
 ): Occurrence[] {
   const seen = new Set<string>();
   const out: Occurrence[] = [];
@@ -89,7 +92,7 @@ export function occurrencesOn(
   for (const program of programs) {
     if (!program.enabled) continue;
     for (const sourceDay of [day, previous]) {
-      if ((program.skippedDates ?? []).includes(sourceDay)) continue;
+      if ((program.skippedDates ?? []).includes(sourceDay) || skipsHoliday(program, sourceDay, yomTov)) continue;
       if (!program.weekdays.includes(weekdayOf(sourceDay)) || !coversDay(sourceDay, program.startDate, program.endDate)) continue;
       for (const slot of slotsForWeekday(program.slots, weekdayOf(sourceDay))) {
         pushRanges(
@@ -107,7 +110,7 @@ export function occurrencesOn(
   for (const clock of clocks) {
     if (clock.recurring || (clock.day !== day && clock.day !== previous)) continue;
     const program = clock.programId ? programs.find((item) => item.id === clock.programId) : undefined;
-    if (program && (!program.enabled || (program.skippedDates ?? []).includes(clock.day))) continue;
+    if (program && (!program.enabled || (program.skippedDates ?? []).includes(clock.day) || skipsHoliday(program, clock.day, yomTov))) continue;
     const deviceIds = clock.deviceIds.length ? clock.deviceIds : (program?.deviceIds ?? []);
     pushRanges(clock.day, [clock], program?.id ?? null, clock.id, program?.name ?? "שעון", deviceIds);
   }

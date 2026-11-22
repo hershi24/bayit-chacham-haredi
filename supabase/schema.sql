@@ -140,6 +140,7 @@ alter table programs add column if not exists on_time text;
 alter table programs add column if not exists off_time text;
 alter table programs add column if not exists slots text not null default '[]';
 alter table programs add column if not exists skipped_dates text not null default '[]';
+alter table programs add column if not exists skip_holidays boolean not null default false;
 
 alter table devices add column if not exists icon text;
 alter table devices add column if not exists frozen integer not null default 0;

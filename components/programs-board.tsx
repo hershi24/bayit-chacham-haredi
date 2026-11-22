@@ -41,6 +41,7 @@ type Board = {
   programs: Program[];
   clocks: Clock[];
   month: { year: number; month: number; hebrew: string; days: MonthDay[] };
+  yomTovDates?: string[];
   shellyBackup?: ShellyBackup[];
 };
 
@@ -184,9 +185,10 @@ export function ProgramsBoard() {
   }
 
   const today = israelDate();
+  const yomTov = useMemo(() => new Set(board?.yomTovDates ?? []), [board]);
   const nextEvents = useMemo(
-    () => (board ? upcoming(board.programs, board.clocks, filter) : []),
-    [board, filter],
+    () => (board ? upcoming(board.programs, board.clocks, filter, yomTov) : []),
+    [board, filter, yomTov],
   );
 
   if (error && !board) {
@@ -244,7 +246,7 @@ export function ProgramsBoard() {
   const shownPrograms = board.programs.filter((program) => filter === "all" || program.deviceIds.includes(filter));
   const savedCount = shownPrograms.filter((program) => program.enabled).length;
   const monthCount = board.month.days.reduce(
-    (sum, day) => sum + (day.inMonth ? occurrencesOn(day.date, board.programs, board.clocks, filter).length : 0),
+    (sum, day) => sum + (day.inMonth ? occurrencesOn(day.date, board.programs, board.clocks, filter, yomTov).length : 0),
     0,
   );
   const soon = nextEvents[0];
@@ -485,6 +487,9 @@ export function ProgramsBoard() {
                     {longDay(cursor)}
                     {dayMeta?.hebrew ? <span className="ms-2 text-xs font-medium text-muted-foreground sm:text-sm">{dayMeta.hebrew}</span> : null}
                   </h3>
+                  {dayMeta?.yomTov || dayMeta?.cholHaMoed ? (
+                    <FestivalMark name={(dayMeta.yomTov || dayMeta.cholHaMoed) ?? ""} kind={dayMeta.yomTov ? "yom-tov" : "chol"} large />
+                  ) : null}
                   {dayMeta?.parsha || dayMeta?.candles || dayMeta?.havdalah ? (
                     <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
                       {[
@@ -512,6 +517,7 @@ export function ProgramsBoard() {
                 clocks={board.clocks}
                 devices={board.devices}
                 filter={filter}
+                yomTov={yomTov}
                 onOpen={(source, id) => {
                   if (source === "program") {
                     const program = board.programs.find((item) => item.id === id);
@@ -530,7 +536,7 @@ export function ProgramsBoard() {
                 {gridDays.map((day) => {
                   const meta = board.month.days.find((item) => item.date === day);
                   const inMonth = view !== "month" || meta?.inMonth !== false;
-                  const events = occurrencesOn(day, board.programs, board.clocks, filter);
+                  const events = occurrencesOn(day, board.programs, board.clocks, filter, yomTov);
                   const cap = view === "month" ? 3 : 6;
                   return (
                     <div
@@ -540,8 +546,10 @@ export function ProgramsBoard() {
                         "group flex min-w-0 flex-col gap-0.5 rounded-md border bg-card p-0.5 md:gap-1.5 md:rounded-lg md:p-2",
                         view === "month" && "md:min-h-36",
                         view === "week" && "min-h-20 md:min-h-44",
-                        !inMonth && "bg-muted/50 text-muted-foreground",
-                        day === today && "bg-primary/5",
+                        !inMonth && !meta?.yomTov && !meta?.cholHaMoed && "bg-muted/50 text-muted-foreground",
+                        day === today && !meta?.yomTov && !meta?.cholHaMoed && "bg-primary/5",
+                        meta?.yomTov && "border-festival bg-festival-soft",
+                        meta?.cholHaMoed && "border-chol bg-chol-soft",
                       )}
                     >
                       <div className="flex items-center justify-between gap-1">
@@ -553,10 +561,17 @@ export function ProgramsBoard() {
                             setView("day");
                           }}
                         >
-                          <span className={cn("mx-auto grid size-5 place-items-center rounded-full text-[11px] font-semibold sm:mx-0 sm:size-6 sm:text-xs", day === today && "bg-primary text-primary-foreground")}>
+                          <span className={cn(
+                            "mx-auto grid size-5 place-items-center rounded-full text-[11px] font-semibold sm:mx-0 sm:size-6 sm:text-xs",
+                            day === today && "bg-primary text-primary-foreground",
+                            meta?.yomTov && day !== today && "bg-festival text-festival-ink",
+                          )}>
                             {Number(day.slice(8))}
                           </span>
                           {meta?.hebrew ? <HebrewDate value={meta.hebrew} /> : null}
+                          {meta?.yomTov || meta?.cholHaMoed ? (
+                            <FestivalMark name={(meta.yomTov || meta.cholHaMoed) ?? ""} kind={meta.yomTov ? "yom-tov" : "chol"} />
+                          ) : null}
                         </button>
                         <button
                           type="button"
@@ -613,6 +628,8 @@ export function ProgramsBoard() {
               <p className="flex flex-wrap items-center gap-4 px-4 py-3.5 text-[13px] text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-online" /> הפעלה</span>
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-destructive" /> כיבוי</span>
+                <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-festival" /> חג</span>
+                <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-chol" /> חול המועד</span>
                 <span>· לחצו על שעון לפתיחת פרטים · על + להוספה</span>
               </p>
             </>
@@ -727,7 +744,7 @@ export function ProgramsBoard() {
               className="mt-3 w-full rounded-xl border border-primary/40 bg-primary/5 px-3 py-3 text-sm font-bold text-primary"
               disabled={pending === `skip:${pausing.id}`}
               onClick={() => {
-                const day = nextOnDay(pausing, board);
+                const day = nextOnDay(pausing, board, yomTov);
                 if (!day) {
                   toast.message("אין הפעלה קרובה להשהיה");
                   return;
@@ -872,13 +889,13 @@ function openEvent(
   if (clock) showClock(clock);
 }
 
-function upcoming(programs: Program[], clocks: Clock[], filter: string) {
+function upcoming(programs: Program[], clocks: Clock[], filter: string, yomTov: ReadonlySet<string>) {
   const today = israelDate();
   const clock = jerusalemTime();
   const rows: Array<Occurrence & { day: string }> = [];
   for (let index = 0; index < 60 && rows.length < 5; index += 1) {
     const day = shiftDate(today, index);
-    for (const event of occurrencesOn(day, programs, clocks, filter)) {
+    for (const event of occurrencesOn(day, programs, clocks, filter, yomTov)) {
       if (index === 0 && event.time <= clock) continue;
       rows.push({ ...event, day });
       if (rows.length >= 5) break;
@@ -894,6 +911,21 @@ function jerusalemTime(date = new Date()) {
     minute: "2-digit",
     hourCycle: "h23",
   }).format(date);
+}
+
+function FestivalMark({ name, kind, large = false }: { name: string; kind: "yom-tov" | "chol"; large?: boolean }) {
+  return (
+    <span
+      title={name}
+      className={cn(
+        "mt-0.5 block rounded px-0.5 py-px text-center font-extrabold sm:px-1 sm:text-start",
+        large ? "w-fit px-2 py-1 text-sm leading-5" : "text-[9px] leading-[12px] sm:text-[11px] sm:leading-4",
+        kind === "yom-tov" ? "bg-festival text-festival-ink" : "bg-chol text-chol-ink",
+      )}
+    >
+      {name}
+    </span>
+  );
 }
 
 function HebrewDate({ value }: { value: string }) {
@@ -943,13 +975,13 @@ function shortDate(iso: string) {
   return `${Number(day)}.${Number(month)}`;
 }
 
-function nextOnDay(program: Program, board: Board) {
+function nextOnDay(program: Program, board: Board, yomTov: ReadonlySet<string>) {
   const today = israelDate();
   const clock = jerusalemTime();
   const clocks = board.clocks.filter((item) => item.programId === program.id);
   for (let index = 0; index < 84; index += 1) {
     const day = shiftDate(today, index);
-    for (const event of occurrencesOn(day, [program], clocks)) {
+    for (const event of occurrencesOn(day, [program], clocks, "all", yomTov)) {
       if (event.action !== "on" || event.programId !== program.id) continue;
       if (index === 0 && event.time <= clock) continue;
       return event.sourceDay;

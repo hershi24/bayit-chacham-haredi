@@ -1606,6 +1606,29 @@ export async function replaceProgramRuns(programId: string, runs: ProgramRunInpu
   if (inserted.error) fail(inserted.error, "עדכון זמני התוכנית נכשל");
 }
 
+export async function listDeviceProgramRuns(
+  deviceId: string,
+  fromIso: string,
+  toIso: string,
+): Promise<Array<{ action: "ON" | "OFF"; runAt: string }>> {
+  await ready();
+  const result = await client()
+    .from("program_runs")
+    .select("action, run_at")
+    .eq("device_id", deviceId)
+    .gte("run_at", fromIso)
+    .lte("run_at", toIso)
+    .order("run_at");
+  if (result.error) {
+    if (result.error.code === "42P01" || result.error.code === "PGRST205") return [];
+    fail(result.error, "לא ניתן לקרוא זמני תוכנית");
+  }
+  return (result.data ?? []).map((row) => ({
+    action: row.action === "OFF" ? "OFF" : "ON",
+    runAt: String(row.run_at),
+  }));
+}
+
 export async function listProgramRuns(tenantId: string): Promise<ProgramRun[]> {
   await ready();
   const programs = await client().from("programs").select("id").eq("tenant_id", tenantId);

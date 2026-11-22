@@ -637,11 +637,7 @@ export function ProgramsBoard() {
                           {clockLine(meta, true)}
                         </p>
                       ) : null}
-                      {sunCompact(meta) ? (
-                        <p className="truncate text-[9px] font-medium leading-3 text-muted-foreground sm:text-[11px] sm:leading-4" dir="ltr" title={sunLine(meta) ?? undefined}>
-                          {sunCompact(meta)}
-                        </p>
-                      ) : null}
+                      <SunFooter meta={meta} />
                     </div>
                   );
                 })}
@@ -1102,9 +1098,24 @@ function sunLine(meta: MonthDay | undefined) {
   return [meta.sunset ? `שקיעה ${meta.sunset}` : null, meta.tzeit ? `צאת הכוכבים ${meta.tzeit}` : null].filter(Boolean).join(" · ");
 }
 
-function sunCompact(meta: MonthDay | undefined) {
-  if (!meta?.sunset || !meta.tzeit) return null;
-  return `${meta.sunset}–${meta.tzeit}`;
+function SunFooter({ meta }: { meta: MonthDay | undefined }) {
+  if (!meta?.sunset && !meta?.tzeit) return null;
+  return (
+    <div className="mt-auto grid gap-px pt-1 text-[8px] leading-3 text-muted-foreground sm:text-[11px] sm:leading-4" title={sunLine(meta) ?? undefined}>
+      {meta.sunset ? (
+        <p className="flex items-baseline justify-start gap-1 whitespace-nowrap">
+          <span>ש׳</span>
+          <span dir="ltr" className="tabular-nums">{meta.sunset}</span>
+        </p>
+      ) : null}
+      {meta.tzeit ? (
+        <p className="flex items-baseline justify-start gap-1 whitespace-nowrap">
+          <span>צה״כ</span>
+          <span dir="ltr" className="tabular-nums">{meta.tzeit}</span>
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function clockLine(meta: MonthDay | undefined, compact = false) {

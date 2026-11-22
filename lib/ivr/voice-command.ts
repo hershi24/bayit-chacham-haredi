@@ -1,6 +1,6 @@
 import type { MenuDevice } from "@/lib/ivr/flow";
 import { speechFor } from "@/lib/ivr/speech";
-import { clockConfirmSpeech, parseVoiceClock } from "@/lib/ivr/voice-clock";
+import { clockConfirmSpeech, delayConfirmSpeech, parseVoiceClock, parseVoiceDelay } from "@/lib/ivr/voice-clock";
 import { FILLER, OFF, ON, foldVoice, stemVoice, voiceAction, voiceWords } from "@/lib/ivr/voice-text";
 
 export { foldVoice, voiceAction };
@@ -11,6 +11,7 @@ export type VoiceCommand =
   | { kind: "timer"; device: MenuDevice; minutes: number }
   | { kind: "status"; device: MenuDevice }
   | { kind: "clock"; device: MenuDevice; day: string; onTime: string; offTime: string; speech: string }
+  | { kind: "later"; device: MenuDevice; action: "on" | "off"; delayMinutes: number; runMinutes: number | null; speech: string }
   | { kind: "clarify"; speech: string };
 
 const GENERIC = new Set(["שקע", "ערוץ", "התקן", "מכשיר"]);
@@ -181,6 +182,22 @@ export function parseVoiceCommand(transcript: string, devices: MenuDevice[], now
     };
   }
 
+  const delay = parseVoiceDelay(text);
+  if (delay) {
+    if (!delay.ok) return { kind: "clarify", speech: delay.speech };
+    const picked = pickDevice(text, devices, CLOCK_STOP);
+    if (picked.kind === "none") return { kind: "clarify", speech: "לא הבנתי איזה התקן. אמור את השם שמופיע בתפריט" };
+    if (picked.kind === "tie") return { kind: "clarify", speech: `יש כמה התקנים מתאימים: ${picked.names}. אמור את השם המדויק` };
+    return {
+      kind: "later",
+      device: picked.device,
+      action: delay.action,
+      delayMinutes: delay.delayMinutes,
+      runMinutes: delay.runMinutes,
+      speech: delayConfirmSpeech(picked.device.name, delay.action, delay.delayMinutes, delay.runMinutes),
+    };
+  }
+
   const action = voiceAction(text);
   if (action === "BOTH") return { kind: "clarify", speech: "לא הבנתי אם להדליק או לכבות. אמור שוב" };
 
@@ -208,7 +225,7 @@ export function parseVoiceCommand(transcript: string, devices: MenuDevice[], now
 /** Words for a command that does not switch a relay: a question, a state check, or a clock waiting for a key. */
 export function voiceCheckSpeech(command: VoiceCommand): string {
   if (command.kind === "clarify") return command.speech;
-  if (command.kind === "clock") return command.speech;
+  if (command.kind === "clock" || command.kind === "later") return command.speech;
   if (command.kind === "status") {
     return speechFor({ kind: "status", relayOn: command.device.relayOn, name: command.device.name });
   }

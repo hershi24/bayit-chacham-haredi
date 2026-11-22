@@ -6,6 +6,7 @@ import { answerSettings } from "@/lib/ivr/settings";
 import { allDoneMessage, allIdleMessage } from "@/lib/ivr/settings-menu";
 import { speechFor } from "@/lib/ivr/speech";
 import { awaitStatusCheck, ensureStatusCheck } from "@/lib/ivr/status-check";
+import { delaySavedSpeech } from "@/lib/ivr/voice-clock";
 import type { VoiceCommand } from "@/lib/ivr/voice-command";
 import { answerVoice } from "@/lib/ivr/voice-turn";
 import { yemotRead, yemotSpeak } from "@/lib/ivr/yemot";
@@ -99,6 +100,23 @@ async function performVoice(command: VoiceCommand, allowed: MenuDevice[], frozen
   const device = await freshDevice(command.device);
   if (command.kind === "status") return speechFor({ kind: "status", relayOn: device.relayOn, name: device.name });
   if (frozen.has(device.deviceId)) return speechFor({ kind: "frozen", name: device.name });
+  if (command.kind === "later") {
+    const wait = command.delayMinutes * 60_000;
+    const runAt = new Date(Date.now() + wait).toISOString();
+    if (command.action === "off") {
+      await saveSchedule({ deviceId: device.deviceId, kind: "timer_off", runAt });
+    } else {
+      await saveSchedule({ deviceId: device.deviceId, kind: "later_on", runAt });
+      if (command.runMinutes) {
+        await saveSchedule({
+          deviceId: device.deviceId,
+          kind: "timer_off",
+          runAt: new Date(Date.now() + wait + command.runMinutes * 60_000).toISOString(),
+        });
+      }
+    }
+    return delaySavedSpeech(device.name, command.action, command.delayMinutes, command.runMinutes);
+  }
   if (command.kind === "clock") {
     return savePhoneClock({
       type: "clock-save",

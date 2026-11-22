@@ -6,7 +6,7 @@ import { handleMenu } from "../lib/ivr/menu";
 import { parseVoiceCommand } from "../lib/ivr/voice-command";
 import { setVoicePorts } from "../lib/ivr/voice-turn";
 import { syncTenantPrograms } from "../lib/programs/sync";
-import { createDevice, createTenant, deleteDayClock, deleteDevice, deleteTenant, listDayClocks } from "../lib/store";
+import { createDevice, createTenant, deleteDayClock, deleteDevice, deleteTenant, getDevice, listDayClocks } from "../lib/store";
 import { israelDate, jerusalemInstant, shiftDate } from "../lib/time";
 
 const ac: MenuDevice = { deviceId: "ac", name: "מזגן", relayOn: false, connectivity: "ONLINE" };
@@ -170,8 +170,65 @@ test("an unclear device, date, or hour asks instead of guessing, and immediate c
   assert.match(noEnd.speech, /מתי לכבות/);
 
   assert.equal(clock("תדליק את הדוד לחצי שעה", noon, [boiler]).kind, "timer");
+  assert.equal(clock("עוד פעם תדליק את הדוד לחצי שעה", noon, [boiler]).kind, "timer");
   assert.equal(clock("תדליק את האור בסלון").kind, "on");
   assert.equal(clock("כבה את הדוד", noon, [boiler]).kind, "off");
+});
+
+test("a time written with a colon stays one clock after the colon becomes a space", () => {
+  const today = clock("היום ב-18:00 תפעיל דוד שמש למשך 45 דקות");
+  assert.equal(today.kind, "clock");
+  if (today.kind !== "clock") return;
+  assert.equal(today.onTime, "18:00");
+  assert.equal(today.offTime, "18:45");
+
+  const range = clock("מחר ב-8:00 בבוקר שידלק המזגן עד 14:00");
+  assert.equal(range.kind, "clock");
+  if (range.kind !== "clock") return;
+  assert.equal(range.onTime, "08:00");
+  assert.equal(range.offTime, "14:00");
+
+  const half = clock("ביום חמישי ב-19:00:00 תדליק את הדוד עד 21:30:00", noon, [boiler]);
+  assert.equal(half.kind, "clock");
+  if (half.kind !== "clock") return;
+  assert.equal(half.onTime, "19:00");
+  assert.equal(half.offTime, "21:30");
+
+  const evening = clock("מחר ב-6:30 בערב תפעיל את המזגן עד 22:00");
+  assert.equal(evening.kind, "clock");
+  if (evening.kind !== "clock") return;
+  assert.equal(evening.onTime, "18:30");
+  assert.equal(evening.offTime, "22:00");
+});
+
+test("עוד חצי שעה waits, and לחצי שעה still turns on now", () => {
+  const later = clock("עוד חצי שעה תפעיל את דוד שמש");
+  assert.equal(later.kind, "later");
+  if (later.kind !== "later") return;
+  assert.equal(later.device.deviceId, "sun");
+  assert.equal(later.action, "on");
+  assert.equal(later.delayMinutes, 30);
+  assert.equal(later.runMinutes, null);
+  assert.equal(later.speech, "להפעלת הדוד שמש בעוד חצי שעה, הקישו 1 לאישור או 2 לביטול");
+
+  const about = clock("בעוד כחצי שעה תפעיל את דוד שמש");
+  assert.equal(about.kind, "later");
+  if (about.kind !== "later") return;
+  assert.equal(about.delayMinutes, 30);
+
+  const hold = clock("עוד חצי שעה תפעיל את דוד שמש למשך שעה");
+  assert.equal(hold.kind, "later");
+  if (hold.kind !== "later") return;
+  assert.equal(hold.delayMinutes, 30);
+  assert.equal(hold.runMinutes, 60);
+
+  const off = clock("עוד חצי שעה תכבה את הדוד", noon, [boiler]);
+  assert.equal(off.kind, "later");
+  if (off.kind !== "later") return;
+  assert.equal(off.action, "off");
+  assert.equal(off.delayMinutes, 30);
+
+  assert.equal(clock("תדליק את הדוד לחצי שעה", noon, [boiler]).kind, "timer");
 });
 
 test("star asks for 1 before saving a one-time clock, and 2 cancels it", async () => {
@@ -244,6 +301,65 @@ test("star asks for 1 before saving a one-time clock, and 2 cancels it", async (
     for (const item of await listDayClocks(tenant.id)) await deleteDayClock(tenant.id, item.id);
     await syncTenantPrograms(tenant.id);
     await deleteDevice("voiceclockce33");
+    await deleteTenant(tenant.id);
+    setVoicePorts(null);
+  }
+});
+
+test("עוד חצי שעה asks before scheduling and does not switch the relay", async () => {
+  const tenant = await createTenant({ name: "בדיקת השהיה קולית", phone: "035559944" });
+  await createDevice({ deviceId: "voicedelayce33", name: "דוד שמש", tenantId: tenant.id });
+  setVoicePorts({
+    load: async () => new Uint8Array([1, 2, 3, 4]),
+    transcribe: async () => "עוד חצי שעה תפעיל את דוד שמש",
+    remove: async () => {},
+  });
+  const post = (fields: Record<string, string>) =>
+    handleMenu(
+      new Request("http://127.0.0.1/api/ivr/menu", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ ApiPhone: "035559944", ...fields }),
+      }),
+    );
+  const schedules = () => {
+    const database = new DatabaseSync(".data/pikud.sqlite", { readOnly: true });
+    const rows = database
+      .prepare("SELECT kind, run_at FROM schedules WHERE device_id = ? AND done_at IS NULL")
+      .all("voicedelayce33") as Array<{ kind: string; run_at: string }>;
+    database.close();
+    return rows;
+  };
+  try {
+    const asked = await post({ pikud_device: "*", ApiCallId: "delay-ask", pikud_v1: "/6/delay.wav" });
+    const askedText = await asked.text();
+    assert.match(askedText, /להפעלת הדו.ד שמש בעוד חצי שעה/);
+    assert.match(askedText, /הקישו 1 לאישור או 2 לביטול/);
+    assert.equal(/הופעל|נדלק/.test(askedText), false);
+    assert.equal(schedules().length, 0);
+    assert.notEqual((await getDevice("voicedelayce33"))?.relayOn, true);
+
+    const saved = await post({
+      pikud_device: "*",
+      ApiCallId: "delay-ask",
+      pikud_v1: "/6/delay.wav",
+      pikud_v2: "1",
+    });
+    const savedText = await saved.text();
+    assert.match(savedText, /יופעל בעוד חצי שעה/);
+    assert.equal(/הופעל|נדלק/.test(savedText), false);
+    assert.notEqual((await getDevice("voicedelayce33"))?.relayOn, true);
+    const rows = schedules();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.kind, "later_on");
+    const runAt = new Date(rows[0]?.run_at ?? 0).getTime();
+    const distance = runAt - Date.now();
+    assert.equal(distance > 29 * 60_000 && distance < 31 * 60_000, true);
+  } finally {
+    const database = new DatabaseSync(".data/pikud.sqlite");
+    database.prepare("DELETE FROM schedules WHERE device_id = ?").run("voicedelayce33");
+    database.close();
+    await deleteDevice("voicedelayce33");
     await deleteTenant(tenant.id);
     setVoicePorts(null);
   }

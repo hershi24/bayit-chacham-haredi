@@ -22,6 +22,7 @@ const done = new Map<string, number>();
 const CONFIRM_MS = 3 * 60_000;
 
 type PendingClock = {
+  kind: "clock";
   deviceId: string;
   day: string;
   onTime: string;
@@ -30,7 +31,19 @@ type PendingClock = {
   at: number;
 };
 
-const pending = new Map<string, PendingClock>();
+type PendingLater = {
+  kind: "later";
+  deviceId: string;
+  action: "on" | "off";
+  delayMinutes: number;
+  runMinutes: number | null;
+  speech: string;
+  at: number;
+};
+
+type Pending = PendingClock | PendingLater;
+
+const pending = new Map<string, Pending>();
 
 export function setVoicePorts(next: VoicePorts | null) {
   ports = next;
@@ -38,13 +51,14 @@ export function setVoicePorts(next: VoicePorts | null) {
   pending.clear();
 }
 
-function rememberPending(callKey: string, value: Omit<PendingClock, "at">) {
+function rememberPending(callKey: string, value: Omit<PendingClock, "at"> | Omit<PendingLater, "at">) {
   const now = Date.now();
   for (const [key, item] of pending) if (now - item.at > CONFIRM_MS) pending.delete(key);
-  pending.set(callKey, { ...value, at: now });
+  if (value.kind === "later") pending.set(callKey, { ...value, at: now });
+  else pending.set(callKey, { ...value, at: now });
 }
 
-function takePending(callKey: string): PendingClock | "expired" | null {
+function takePending(callKey: string): Pending | "expired" | null {
   const held = pending.get(callKey);
   pending.delete(callKey);
   if (!held) return null;
@@ -213,14 +227,25 @@ export async function answerVoice(input: {
     if (latest.value === "2") return back("התזמון בוטל", input.devices);
     const device = input.devices.find((item) => item.deviceId === held.deviceId);
     if (!device || !input.perform) return back("לא ניתן לשמור את התזמון", input.devices);
-    const speech = await input.perform({
-      kind: "clock",
-      device,
-      day: held.day,
-      onTime: held.onTime,
-      offTime: held.offTime,
-      speech: held.speech,
-    });
+    const speech = await input.perform(
+      held.kind === "later"
+        ? {
+            kind: "later",
+            device,
+            action: held.action,
+            delayMinutes: held.delayMinutes,
+            runMinutes: held.runMinutes,
+            speech: held.speech,
+          }
+        : {
+            kind: "clock",
+            device,
+            day: held.day,
+            onTime: held.onTime,
+            offTime: held.offTime,
+            speech: held.speech,
+          },
+    );
     return back(speech, input.devices);
   }
 
@@ -250,20 +275,33 @@ export async function answerVoice(input: {
       if (!transcript) speech = "לא הצלחתי לזהות את הדיבור";
       else {
         const command = parseVoiceCommand(transcript, input.devices);
-        if (command.kind === "clock") {
+        if (command.kind === "clock" || command.kind === "later") {
           try {
             await engine.remove(target);
           } catch (error) {
             console.error("[pikud] voice delete", error instanceof Error ? error.message : "failed");
           }
           remember(key);
-          rememberPending(callKey, {
-            deviceId: command.device.deviceId,
-            day: command.day,
-            onTime: command.onTime,
-            offTime: command.offTime,
-            speech: command.speech,
-          });
+          rememberPending(
+            callKey,
+            command.kind === "later"
+              ? {
+                  kind: "later",
+                  deviceId: command.device.deviceId,
+                  action: command.action,
+                  delayMinutes: command.delayMinutes,
+                  runMinutes: command.runMinutes,
+                  speech: command.speech,
+                }
+              : {
+                  kind: "clock",
+                  deviceId: command.device.deviceId,
+                  day: command.day,
+                  onTime: command.onTime,
+                  offTime: command.offTime,
+                  speech: command.speech,
+                },
+          );
           return yemotRead({
             message: command.speech,
             field: `pikud_v${next}`,

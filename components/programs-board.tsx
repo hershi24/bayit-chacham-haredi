@@ -487,20 +487,8 @@ export function ProgramsBoard() {
                     {longDay(cursor)}
                     {dayMeta?.hebrew ? <span className="ms-2 text-xs font-medium text-muted-foreground sm:text-sm">{dayMeta.hebrew}</span> : null}
                   </h3>
-                  {dayMeta?.yomTov || dayMeta?.cholHaMoed ? (
-                    <FestivalMark name={(dayMeta.yomTov || dayMeta.cholHaMoed) ?? ""} kind={dayMeta.yomTov ? "yom-tov" : "chol"} large />
-                  ) : null}
-                  {dayMeta?.parsha || dayMeta?.candles || dayMeta?.havdalah ? (
-                    <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
-                      {[
-                        dayMeta.parsha ? `פרשת ${dayMeta.parsha}` : null,
-                        dayMeta.candles ? `כניסת שבת ${dayMeta.candles}` : null,
-                        dayMeta.havdalah ? `יציאת שבת ${dayMeta.havdalah}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  ) : null}
+                  {festivalOf(dayMeta) ? <FestivalMark name={festivalOf(dayMeta)!.name} kind={festivalOf(dayMeta)!.kind} large /> : null}
+                  {clockLine(dayMeta) ? <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{clockLine(dayMeta)}</p> : null}
                 </div>
                 <button
                   type="button"
@@ -546,10 +534,10 @@ export function ProgramsBoard() {
                         "group flex min-w-0 flex-col gap-0.5 rounded-md border bg-card p-0.5 md:gap-1.5 md:rounded-lg md:p-2",
                         view === "month" && "md:min-h-36",
                         view === "week" && "min-h-20 md:min-h-44",
-                        !inMonth && !meta?.yomTov && !meta?.cholHaMoed && "bg-muted/50 text-muted-foreground",
-                        day === today && !meta?.yomTov && !meta?.cholHaMoed && "bg-primary/5",
+                        !inMonth && !marked(meta) && "bg-muted/50 text-muted-foreground",
+                        day === today && !marked(meta) && "bg-primary/5",
                         meta?.yomTov && "border-festival bg-festival-soft",
-                        meta?.cholHaMoed && "border-chol bg-chol-soft",
+                        (meta?.cholHaMoed || (meta?.eve && !meta.yomTov)) && "border-chol bg-chol-soft",
                       )}
                     >
                       <div className="flex items-center justify-between gap-1">
@@ -569,9 +557,7 @@ export function ProgramsBoard() {
                             {Number(day.slice(8))}
                           </span>
                           {meta?.hebrew ? <HebrewDate value={meta.hebrew} /> : null}
-                          {meta?.yomTov || meta?.cholHaMoed ? (
-                            <FestivalMark name={(meta.yomTov || meta.cholHaMoed) ?? ""} kind={meta.yomTov ? "yom-tov" : "chol"} />
-                          ) : null}
+                          {festivalOf(meta) ? <FestivalMark name={festivalOf(meta)!.name} kind={festivalOf(meta)!.kind} /> : null}
                         </button>
                         <button
                           type="button"
@@ -609,15 +595,9 @@ export function ProgramsBoard() {
                           +{events.length - cap}
                         </button>
                       ) : null}
-                      {meta?.parsha || meta?.candles || meta?.havdalah ? (
-                        <p className="mt-0.5 hidden truncate text-[11px] font-medium leading-4 text-muted-foreground sm:block">
-                          {[
-                            meta.parsha ? meta.parsha : null,
-                            meta.candles ? `כניסה ${meta.candles}` : null,
-                            meta.havdalah ? `יציאה ${meta.havdalah}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
+                      {clockLine(meta, true) ? (
+                        <p className={cn("mt-0.5 truncate text-[10px] font-medium leading-4 text-muted-foreground sm:text-[11px]", !meta?.eve && "hidden sm:block")}>
+                          {clockLine(meta, true)}
                         </p>
                       ) : null}
                     </div>
@@ -629,7 +609,7 @@ export function ProgramsBoard() {
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-online" /> הפעלה</span>
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-destructive" /> כיבוי</span>
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-festival" /> חג</span>
-                <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-chol" /> חול המועד</span>
+                <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-chol" /> חול המועד וערב חג</span>
                 <span>· לחצו על שעון לפתיחת פרטים · על + להוספה</span>
               </p>
             </>
@@ -913,7 +893,33 @@ function jerusalemTime(date = new Date()) {
   }).format(date);
 }
 
-function FestivalMark({ name, kind, large = false }: { name: string; kind: "yom-tov" | "chol"; large?: boolean }) {
+function marked(meta: MonthDay | undefined) {
+  return Boolean(meta?.yomTov || meta?.cholHaMoed || meta?.eve);
+}
+
+function festivalOf(meta: MonthDay | undefined): { name: string; kind: "yom-tov" | "chol" | "eve" } | null {
+  if (!meta) return null;
+  if (meta.yomTov) return { name: meta.yomTov, kind: "yom-tov" };
+  if (meta.cholHaMoed) return { name: meta.cholHaMoed, kind: "chol" };
+  if (meta.eve) return { name: meta.candles ? `ערב ${meta.eve} ${meta.candles}` : `ערב ${meta.eve}`, kind: "eve" };
+  return null;
+}
+
+function clockLine(meta: MonthDay | undefined, compact = false) {
+  if (!meta) return null;
+  const parts = [
+    meta.parsha ? (compact ? meta.parsha : `פרשת ${meta.parsha}`) : null,
+    meta.candles && meta.eve && meta.cholHaMoed ? `כניסת ${meta.eve} ${meta.candles}` : null,
+    meta.candles && !meta.eve && meta.weekday === 5 ? `כניסת שבת ${meta.candles}` : null,
+    meta.candles && !meta.eve && meta.weekday !== 5 ? `כניסה ${meta.candles}` : null,
+    meta.havdalah && meta.weekday === 6 ? `יציאת שבת ${meta.havdalah}` : null,
+    meta.havdalah && meta.weekday !== 6 && meta.yomTov ? `יציאת החג ${meta.havdalah}` : null,
+    meta.havdalah && meta.weekday !== 6 && !meta.yomTov ? `יציאה ${meta.havdalah}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function FestivalMark({ name, kind, large = false }: { name: string; kind: "yom-tov" | "chol" | "eve"; large?: boolean }) {
   return (
     <span
       title={name}

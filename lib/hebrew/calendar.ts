@@ -223,6 +223,8 @@ export type MonthDay = {
   yomTov: string | null;
   /** Chol hamoed label, such as א׳ חול המועד. Empty on yom tov, Chanukah, and Purim. */
   cholHaMoed: string | null;
+  /** Holiday that begins this evening, such as פסח on י״ד ניסן. Empty once the day itself is yom tov. */
+  eve: string | null;
   candles: string | null;
   havdalah: string | null;
 };
@@ -238,7 +240,7 @@ export async function monthBoard(locationId: string, year: number, month: number
   const gridEnd = addDays(gridStart, cells - 1);
   const events = HebrewCalendar.calendar({
     start: dateOf(gridStart),
-    end: dateOf(gridEnd),
+    end: dateOf(addDays(gridEnd, 1)),
     sedrot: true,
     candlelighting: true,
     il: true,
@@ -281,6 +283,7 @@ export async function monthBoard(locationId: string, year: number, month: number
     const date = addDays(gridStart, index);
     const [cellYear, cellMonth, cellDay] = date.split("-").map(Number);
     const weekday = new Date(cellYear, cellMonth - 1, cellDay).getDay();
+    const festivalToday = yomTov.has(date);
     days.push({
       date,
       inMonth: cellYear === year && cellMonth === month,
@@ -290,7 +293,8 @@ export async function monthBoard(locationId: string, year: number, month: number
       parsha: weekday === 6 ? (parsha.get(date) ?? null) : null,
       holiday: holiday.get(date) ?? null,
       yomTov: yomTov.get(date) ?? null,
-      cholHaMoed: yomTov.has(date) ? null : (cholHaMoed.get(date) ?? null),
+      cholHaMoed: festivalToday ? null : (cholHaMoed.get(date) ?? null),
+      eve: festivalToday ? null : (yomTov.get(addDays(date, 1)) ?? null),
       candles: clockText(candles.get(date)),
       havdalah: clockText(havdalah.get(date)),
     });

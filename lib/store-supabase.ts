@@ -1723,7 +1723,12 @@ export async function listShellyBackups(tenantId: string): Promise<ShellyBackupR
 
 export async function saveShellyBackup(row: ShellyBackupRow): Promise<ShellyBackupRow> {
   await ready();
-  const result = await client().from("shelly_backups").upsert(shellyBackupRecord(row), { onConflict: "shelly_id" });
+  const record = shellyBackupRecord(row);
+  let result = await client().from("shelly_backups").upsert(record, { onConflict: "shelly_id" });
+  if (result.error && columnMissing(result.error, "plan_code")) {
+    const { plan_code: _ignored, ...withoutCode } = record;
+    result = await client().from("shelly_backups").upsert(withoutCode, { onConflict: "shelly_id" });
+  }
   if (result.error) {
     if (missingBackup(result.error)) throw new HttpError(500, "טבלת גיבוי Shelly חסרה. הריצו את supabase/migrations/20261120_shelly_backup.sql");
     fail(result.error, "שמירת גיבוי Shelly נכשלה");
@@ -1742,6 +1747,7 @@ function shellyBackupRecord(row: ShellyBackupRow) {
     window_label: row.windowLabel,
     plan_hash: row.planHash,
     action_count: row.actionCount,
+    plan_code: row.planCode,
     schedule_ids: JSON.stringify(row.scheduleIds),
     synced_at: row.syncedAt,
     verified_at: row.verifiedAt,
@@ -1773,6 +1779,7 @@ function mapShellyBackup(row: Record<string, unknown>): ShellyBackupRow {
     windowLabel: row.window_label == null ? null : String(row.window_label),
     planHash: row.plan_hash == null ? null : String(row.plan_hash),
     actionCount: Number(row.action_count ?? 0),
+    planCode: row.plan_code == null ? null : String(row.plan_code),
     scheduleIds,
     syncedAt: row.synced_at == null ? null : String(row.synced_at),
     verifiedAt: row.verified_at == null ? null : String(row.verified_at),

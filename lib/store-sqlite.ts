@@ -292,6 +292,10 @@ function ensureShellyBackups(database: DatabaseSync) {
       updated_at TEXT NOT NULL
     );
   `);
+  const columns = database.prepare("PRAGMA table_info(shelly_backups)").all() as Array<{ name?: string }>;
+  if (!columns.some((column) => column.name === "plan_code")) {
+    database.exec("ALTER TABLE shelly_backups ADD COLUMN plan_code TEXT");
+  }
 }
 
 function ensureAccessTables(database: DatabaseSync) {
@@ -1502,8 +1506,8 @@ export function saveShellyBackup(row: ShellyBackupRow): ShellyBackupRow {
     .prepare(
       `INSERT INTO shelly_backups (
         shelly_id, tenant_id, status, mode, window_start, window_end, window_label, plan_hash,
-        action_count, schedule_ids, synced_at, verified_at, error, attempts, alerted_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        action_count, plan_code, schedule_ids, synced_at, verified_at, error, attempts, alerted_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(shelly_id) DO UPDATE SET
         tenant_id = excluded.tenant_id,
         status = excluded.status,
@@ -1513,6 +1517,7 @@ export function saveShellyBackup(row: ShellyBackupRow): ShellyBackupRow {
         window_label = excluded.window_label,
         plan_hash = excluded.plan_hash,
         action_count = excluded.action_count,
+        plan_code = excluded.plan_code,
         schedule_ids = excluded.schedule_ids,
         synced_at = excluded.synced_at,
         verified_at = excluded.verified_at,
@@ -1531,6 +1536,7 @@ export function saveShellyBackup(row: ShellyBackupRow): ShellyBackupRow {
       row.windowLabel,
       row.planHash,
       row.actionCount,
+      row.planCode,
       JSON.stringify(row.scheduleIds),
       row.syncedAt,
       row.verifiedAt,
@@ -1562,6 +1568,7 @@ function mapShellyBackup(row: Row): ShellyBackupRow {
     windowLabel: textOrNull(row, "window_label"),
     planHash: textOrNull(row, "plan_hash"),
     actionCount: Number(row.action_count ?? 0),
+    planCode: textOrNull(row, "plan_code"),
     scheduleIds,
     syncedAt: textOrNull(row, "synced_at"),
     verifiedAt: textOrNull(row, "verified_at"),

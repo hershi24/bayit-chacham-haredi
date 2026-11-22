@@ -1,4 +1,4 @@
-import type { BackupAction } from "@/lib/shelly/backup-plan";
+import type { BackupAction, ScheduleJob } from "@/lib/shelly/backup-plan";
 
 const MARK = "pikud-shabbat";
 
@@ -134,6 +134,16 @@ export function planScript(actions: BackupAction[], endSeconds: number): string 
 /** Schedules fire what is still ahead. This script restores what the outage skipped, then deletes those schedules after the window. */
 export function expiryScript(actions: BackupAction[], endSeconds: number, ids: number[]): string {
   return deviceScript(actions, endSeconds, ids);
+}
+
+export function sentCode(mode: "schedule" | "script", script: string, jobs: ScheduleJob[]): string {
+  if (mode === "script") return script;
+  const schedules = jobs
+    .map((job) =>
+      JSON.stringify({ method: "Schedule.Create", params: { enable: true, timespec: job.timespec, calls: job.calls } }, null, 2),
+    )
+    .join("\n\n");
+  return `${schedules}\n\n// Script.PutCode ${scriptName()}\n${script}`;
 }
 
 export function idleScript(): string {

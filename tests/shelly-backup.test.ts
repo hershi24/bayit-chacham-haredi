@@ -215,6 +215,8 @@ test("an admin sync writes only this Shelly's Shabbat plan, checks it, and leave
     assert.equal(saved.status, "verified");
     assert.equal(saved.mode, "schedule");
     assert.equal(saved.actionCount, 2);
+    assert.match(saved.planCode ?? "", /Schedule\.Create/);
+    assert.match(saved.planCode ?? "", /var PLAN/);
     assert.equal(device.tz, "Asia/Jerusalem");
     assert.equal(device.jobs.has(7), true);
     assert.equal([...device.jobs.keys()].filter((id) => id !== 7).length, 2);

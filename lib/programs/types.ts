@@ -15,6 +15,8 @@ export type StoredProgram = {
   offTime: string | null;
   slots: ProgramSlot[];
   skippedDates?: string[];
+  /** When set, the program does not run on Israel yom tov. Chanukah and Purim still run. */
+  skipHolidays?: boolean;
 };
 
 export type ProgramSlot = {

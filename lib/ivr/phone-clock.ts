@@ -40,6 +40,8 @@ export async function savePhoneClock(plan: PhoneClockPlan): Promise<string> {
     onTime: plan.onTime,
     offTime: plan.offTime,
     slots: [{ onTime: plan.onTime, offTime: plan.offTime }],
+    skippedDates: existing?.skippedDates ?? [],
+    skipHolidays: existing?.skipHolidays ?? false,
   });
   await syncTenantPrograms(tenantId);
   return clockSavedMessage(plan);

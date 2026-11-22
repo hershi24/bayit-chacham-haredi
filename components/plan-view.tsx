@@ -154,6 +154,9 @@ export function PlanViewDialog({
             </div>
           ) : null}
 
+          {program?.skipHolidays ? (
+            <p className="text-xs leading-5 text-muted-foreground">לא פועלת בחגים. חנוכה ופורים נשארים ימי הפעלה.</p>
+          ) : null}
           {skipped.length ? <p className="text-xs leading-5 text-muted-foreground">מושהה ב־{skipped.join(", ")}</p> : null}
         </div>
 

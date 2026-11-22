@@ -204,6 +204,10 @@ function enabledFlag(value: unknown, fallback: boolean) {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function holidayFlag(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
 function skippedList(value: unknown) {
   if (!Array.isArray(value)) throw new HttpError(400, "רשימת התאריכים לא תקינה");
   const days = [...new Set(value.map((item) => dayString(item)))];
@@ -255,6 +259,7 @@ async function saveRepeatAction(user: SessionUser, tenantId: string, body: Recor
     offTime: slots[0].offTime,
     slots,
     skippedDates: current?.skippedDates ?? [],
+    skipHolidays: holidayFlag(body.skipHolidays, current?.skipHolidays ?? false),
   });
   const absorb = Array.isArray(body.absorbIds) ? body.absorbIds.filter((item): item is string => typeof item === "string") : [];
   for (const id of absorb) {
@@ -383,6 +388,7 @@ async function saveProgramAction(user: SessionUser, tenantId: string, body: Reco
         offTime: null,
         slots: [],
         skippedDates: current?.skippedDates ?? [],
+        skipHolidays: holidayFlag(body.skipHolidays, current?.skipHolidays ?? false),
       },
       days,
     ),

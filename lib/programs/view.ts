@@ -1,9 +1,11 @@
-import { hebrewLabels, hebrewMonthCaption, monthBoard, places } from "@/lib/hebrew/calendar";
+import { hebrewLabels, hebrewMonthCaption, monthBoard, places, yomTovDates } from "@/lib/hebrew/calendar";
+import { skipsHoliday } from "@/lib/programs/holidays";
 import { slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
 import { weekdayOf } from "@/lib/programs/weekdays";
 import { shellyBackupViews } from "@/lib/shelly/backup-sync";
 import { getClock, listDayClocks, listPrograms, listTenantDevices } from "@/lib/store";
+import { israelDate, shiftDate } from "@/lib/time";
 
 export async function programsPayload(
   tenantId: string,
@@ -43,15 +45,24 @@ export async function programsPayload(
       startDate: program.startDate,
       endDate: program.endDate,
       skippedDates: program.skippedDates ?? [],
+      skipHolidays: Boolean(program.skipHolidays),
     }))
     .sort((left, right) => left.name.localeCompare(right.name, "he"));
+  const civilToday = israelDate(now);
+  const gridFrom = days[0]?.date ?? civilToday;
+  const gridTo = days.at(-1)?.date ?? civilToday;
+  const horizon = shiftDate(civilToday, 90);
+  const festivals = new Set(
+    await yomTovDates(gridFrom < civilToday ? gridFrom : civilToday, gridTo > horizon ? gridTo : horizon),
+  );
   const repeated = programs.flatMap((program) =>
     days
       .filter(
         (day) =>
           program.weekdays.includes(weekdayOf(day.date)) &&
           coversDay(day.date, program.startDate, program.endDate) &&
-          !(program.skippedDates ?? []).includes(day.date),
+          !(program.skippedDates ?? []).includes(day.date) &&
+          !skipsHoliday(program, day.date, festivals),
       )
       .flatMap((day) =>
         slotsForWeekday(program.slots, weekdayOf(day.date)).map((slot, index) => ({
@@ -86,6 +97,7 @@ export async function programsPayload(
       ...repeated,
     ],
     month: { year, month, hebrew: hebrewMonth, days },
+    yomTovDates: [...festivals],
     shellyBackup,
   };
 }

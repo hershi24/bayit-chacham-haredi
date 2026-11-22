@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_CLOCK, formatClock, hebrewMonthCaption, monthBoard, upcomingPrograms } from "../lib/hebrew/calendar";
+import { DEFAULT_CLOCK, formatClock, hebrewMonthCaption, monthBoard, upcomingPrograms, yomTovDates } from "../lib/hebrew/calendar";
 import { handleMenu } from "../lib/ivr/menu";
 import { mergeVisibleDevices } from "../lib/programs/devices";
 import { looseId, programId, syncTenantPrograms } from "../lib/programs/sync";
@@ -59,6 +59,21 @@ test("november puts the parsha on saturday and keeps candle times as labels", as
   assert.equal(friday?.candles, "16:05");
   assert.equal(saturday?.havdalah, "17:23");
   assert.equal(days[0]?.date, "2026-11-01");
+});
+
+test("the calendar marks yom tov and leaves Chanukah and Purim as weekdays", async () => {
+  const marked = await yomTovDates("2025-12-01", "2026-10-31");
+  assert.deepEqual(
+    marked.filter((day) => day.startsWith("2026-")),
+    ["2026-04-02", "2026-04-08", "2026-05-22", "2026-09-12", "2026-09-13", "2026-09-21", "2026-09-26", "2026-10-03"],
+  );
+  assert.equal(marked.includes("2025-12-15"), false);
+  const pesach = await monthBoard("jerusalem", 2026, 4);
+  assert.equal(pesach.find((day) => day.date === "2026-04-02")?.yomTov, "פסח");
+  assert.equal(pesach.find((day) => day.date === "2026-04-03")?.yomTov, null);
+  const adar = await monthBoard("jerusalem", 2026, 3);
+  assert.equal(adar.find((day) => day.date === "2026-03-03")?.yomTov, null);
+  assert.match(adar.find((day) => day.date === "2026-03-03")?.holiday ?? "", /פורים/);
 });
 
 test("a civil month shows the Hebrew months it spans", async () => {
@@ -530,4 +545,37 @@ test("parseSlots keeps per-slot device ids", async () => {
   );
   assert.deepEqual(slots[0]?.deviceIds, ["a"]);
   assert.deepEqual(slots[1]?.deviceIds, ["b", "c"]);
+});
+
+test("skip holidays is saved on the program and stays off until chosen", async () => {
+  const id = programId("ten_shul", "days:holiday-flag");
+  const program = {
+    id,
+    tenantId: "ten_shul",
+    programKey: "days:holiday-flag",
+    name: "בלי חגים",
+    enabled: true,
+    deviceIds: ["rct074190118"],
+    startDate: "2026-04-01",
+    endDate: "2026-04-10",
+    days: [] as string[],
+    weekdays: [0, 1, 2, 3, 4, 5, 6],
+    onTime: "08:00",
+    offTime: "09:00",
+    slots: [{ onTime: "08:00", offTime: "09:00" }],
+    skipHolidays: true,
+  };
+  try {
+    await upsertProgram(program);
+    const saved = (await listPrograms("ten_shul")).find((item) => item.id === id);
+    assert.equal(saved?.skipHolidays, true);
+    await syncTenantPrograms("ten_shul", new Date("2026-04-01T05:00:00.000Z"));
+    const runs = await listRunsFor(id);
+    const onPesach = runs.some((run) => run.runAt.startsWith("2026-04-02T05:"));
+    const onChol = runs.some((run) => run.runAt.startsWith("2026-04-03T05:"));
+    assert.equal(onPesach, false);
+    assert.equal(onChol, true);
+  } finally {
+    await deleteProgram("ten_shul", id).catch(() => undefined);
+  }
 });

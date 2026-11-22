@@ -1,3 +1,5 @@
+import { yomTovDates } from "@/lib/hebrew/calendar";
+import { skipsHoliday } from "@/lib/programs/holidays";
 import { slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
 import type { DayClock, StoredProgram } from "@/lib/programs/types";
@@ -19,6 +21,7 @@ export async function syncTenantPrograms(tenantId: string, now = new Date()) {
   const allowed = new Set((await listTenantDevices(tenantId)).map((device) => device.deviceId));
   const byProgram = new Map<string, DayClock[]>();
   const loose: DayClock[] = [];
+  const yomTov = await holidayDates(clocks, now);
   for (const clock of clocks) {
     if (!clock.programId) {
       loose.push(clock);
@@ -32,11 +35,11 @@ export async function syncTenantPrograms(tenantId: string, now = new Date()) {
     programs.map((program) => {
       const skipped = new Set(program.skippedDates ?? []);
       const owned = program.programKey.startsWith("days:")
-        ? (byProgram.get(program.id) ?? []).filter((clock) => !skipped.has(clock.day))
+        ? (byProgram.get(program.id) ?? []).filter((clock) => !skipped.has(clock.day) && !skipsHoliday(program, clock.day, yomTov))
         : [];
       const runs =
         program.enabled && program.programKey.startsWith("days:")
-          ? [...runsFor(program.name, owned, allowed, now), ...runsForWeekdays(program, allowed, now)]
+          ? [...runsFor(program.name, owned, allowed, now), ...runsForWeekdays(program, allowed, now, yomTov)]
           : [];
       return replaceProgramRuns(program.id, runs);
     }),
@@ -67,7 +70,18 @@ export function looseId(tenantId: string) {
   return `loose:${tenantId}`;
 }
 
-function runsForWeekdays(program: StoredProgram, allowed: Set<string>, now: Date) {
+async function holidayDates(clocks: DayClock[], now: Date) {
+  let from = israelDate(now);
+  let to = shiftDate(from, 84);
+  for (const clock of clocks) {
+    if (clock.day < from) from = clock.day;
+    if (clock.day > to) to = clock.day;
+  }
+  if (to > shiftDate(from, 800)) to = shiftDate(from, 800);
+  return new Set(await yomTovDates(from, to));
+}
+
+function runsForWeekdays(program: StoredProgram, allowed: Set<string>, now: Date, yomTov: ReadonlySet<string>) {
   if (!program.weekdays.length || !program.slots.length) return [];
   const clocks: DayClock[] = [];
   let day = israelDate(now);
@@ -75,7 +89,8 @@ function runsForWeekdays(program: StoredProgram, allowed: Set<string>, now: Date
     if (
       program.weekdays.includes(weekdayOf(day)) &&
       coversDay(day, program.startDate, program.endDate) &&
-      !(program.skippedDates ?? []).includes(day)
+      !(program.skippedDates ?? []).includes(day) &&
+      !skipsHoliday(program, day, yomTov)
     ) {
       for (const slot of slotsForWeekday(program.slots, weekdayOf(day))) {
         clocks.push({

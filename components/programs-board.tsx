@@ -487,7 +487,9 @@ export function ProgramsBoard() {
                     {longDay(cursor)}
                     {dayMeta?.hebrew ? <span className="ms-2 text-xs font-medium text-muted-foreground sm:text-sm">{dayMeta.hebrew}</span> : null}
                   </h3>
-                  {dayMeta?.yomTov ? <p className="mt-0.5 text-[13px] font-semibold text-primary">{dayMeta.yomTov}</p> : null}
+                  {dayMeta?.yomTov || dayMeta?.cholHaMoed ? (
+                    <FestivalMark name={(dayMeta.yomTov || dayMeta.cholHaMoed) ?? ""} kind={dayMeta.yomTov ? "yom-tov" : "chol"} large />
+                  ) : null}
                   {dayMeta?.parsha || dayMeta?.candles || dayMeta?.havdalah ? (
                     <p className="mt-0.5 truncate text-[12px] text-muted-foreground">
                       {[
@@ -544,9 +546,10 @@ export function ProgramsBoard() {
                         "group flex min-w-0 flex-col gap-0.5 rounded-md border bg-card p-0.5 md:gap-1.5 md:rounded-lg md:p-2",
                         view === "month" && "md:min-h-36",
                         view === "week" && "min-h-20 md:min-h-44",
-                        !inMonth && "bg-muted/50 text-muted-foreground",
-                        day === today && "bg-primary/5",
-                        meta?.yomTov && "ring-1 ring-primary/35",
+                        !inMonth && !meta?.yomTov && !meta?.cholHaMoed && "bg-muted/50 text-muted-foreground",
+                        day === today && !meta?.yomTov && !meta?.cholHaMoed && "bg-primary/5",
+                        meta?.yomTov && "border-festival bg-festival-soft",
+                        meta?.cholHaMoed && "border-chol bg-chol-soft",
                       )}
                     >
                       <div className="flex items-center justify-between gap-1">
@@ -558,14 +561,16 @@ export function ProgramsBoard() {
                             setView("day");
                           }}
                         >
-                          <span className={cn("mx-auto grid size-5 place-items-center rounded-full text-[11px] font-semibold sm:mx-0 sm:size-6 sm:text-xs", day === today && "bg-primary text-primary-foreground")}>
+                          <span className={cn(
+                            "mx-auto grid size-5 place-items-center rounded-full text-[11px] font-semibold sm:mx-0 sm:size-6 sm:text-xs",
+                            day === today && "bg-primary text-primary-foreground",
+                            meta?.yomTov && day !== today && "bg-festival text-festival-ink",
+                          )}>
                             {Number(day.slice(8))}
                           </span>
                           {meta?.hebrew ? <HebrewDate value={meta.hebrew} /> : null}
-                          {meta?.yomTov ? (
-                            <span className="mt-0.5 block truncate text-[9px] font-bold leading-3 text-primary sm:text-[11px]" title={meta.yomTov}>
-                              {meta.yomTov}
-                            </span>
+                          {meta?.yomTov || meta?.cholHaMoed ? (
+                            <FestivalMark name={(meta.yomTov || meta.cholHaMoed) ?? ""} kind={meta.yomTov ? "yom-tov" : "chol"} />
                           ) : null}
                         </button>
                         <button
@@ -623,7 +628,8 @@ export function ProgramsBoard() {
               <p className="flex flex-wrap items-center gap-4 px-4 py-3.5 text-[13px] text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-online" /> הפעלה</span>
                 <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-destructive" /> כיבוי</span>
-                <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-primary" /> חג</span>
+                <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-festival" /> חג</span>
+                <span className="inline-flex items-center gap-1"><i className="size-2 rounded-full bg-chol" /> חול המועד</span>
                 <span>· לחצו על שעון לפתיחת פרטים · על + להוספה</span>
               </p>
             </>
@@ -905,6 +911,21 @@ function jerusalemTime(date = new Date()) {
     minute: "2-digit",
     hourCycle: "h23",
   }).format(date);
+}
+
+function FestivalMark({ name, kind, large = false }: { name: string; kind: "yom-tov" | "chol"; large?: boolean }) {
+  return (
+    <span
+      title={name}
+      className={cn(
+        "mt-0.5 block rounded px-0.5 py-px text-center font-extrabold sm:px-1 sm:text-start",
+        large ? "w-fit px-2 py-1 text-sm leading-5" : "text-[9px] leading-[12px] sm:text-[11px] sm:leading-4",
+        kind === "yom-tov" ? "bg-festival text-festival-ink" : "bg-chol text-chol-ink",
+      )}
+    >
+      {name}
+    </span>
+  );
 }
 
 function HebrewDate({ value }: { value: string }) {

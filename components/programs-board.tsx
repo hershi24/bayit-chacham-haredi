@@ -489,6 +489,7 @@ export function ProgramsBoard() {
                   </h3>
                   {festivalOf(dayMeta) ? <FestivalMark name={festivalOf(dayMeta)!.name} kind={festivalOf(dayMeta)!.kind} large /> : null}
                   {clockLine(dayMeta) ? <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{clockLine(dayMeta)}</p> : null}
+                  {sunLine(dayMeta) ? <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{sunLine(dayMeta)}</p> : null}
                 </div>
                 <button
                   type="button"
@@ -600,6 +601,11 @@ export function ProgramsBoard() {
                           {clockLine(meta, true)}
                         </p>
                       ) : null}
+                      {sunCompact(meta) ? (
+                        <p className="truncate text-[9px] font-medium leading-3 text-muted-foreground sm:text-[11px] sm:leading-4" dir="ltr" title={sunLine(meta) ?? undefined}>
+                          {sunCompact(meta)}
+                        </p>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -693,7 +699,12 @@ export function ProgramsBoard() {
                 ))}
               </select>
             </label>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">כניסה ויציאה לפי העיר שנבחרה.</p>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">כניסה, יציאה, שקיעה וצאת הכוכבים לפי העיר שנבחרה.</p>
+            {board.month.days.some((day) => day.sunset) ? (
+              <a className="mt-2 inline-block text-xs font-medium text-primary underline" href="https://mevarhim.co.il/" target="_blank" rel="noreferrer">
+                זמנים מאתר מברכים
+              </a>
+            ) : null}
             {tenants ? (
               <button
                 type="button"
@@ -903,6 +914,16 @@ function festivalOf(meta: MonthDay | undefined): { name: string; kind: "yom-tov"
   if (meta.cholHaMoed) return { name: meta.cholHaMoed, kind: "chol" };
   if (meta.eve) return { name: meta.candles ? `ערב ${meta.eve} ${meta.candles}` : `ערב ${meta.eve}`, kind: "eve" };
   return null;
+}
+
+function sunLine(meta: MonthDay | undefined) {
+  if (!meta?.sunset && !meta?.tzeit) return null;
+  return [meta.sunset ? `שקיעה ${meta.sunset}` : null, meta.tzeit ? `צאת הכוכבים ${meta.tzeit}` : null].filter(Boolean).join(" · ");
+}
+
+function sunCompact(meta: MonthDay | undefined) {
+  if (!meta?.sunset || !meta.tzeit) return null;
+  return `${meta.sunset}–${meta.tzeit}`;
 }
 
 function clockLine(meta: MonthDay | undefined, compact = false) {

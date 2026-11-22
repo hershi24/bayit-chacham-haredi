@@ -1,3 +1,5 @@
+import { applyMevarhimTimes } from "./mevarhim";
+
 type Hebcal = typeof import("@hebcal/core");
 type CalEvent = {
   getDesc(): string;
@@ -138,7 +140,7 @@ export function clampClock(input: Partial<ClockSettings>): ClockSettings {
 }
 
 export async function upcomingPrograms(settings: ClockSettings, now = new Date()): Promise<ProgramPreview[]> {
-  const built = await collect(settings, now);
+  const built = await collect(settings, now, 80);
   const shabbat: ProgramPreview = {
     key: "shabbat",
     name: "שבת",
@@ -159,7 +161,7 @@ export async function upcomingAgenda(
   now = new Date(),
   days = 70,
 ): Promise<Array<ProgramWindow & { programKey: string; programName: string }>> {
-  const built = await collect(settings, now);
+  const built = await collect(settings, now, days + 7);
   const limit = now.getTime() + days * 86_400_000;
   const rows = [
     ...built.shabbat.map((window) => ({ ...window, programKey: "shabbat", programName: "שבת" })),
@@ -227,6 +229,10 @@ export type MonthDay = {
   eve: string | null;
   candles: string | null;
   havdalah: string | null;
+  /** Sunset, from Mevarhim for the selected city. */
+  sunset: string | null;
+  /** Tzeit hakochavim, from Mevarhim for the selected city. */
+  tzeit: string | null;
 };
 
 export async function monthBoard(locationId: string, year: number, month: number): Promise<MonthDay[]> {
@@ -278,6 +284,15 @@ export async function monthBoard(locationId: string, year: number, month: number
     const label = plainHebrew(event.render("he"));
     if (label) holiday.set(day, label);
   }
+  const times = await applyMevarhimTimes({
+    locationId,
+    from: gridStart,
+    to: addDays(gridEnd, 1),
+    candles,
+    havdalah,
+    yomTovDays: [...yomTov.keys()],
+    everyDay: true,
+  });
   const days: MonthDay[] = [];
   for (let index = 0; index < cells; index += 1) {
     const date = addDays(gridStart, index);
@@ -297,6 +312,8 @@ export async function monthBoard(locationId: string, year: number, month: number
       eve: festivalToday ? null : (yomTov.get(addDays(date, 1)) ?? null),
       candles: clockText(candles.get(date)),
       havdalah: clockText(havdalah.get(date)),
+      sunset: times?.sunset.get(date) ?? null,
+      tzeit: times?.tzeit.get(date) ?? null,
     });
   }
   return days;
@@ -387,7 +404,7 @@ export function plainHebrew(value: string): string {
     .trim();
 }
 
-async function collect(settings: ClockSettings, now: Date) {
+async function collect(settings: ClockSettings, now: Date, spanDays: number) {
   const { HebrewCalendar, HDate, Zmanim } = await hebcal();
   const clock = clampClock(settings);
   const from = addDays(israelDate(now), -2);
@@ -405,31 +422,42 @@ async function collect(settings: ClockSettings, now: Date) {
   const havdalah = new Map<string, Date>();
   const shabbat: ProgramWindow[] = [];
   const holidayDates = new Map<string, string[]>();
+  const parshiot: Array<{ day: string; parsha: string }> = [];
   for (const rule of HOLIDAYS) holidayDates.set(rule.key, []);
 
   for (const event of events) {
     rememberTime(event, "Candle lighting", candles);
     rememberTime(event, "Havdalah", havdalah);
     const description = event.getDesc();
-    if (description.startsWith("Parashat ")) {
-      const day = hebrewDay(event);
-      const parsha = parshaName(event);
-      const made = makeWindow({
-        title: `שבת פרשת ${parsha}`,
-        parsha,
-        dates: [day],
-        candles,
-        havdalah,
-        location,
-        settings: clock,
-        HDate,
-        Zmanim,
-      });
-      if (made) shabbat.push(made);
-    }
+    if (description.startsWith("Parashat ")) parshiot.push({ day: hebrewDay(event), parsha: parshaName(event) });
     for (const rule of HOLIDAYS) {
       if (rule.match(description)) holidayDates.get(rule.key)?.push(hebrewDay(event));
     }
+  }
+  const coveredUntil = addDays(from, spanDays);
+  const yomTovDays = [...holidayDates.values()].flat().filter((day) => day >= from && day <= coveredUntil);
+  await applyMevarhimTimes({
+    locationId: clock.locationId,
+    from,
+    to: coveredUntil,
+    candles,
+    havdalah,
+    yomTovDays,
+    everyDay: false,
+  });
+  for (const item of parshiot) {
+    const made = makeWindow({
+      title: `שבת פרשת ${item.parsha}`,
+      parsha: item.parsha,
+      dates: [item.day],
+      candles,
+      havdalah,
+      location,
+      settings: clock,
+      HDate,
+      Zmanim,
+    });
+    if (made) shabbat.push(made);
   }
 
   const holidays = new Map<string, ProgramWindow[]>();
@@ -538,6 +566,15 @@ async function loadMaps(locationId: string, from: string, to: string) {
     rememberTime(event, "Candle lighting", candles);
     rememberTime(event, "Havdalah", havdalah);
   }
+  await applyMevarhimTimes({
+    locationId,
+    from,
+    to,
+    candles,
+    havdalah,
+    yomTovDays: [],
+    everyDay: true,
+  });
   return { candles, havdalah, location, HDate, Zmanim };
 }
 

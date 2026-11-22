@@ -315,6 +315,16 @@ export async function finishSchedule(id: string) {
   return sqlite.finishSchedule(id);
 }
 
+export async function listTenantSchedules(tenantId: string) {
+  if (remoteOn()) return remote.listTenantSchedules(tenantId);
+  return sqlite.listTenantSchedules(tenantId);
+}
+
+export async function cancelSchedule(tenantId: string, id: string) {
+  if (remoteOn()) return remote.cancelSchedule(tenantId, id);
+  return sqlite.cancelSchedule(tenantId, id);
+}
+
 export async function failSchedule(id: string, detail: string) {
   if (remoteOn()) return remote.failSchedule(id, detail);
   return sqlite.failSchedule(id, detail);

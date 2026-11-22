@@ -9,6 +9,7 @@ import { cleanWeekdays } from "@/lib/programs/weekdays";
 import { programsPayload } from "@/lib/programs/view";
 import { requireUser, withErrors } from "@/lib/session";
 import {
+  cancelSchedule,
   deleteDayClock,
   deleteProgram,
   getClock,
@@ -118,6 +119,10 @@ export function POST(request: Request) {
       const id = typeof body.id === "string" ? body.id : "";
       if (!id) throw new HttpError(400, "חסר שעון");
       await deleteDayClock(tenantId, id);
+    } else if (action === "schedule-cancel") {
+      const id = typeof body.id === "string" ? body.id : "";
+      if (!id) throw new HttpError(400, "חסר תזמון");
+      await cancelSchedule(tenantId, id);
     } else if (action === "program-save") {
       await saveProgramAction(user, tenantId, body);
       await dropLooseClock(tenantId, body);
@@ -155,6 +160,7 @@ async function presentPrograms(user: SessionUser, tenantId: string, when?: { yea
   if (user.role !== "admin") {
     const allowed = new Set(await tenantDeviceIds(user, tenantId));
     payload.devices = payload.devices.filter((device) => allowed.has(device.deviceId));
+    payload.schedules = payload.schedules.filter((item) => allowed.has(item.deviceId));
   }
   return payload;
 }

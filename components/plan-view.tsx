@@ -49,6 +49,7 @@ export function PlanViewDialog({
   onEdit,
   onToggle,
   onPause,
+  onCancel,
 }: {
   program: PlannerProgram | null;
   clock: PlannerClock | null;
@@ -59,8 +60,9 @@ export function PlanViewDialog({
   onEdit: () => void;
   onToggle?: () => void;
   onPause?: () => void;
+  onCancel?: () => void;
 }) {
-  const title = program?.name ?? "שעון";
+  const title = program?.name ?? clock?.label ?? "שעון";
   const ids = program?.deviceIds ?? clock?.deviceIds ?? [];
   const skipped = program?.skippedDates ?? [];
   const groups: ClockGroup[] = program
@@ -191,6 +193,16 @@ export function PlanViewDialog({
                 השהיה{skipped.length ? ` (${skipped.length})` : ""}
               </button>
             </>
+          ) : null}
+          {onCancel ? (
+            <button
+              type="button"
+              className="inline-flex h-10 items-center rounded-xl border border-destructive/30 px-3 text-sm font-bold text-destructive"
+              disabled={pending}
+              onClick={onCancel}
+            >
+              ביטול התזמון
+            </button>
           ) : null}
           <button
             type="button"

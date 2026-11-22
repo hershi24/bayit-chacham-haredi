@@ -105,6 +105,7 @@ test("sunset, tzeit, and holiday entry come from Mevarhim", async () => {
       data: {
         candle_lighting: { time: "18:24", iso: "2026-04-03T18:24:12+03:00" },
         shabbat_end: { time: "19:27", iso: "2026-04-04T19:26:11+03:00" },
+        rabbeinu_tam: { time: "20:15", iso: "2026-04-04T20:15:32+03:00" },
         candle_offset: 40,
       },
     };
@@ -119,6 +120,7 @@ test("sunset, tzeit, and holiday entry come from Mevarhim", async () => {
     assert.equal(pesach.find((day) => day.date === "2026-04-02")?.havdalah, "19:19");
     assert.equal(pesach.find((day) => day.date === "2026-04-03")?.candles, "18:24");
     assert.equal(pesach.find((day) => day.date === "2026-04-04")?.havdalah, "19:27");
+    assert.equal(pesach.find((day) => day.date === "2026-04-04")?.rabbeinuTam, "20:15");
   } finally {
     setMevarhimGetter(async () => {
       throw new Error("mevarhim off");

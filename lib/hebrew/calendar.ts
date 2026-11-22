@@ -233,6 +233,8 @@ export type MonthDay = {
   sunset: string | null;
   /** Tzeit hakochavim, from Mevarhim for the selected city. */
   tzeit: string | null;
+  /** Shabbat end according to Rabbeinu Tam, from Mevarhim. */
+  rabbeinuTam: string | null;
 };
 
 export async function monthBoard(locationId: string, year: number, month: number): Promise<MonthDay[]> {
@@ -314,6 +316,7 @@ export async function monthBoard(locationId: string, year: number, month: number
       havdalah: clockText(havdalah.get(date)),
       sunset: times?.sunset.get(date) ?? null,
       tzeit: times?.tzeit.get(date) ?? null,
+      rabbeinuTam: times?.rabbeinuTam.get(date) ?? null,
     });
   }
   return days;

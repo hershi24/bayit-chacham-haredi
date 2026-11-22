@@ -130,7 +130,7 @@ function boundary(text: string, index: number) {
   if (index === 0) return true;
   const prev = text[index - 1] ?? "";
   if (/\s/.test(prev)) return true;
-  return /[לבמהו]/.test(prev) && (index === 1 || /\s/.test(text[index - 2] ?? ""));
+  return /[לבמהוכ]/.test(prev) && (index === 1 || /\s/.test(text[index - 2] ?? ""));
 }
 
 function wordEnd(text: string, index: number) {
@@ -206,7 +206,7 @@ function matchDuration(text: string, index: number): { minutes: number; length: 
   if (rest.startsWith("שעה") && wordEnd(rest, 3)) {
     const prev = text[index - 1] ?? "";
     const before = text.slice(Math.max(0, index - 6), index);
-    if (prev === "ל" || before.includes(speak("משך"))) return { minutes: 60, length: 3 };
+    if (prev === "ל" || prev === "כ" || before.includes(speak("משך"))) return { minutes: 60, length: 3 };
   }
   const amount = matchNumber(text, index);
   if (!amount || amount.value < 1 || amount.value > 24 * 60) return null;
@@ -292,6 +292,19 @@ function matchClock(text: string, index: number): ClockHit | null {
     if (clock[2]) return null;
     minute = tail.minute;
     consumed += tail.length;
+  }
+  // Speech recognition writes 18:00 as "18 00" after punctuation is removed.
+  if (clock[1] && minute === 0) {
+    const glued = /^\s+(\d{2})(?!\d)/.exec(rest.slice(consumed));
+    if (glued) {
+      const value = Number(glued[1]);
+      if (value <= 59) {
+        minute = value;
+        consumed += glued[0].length;
+        const seconds = /^\s+00(?!\d)/.exec(rest.slice(consumed));
+        if (seconds) consumed += seconds[0].length;
+      }
+    }
   }
   const after = rest.slice(consumed);
   if (/^\s+(?:שעות|שעה|דקות|דקה)(?![\u0590-\u05FF])/.test(after)) return null;
@@ -522,6 +535,93 @@ export function parseVoiceClock(transcript: string, now = new Date()): VoiceCloc
   const day = resolveDay(when, onTime, now);
   if (day === "past") return fail("השעה הזו כבר עברה. אמור שעה עתידית");
   return { ok: true, day: day.day, onTime, offTime, dayWord: day.word };
+}
+
+export type VoiceDelay =
+  | { ok: true; action: "on" | "off"; delayMinutes: number; runMinutes: number | null }
+  | { ok: false; speech: string };
+
+const MAX_DELAY = 12 * 60;
+
+function durationSpans(text: string): Array<{ minutes: number; index: number }> {
+  const found: Array<{ minutes: number; index: number }> = [];
+  let index = 0;
+  while (index < text.length) {
+    if (!boundary(text, index)) {
+      index += 1;
+      continue;
+    }
+    const match = matchDuration(text, index);
+    if (!match) {
+      index += 1;
+      continue;
+    }
+    found.push({ minutes: match.minutes, index });
+    index += match.length;
+  }
+  return found;
+}
+
+function spokenSpan(minutes: number): string {
+  if (minutes === 15) return "רבע שעה";
+  if (minutes === 30) return "חצי שעה";
+  if (minutes === 45) return "שלושת רבעי שעה";
+  if (minutes === 60) return "שעה";
+  if (minutes === 90) return "שעה וחצי";
+  if (minutes === 120) return "שעתיים";
+  if (minutes === 150) return "שעתיים וחצי";
+  if (minutes % 60 === 0 && minutes / 60 >= 3 && minutes / 60 <= 10) {
+    const hours = ["", "", "", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר"];
+    return `${hours[minutes / 60]} שעות`;
+  }
+  return `${minutes} דקות`;
+}
+
+/**
+ * «עוד חצי שעה» is a delay before the action.
+ * «לחצי שעה» stays an immediate timer and returns null.
+ */
+export function parseVoiceDelay(transcript: string): VoiceDelay | null {
+  const text = foldVoice(transcript);
+  const marker = /(?:^|\s)(בעוד|עוד)(?=\s|$)/.exec(text);
+  if (!marker) return null;
+  if (findClocks(blankDurations(text).text).length > 0) return null;
+  const when = findWhen(text);
+  if (when === "many" || (when !== "none" && !(when.kind === "relative" && when.days === 0))) return null;
+
+  const markerEnd = marker.index + marker[0].length;
+  const spans = durationSpans(text).filter((span) => span.index >= markerEnd);
+  const delay = spans.find((span) => {
+    const between = text.slice(markerEnd, span.index);
+    return !between.includes(speak("משך")) && !/ל\s*$/.test(between);
+  });
+  if (!delay) return null;
+  const run = spans.find((span) => span.index > delay.index);
+  if (!delay.minutes || delay.minutes > MAX_DELAY || (run && run.minutes > MAX_DELAY)) {
+    return { ok: false, speech: "אפשר לתזמן עד 12 שעות" };
+  }
+  const action = voiceAction(text);
+  const scheduleOn = text.split(" ").some((word) => SCHEDULE_ON.has(word));
+  if (action === "BOTH" || (action === "OFF" && scheduleOn)) return { ok: false, speech: "לא הבנתי אם להדליק או לכבות. אמור שוב" };
+  if (action === "OFF") return { ok: true, action: "off", delayMinutes: delay.minutes, runMinutes: null };
+  if (action === "ON" || scheduleOn) {
+    return { ok: true, action: "on", delayMinutes: delay.minutes, runMinutes: run?.minutes ?? null };
+  }
+  return { ok: false, speech: "לא הבנתי אם להדליק. אמור תדליק או תפעיל" };
+}
+
+export function delayConfirmSpeech(name: string, action: "on" | "off", delayMinutes: number, runMinutes: number | null) {
+  const who = name.startsWith("ה") ? name : `ה${name}`;
+  const verb = action === "on" ? "להפעלת" : "לכיבוי";
+  const run = action === "on" && runMinutes ? ` למשך ${spokenSpan(runMinutes)}` : "";
+  return `${verb} ${who} בעוד ${spokenSpan(delayMinutes)}${run}, הקישו 1 לאישור או 2 לביטול`;
+}
+
+export function delaySavedSpeech(name: string, action: "on" | "off", delayMinutes: number, runMinutes: number | null) {
+  const wait = spokenSpan(delayMinutes);
+  if (action === "off") return `${name} יכבה בעוד ${wait}`;
+  if (runMinutes) return `${name} יופעל בעוד ${wait} ויכבה אחרי ${spokenSpan(runMinutes)}`;
+  return `${name} יופעל בעוד ${wait}`;
 }
 
 export function clockConfirmSpeech(name: string, dayWord: string, onTime: string, offTime: string) {

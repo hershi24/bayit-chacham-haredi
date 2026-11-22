@@ -11,6 +11,7 @@ export type TimelineClock = {
   deviceIds: string[];
   programId: string | null;
   recurring: boolean;
+  label?: string;
 };
 
 export type TimelineProgram = {
@@ -130,7 +131,7 @@ export function dayBars(
       source: "clock" as const,
       sourceId: clock.id,
       deviceIds: clock.deviceIds,
-      name: owner?.name ?? "שעון",
+      name: owner?.name ?? clock.label ?? "שעון",
       muted: Boolean(owner && !owner.enabled),
       on: minutes(clock.onTime),
       off: minutes(clock.offTime),

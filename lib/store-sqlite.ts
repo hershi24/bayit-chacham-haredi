@@ -1198,6 +1198,32 @@ export function finishSchedule(id: string) {
   db().prepare("UPDATE schedules SET done_at = ? WHERE id = ?").run(new Date().toISOString(), id);
 }
 
+export function listTenantSchedules(tenantId: string): PendingSchedule[] {
+  const rows = db()
+    .prepare(
+      `SELECT s.id, s.device_id, s.kind, s.run_at, s.attempts
+       FROM schedules s
+       JOIN devices d ON d.device_id = s.device_id
+       WHERE d.tenant_id = ? AND s.done_at IS NULL AND s.attempts < 8
+       ORDER BY s.run_at`,
+    )
+    .all(tenantId) as Row[];
+  return rows.map(mapSchedule);
+}
+
+export function cancelSchedule(tenantId: string, id: string) {
+  const result = db()
+    .prepare(
+      `UPDATE schedules
+       SET done_at = ?
+       WHERE id = ?
+         AND done_at IS NULL
+         AND device_id IN (SELECT device_id FROM devices WHERE tenant_id = ?)`,
+    )
+    .run(new Date().toISOString(), id, tenantId);
+  if (Number(result.changes) === 0) throw new HttpError(404, "התזמון לא נמצא");
+}
+
 export function failSchedule(id: string, detail: string) {
   const now = new Date().toISOString();
   db()

@@ -25,12 +25,23 @@ export type OccurrenceClock = {
   deviceIds: string[];
   programId: string | null;
   recurring: boolean;
+  label?: string;
+};
+
+export type OccurrenceSchedule = {
+  id: string;
+  deviceId: string;
+  kind: "later_on" | "timer_off";
+  day: string;
+  time: string;
+  label: string;
 };
 
 export type Occurrence = {
   key: string;
   programId: string | null;
   clockId: string | null;
+  scheduleId: string | null;
   sourceDay: string;
   time: string;
   name: string;
@@ -46,17 +57,19 @@ export function occurrencesOn(
   clocks: OccurrenceClock[],
   filter = "all",
   yomTov: ReadonlySet<string> = new Set(),
+  schedules: OccurrenceSchedule[] = [],
 ): Occurrence[] {
   const seen = new Set<string>();
   const out: Occurrence[] = [];
   const previous = shiftDate(day, -1);
 
-  function push(event: Omit<Occurrence, "key">) {
+  function push(event: Omit<Occurrence, "key" | "scheduleId"> & { scheduleId?: string | null }) {
     if (filter !== "all" && !event.deviceIds.includes(filter)) return;
-    const key = `${event.programId ?? event.clockId}|${event.action}|${event.time}|${event.sourceDay}`;
+    const scheduleId = event.scheduleId ?? null;
+    const key = `${event.programId ?? event.clockId ?? scheduleId}|${event.action}|${event.time}|${event.sourceDay}`;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ ...event, key });
+    out.push({ ...event, scheduleId, key });
   }
 
   function pushRanges(sourceDay: string, ranges: Range[], programId: string | null, clockId: string | null, name: string, deviceIds: string[]) {
@@ -112,7 +125,22 @@ export function occurrencesOn(
     const program = clock.programId ? programs.find((item) => item.id === clock.programId) : undefined;
     if (program && (!program.enabled || (program.skippedDates ?? []).includes(clock.day) || skipsHoliday(program, clock.day, yomTov))) continue;
     const deviceIds = clock.deviceIds.length ? clock.deviceIds : (program?.deviceIds ?? []);
-    pushRanges(clock.day, [clock], program?.id ?? null, clock.id, program?.name ?? "שעון", deviceIds);
+    pushRanges(clock.day, [clock], program?.id ?? null, clock.id, program?.name ?? clock.label ?? "שעון", deviceIds);
+  }
+
+  for (const item of schedules) {
+    if (item.day !== day || !item.time) continue;
+    const on = item.kind === "later_on";
+    push({
+      programId: null,
+      clockId: null,
+      scheduleId: item.id,
+      sourceDay: day,
+      time: item.time,
+      name: on ? item.label : `כיבוי · ${item.label}`,
+      action: on ? "on" : "off",
+      deviceIds: [item.deviceId],
+    });
   }
 
   return out.sort((left, right) => left.time.localeCompare(right.time) || (left.action === right.action ? 0 : left.action === "on" ? -1 : 1));

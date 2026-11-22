@@ -34,6 +34,15 @@ type ShellyBackup = {
   code: string | null;
 };
 
+type BoardSchedule = {
+  id: string;
+  deviceId: string;
+  kind: "later_on" | "timer_off";
+  day: string;
+  time: string;
+  label: string;
+};
+
 type Board = {
   tenantId: string;
   locationId: string;
@@ -41,6 +50,7 @@ type Board = {
   devices: Array<{ deviceId: string; name: string; icon: string | null }>;
   programs: Program[];
   clocks: Clock[];
+  schedules?: BoardSchedule[];
   month: { year: number; month: number; hebrew: string; days: MonthDay[] };
   yomTovDates?: string[];
   shellyBackup?: ShellyBackup[];
@@ -62,6 +72,7 @@ export function ProgramsBoard() {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<PlannerDraft | null>(null);
   const [inspect, setInspect] = useState<{ program: Program | null; clock: Clock | null } | null>(null);
+  const [held, setHeld] = useState<BoardSchedule | null>(null);
   const [backup, setBackup] = useState<ShellyBackup | null>(null);
   const [pauseId, setPauseId] = useState<string | null>(null);
   const [pauseDate, setPauseDate] = useState("");
@@ -186,10 +197,20 @@ export function ProgramsBoard() {
     setInspect(program ? { program, clock: null } : { program: null, clock });
   }
 
+  function cancelClock(clock: Clock) {
+    if (!window.confirm("לבטל את התזמון? ההדלקה והכיבוי לא יתבצעו.")) return;
+    void send({ action: "clock-delete", id: clock.id }, clock.id).then((payload) => {
+      if (!payload) return;
+      setInspect(null);
+      setDraft(null);
+      toast.success("התזמון בוטל");
+    });
+  }
+
   const today = israelDate();
   const yomTov = useMemo(() => new Set(board?.yomTovDates ?? []), [board]);
   const nextEvents = useMemo(
-    () => (board ? upcoming(board.programs, board.clocks, filter, yomTov) : []),
+    () => (board ? upcoming(board.programs, board.clocks, filter, yomTov, board.schedules ?? []) : []),
     [board, filter, yomTov],
   );
 
@@ -248,7 +269,8 @@ export function ProgramsBoard() {
   const shownPrograms = board.programs.filter((program) => filter === "all" || program.deviceIds.includes(filter));
   const savedCount = shownPrograms.filter((program) => program.enabled).length;
   const monthCount = board.month.days.reduce(
-    (sum, day) => sum + (day.inMonth ? occurrencesOn(day.date, board.programs, board.clocks, filter, yomTov).length : 0),
+    (sum, day) =>
+      sum + (day.inMonth ? occurrencesOn(day.date, board.programs, board.clocks, filter, yomTov, board.schedules ?? []).length : 0),
     0,
   );
   const soon = nextEvents[0];
@@ -257,7 +279,14 @@ export function ProgramsBoard() {
     (clock) => !clock.recurring && !clock.programId && (filter === "all" || clock.deviceIds.includes(filter)),
   );
   const listedPrograms = shownPrograms.filter((program) => program.name.toLowerCase().includes(needle));
-  const listedClocks = loose.filter((clock) => "שעון".includes(needle) || clock.day.includes(needle));
+  const listedClocks = loose.filter((clock) => {
+    const label = (clock.label || "שעון").toLowerCase();
+    return !needle || label.includes(needle) || clock.day.includes(needle);
+  });
+  const listedSchedules = (board.schedules ?? []).filter((item) => {
+    if (filter !== "all" && item.deviceId !== filter) return false;
+    return !needle || item.label.toLowerCase().includes(needle) || item.day.includes(needle);
+  });
   const pausing = board.programs.find((program) => program.id === pauseId) ?? null;
   const inspecting = inspect
     ? {
@@ -351,7 +380,7 @@ export function ProgramsBoard() {
           {view === "list" ? (
             <div className="p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <b>כל התוכניות ({listedPrograms.length + listedClocks.length})</b>
+                <b>כל התוכניות ({listedPrograms.length + listedClocks.length + listedSchedules.length})</b>
                 <input
                   value={query}
                   placeholder="חיפוש תוכנית..."
@@ -360,7 +389,7 @@ export function ProgramsBoard() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </div>
-              {listedPrograms.length || listedClocks.length ? (
+              {listedPrograms.length || listedClocks.length || listedSchedules.length ? (
                 <div className="space-y-2">
                   {listedPrograms.map((program) => {
                     const device = board.devices.find((item) => program.deviceIds.includes(item.deviceId));
@@ -420,6 +449,29 @@ export function ProgramsBoard() {
                       </article>
                     );
                   })}
+                  {listedSchedules.map((item) => {
+                    const device = board.devices.find((entry) => entry.deviceId === item.deviceId);
+                    return (
+                      <article key={item.id} className="flex items-center gap-3 rounded-xl border p-3">
+                        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary">
+                          <DeviceGlyph name={device?.name ?? item.label} icon={device?.icon} className="size-5" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <b>{item.kind === "later_on" ? "הדלקה מתוזמנת" : "כיבוי מתוזמן"}</b>
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {item.label} · {prettyDay(item.day)} · {item.time}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-destructive/30 px-2 py-1.5 text-xs font-bold text-destructive"
+                          onClick={() => setHeld(item)}
+                        >
+                          ביטול
+                        </button>
+                      </article>
+                    );
+                  })}
                   {listedClocks.map((clock) => {
                     const device = board.devices.find((item) => clock.deviceIds.includes(item.deviceId));
                     return (
@@ -428,9 +480,9 @@ export function ProgramsBoard() {
                           <DeviceGlyph name={device?.name ?? "שקע"} icon={device?.icon} className="size-5" />
                         </span>
                         <div className="min-w-0 flex-1">
-                          <b>שעון</b>
+                          <b>{clock.label || "שעון"}</b>
                           <p className="truncate text-[11px] text-muted-foreground">
-                            {deviceNames(board, clock.deviceIds)} · {prettyDay(clock.day)} · {clock.onTime ?? ""}{clock.offTime ? `–${clock.offTime}` : ""}
+                            {prettyDay(clock.day)} · {clock.onTime ?? ""}{clock.offTime ? `–${clock.offTime}` : ""}
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1">
@@ -439,6 +491,13 @@ export function ProgramsBoard() {
                           </button>
                           <button type="button" className="rounded-lg border px-2 py-1.5 text-xs" onClick={() => openClock(clock)}>
                             עריכה
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-lg border border-destructive/30 px-2 py-1.5 text-xs font-bold text-destructive"
+                            onClick={() => cancelClock(clock)}
+                          >
+                            ביטול
                           </button>
                         </div>
                       </article>
@@ -471,6 +530,12 @@ export function ProgramsBoard() {
                   ＋
                 </button>
               </div>
+              <DayPoints
+                items={(board.schedules ?? []).filter(
+                  (item) => item.day === cursor && (filter === "all" || item.deviceId === filter),
+                )}
+                onOpen={setHeld}
+              />
               <DayTimeline
                 day={cursor}
                 programs={shownPrograms}
@@ -496,7 +561,7 @@ export function ProgramsBoard() {
                 {gridDays.map((day) => {
                   const meta = board.month.days.find((item) => item.date === day);
                   const inMonth = view !== "month" || meta?.inMonth !== false;
-                  const events = occurrencesOn(day, board.programs, board.clocks, filter, yomTov);
+                  const events = occurrencesOn(day, board.programs, board.clocks, filter, yomTov, board.schedules ?? []);
                   const cap = view === "month" ? 3 : 6;
                   return (
                     <div
@@ -549,7 +614,7 @@ export function ProgramsBoard() {
                             event.action === "off" ? "border-destructive bg-destructive/10 text-destructive" : "border-online bg-online-soft text-online-foreground",
                           )}
                           title={event.name}
-                          onClick={() => openEvent(event, board, showProgram, showClock)}
+                          onClick={() => openEvent(event, board, showProgram, showClock, setHeld)}
                         >
                           <span dir="ltr">{event.time}</span>
                           <span className="hidden truncate sm:inline">{event.name}</span>
@@ -659,7 +724,7 @@ export function ProgramsBoard() {
                   key={`${event.day}-${event.key}`}
                   type="button"
                   className="flex w-full items-center gap-4 border-b border-border/70 py-3 text-start last:border-0"
-                  onClick={() => openEvent(event, board, showProgram, showClock)}
+                  onClick={() => openEvent(event, board, showProgram, showClock, setHeld)}
                 >
                   <time className="w-12 shrink-0 text-sm font-semibold tabular-nums" dir="ltr">
                     {event.time}
@@ -871,7 +936,52 @@ export function ProgramsBoard() {
                 }
               : undefined
           }
+          onCancel={inspecting.clock && !inspecting.program ? () => cancelClock(inspecting.clock!) : undefined}
         />
+      ) : null}
+      {held ? (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setHeld(null);
+          }}
+        >
+          <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+            <div className="border-b px-5 pb-4 pt-5 pe-14">
+              <DialogTitle className="text-lg font-extrabold leading-7">
+                {held.kind === "later_on" ? "הדלקה מתוזמנת" : "כיבוי מתוזמן"}
+              </DialogTitle>
+              <DialogDescription className="mt-1.5 text-[13px] leading-6">
+                {held.label} · {prettyDay(held.day)} · <span dir="ltr">{held.time}</span>
+              </DialogDescription>
+            </div>
+            <p className="px-5 py-4 text-sm leading-6 text-muted-foreground">
+              {held.kind === "later_on"
+                ? "הביטול מונע את ההדלקה. השקע לא יופעל עכשיו."
+                : "הביטול מונע את הכיבוי. מצב השקע נשאר כמו שהוא."}
+            </p>
+            <div className="flex justify-end gap-2 border-t bg-muted/30 px-4 py-3">
+              <button type="button" className="h-10 rounded-xl border bg-card px-3 text-sm font-bold" onClick={() => setHeld(null)}>
+                השארה
+              </button>
+              <button
+                type="button"
+                className="h-10 rounded-xl bg-destructive px-3 text-sm font-bold text-white"
+                disabled={pending === held.id}
+                onClick={() => {
+                  const id = held.id;
+                  void send({ action: "schedule-cancel", id }, id).then((payload) => {
+                    if (!payload) return;
+                    setHeld(null);
+                    toast.success("התזמון בוטל");
+                  });
+                }}
+              >
+                ביטול התזמון
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </section>
   );
@@ -882,7 +992,13 @@ function openEvent(
   board: Board,
   showProgram: (program: Program) => void,
   showClock: (clock: Clock) => void,
+  showSchedule: (item: BoardSchedule) => void,
 ) {
+  if (event.scheduleId) {
+    const schedule = (board.schedules ?? []).find((item) => item.id === event.scheduleId);
+    if (schedule) showSchedule(schedule);
+    return;
+  }
   if (event.programId) {
     const program = board.programs.find((item) => item.id === event.programId);
     if (program) showProgram(program);
@@ -892,13 +1008,43 @@ function openEvent(
   if (clock) showClock(clock);
 }
 
-function upcoming(programs: Program[], clocks: Clock[], filter: string, yomTov: ReadonlySet<string>) {
+function DayPoints({ items, onOpen }: { items: BoardSchedule[]; onOpen: (item: BoardSchedule) => void }) {
+  if (!items.length) return null;
+  return (
+    <div className="mb-2 space-y-1">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className="flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-start text-xs"
+          onClick={() => onOpen(item)}
+        >
+          <span dir="ltr" className="font-semibold tabular-nums">
+            {item.time}
+          </span>
+          <span className="min-w-0 flex-1 truncate">
+            {item.kind === "later_on" ? "הדלקה" : "כיבוי"} · {item.label}
+          </span>
+          <span className="font-bold text-destructive">ביטול</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function upcoming(
+  programs: Program[],
+  clocks: Clock[],
+  filter: string,
+  yomTov: ReadonlySet<string>,
+  schedules: BoardSchedule[] = [],
+) {
   const today = israelDate();
   const clock = jerusalemTime();
   const rows: Array<Occurrence & { day: string }> = [];
   for (let index = 0; index < 60 && rows.length < 5; index += 1) {
     const day = shiftDate(today, index);
-    for (const event of occurrencesOn(day, programs, clocks, filter, yomTov)) {
+    for (const event of occurrencesOn(day, programs, clocks, filter, yomTov, schedules)) {
       if (index === 0 && event.time <= clock) continue;
       rows.push({ ...event, day });
       if (rows.length >= 5) break;

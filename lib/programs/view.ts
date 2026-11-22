@@ -4,8 +4,8 @@ import { slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
 import { weekdayOf } from "@/lib/programs/weekdays";
 import { shellyBackupViews } from "@/lib/shelly/backup-sync";
-import { getClock, listDayClocks, listPrograms, listTenantDevices } from "@/lib/store";
-import { israelDate, shiftDate } from "@/lib/time";
+import { getClock, listDayClocks, listPrograms, listTenantDevices, listTenantSchedules } from "@/lib/store";
+import { clockFace, israelDate, shiftDate } from "@/lib/time";
 
 export async function programsPayload(
   tenantId: string,
@@ -21,14 +21,20 @@ export async function programsPayload(
   const today = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   const year = when?.year && when.year >= 2020 && when.year <= 2040 ? when.year : Number(today.year);
   const month = when?.month && when.month >= 1 && when.month <= 12 ? when.month : Number(today.month);
-  const [stored, clocks, devices, days, hebrewMonth, shellyBackup] = await Promise.all([
+  const [stored, clocks, devices, days, hebrewMonth, shellyBackup, openSchedules] = await Promise.all([
     listPrograms(tenantId),
     listDayClocks(tenantId),
     listTenantDevices(tenantId),
     monthBoard(settings.locationId, year, month),
     hebrewMonthCaption(year, month),
     shellyBackupViews(tenantId),
+    listTenantSchedules(tenantId),
   ]);
+  const deviceName = new Map(devices.map((device) => [device.deviceId, device.name]));
+  const labelFor = (ids: string[]) => {
+    const names = ids.map((id) => deviceName.get(id)).filter((name): name is string => Boolean(name));
+    return names.length ? names.join(" · ") : "שעון";
+  };
   const labels = await hebrewLabels(clocks.map((clock) => clock.day));
   const programs = stored
     .filter((program) => program.programKey.startsWith("days:"))
@@ -93,9 +99,18 @@ export async function programsPayload(
         deviceIds: clock.deviceIds,
         programId: clock.programId,
         recurring: false,
+        label: labelFor(clock.deviceIds),
       })),
       ...repeated,
     ],
+    schedules: openSchedules.map((item) => ({
+      id: item.id,
+      deviceId: item.deviceId,
+      kind: item.kind,
+      day: israelDate(new Date(item.runAt)),
+      time: clockFace(item.runAt),
+      label: labelFor([item.deviceId]),
+    })),
     month: { year, month, hebrew: hebrewMonth, days },
     yomTovDates: [...festivals],
     shellyBackup,

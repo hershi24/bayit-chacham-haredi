@@ -98,3 +98,42 @@ test("skip holidays blocks Pesach and still runs on chol hamoed", () => {
   assert.equal(occurrencesOn("2026-03-03", [daily], [], "all", festivals).length, 2);
   assert.equal(occurrencesOn("2026-04-02", [{ ...daily, skipHolidays: false }], [], "all", festivals).length, 2);
 });
+
+test("a one-time clock keeps the device name, and a pending switch is its own row", () => {
+  const clock: OccurrenceClock = {
+    id: "clk_voice",
+    day: "2026-11-23",
+    onTime: "08:00",
+    offTime: "14:00",
+    deviceIds: ["sun"],
+    programId: null,
+    recurring: false,
+    label: "דוד שמש",
+  };
+  assert.deepEqual(
+    occurrencesOn("2026-11-23", [], [clock]).map((event) => [event.action, event.time, event.name, event.clockId, event.scheduleId]),
+    [
+      ["on", "08:00", "דוד שמש", "clk_voice", null],
+      ["off", "14:00", "כיבוי · דוד שמש", "clk_voice", null],
+    ],
+  );
+  const schedules = [
+    { id: "sch_on", deviceId: "sun", kind: "later_on" as const, day: "2026-11-22", time: "19:00", label: "דוד שמש" },
+    { id: "sch_off", deviceId: "sun", kind: "timer_off" as const, day: "2026-11-22", time: "19:30", label: "דוד שמש" },
+  ];
+  assert.deepEqual(
+    occurrencesOn("2026-11-22", [], [], "all", new Set(), schedules).map((event) => [
+      event.action,
+      event.time,
+      event.name,
+      event.scheduleId,
+    ]),
+    [
+      ["on", "19:00", "דוד שמש", "sch_on"],
+      ["off", "19:30", "כיבוי · דוד שמש", "sch_off"],
+    ],
+  );
+  assert.equal(occurrencesOn("2026-11-23", [], [], "all", new Set(), schedules).length, 0);
+  assert.equal(occurrencesOn("2026-11-22", [], [], "sun", new Set(), schedules).length, 2);
+  assert.equal(occurrencesOn("2026-11-22", [], [], "other", new Set(), schedules).length, 0);
+});

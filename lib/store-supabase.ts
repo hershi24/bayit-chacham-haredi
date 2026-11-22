@@ -1319,6 +1319,50 @@ export async function finishSchedule(id: string) {
   if (result.error) fail(result.error, "עדכון טיימר נכשל");
 }
 
+export async function listTenantSchedules(tenantId: string): Promise<PendingSchedule[]> {
+  await ready();
+  const devices = await client().from("devices").select("device_id").eq("tenant_id", tenantId);
+  if (devices.error) fail(devices.error, "קריאת טיימרים נכשלה");
+  const ids = (devices.data ?? []).map((row) => String(row.device_id));
+  if (!ids.length) return [];
+  const result = await client()
+    .from("schedules")
+    .select("id, device_id, kind, run_at, attempts")
+    .in("device_id", ids)
+    .is("done_at", null)
+    .lt("attempts", 8)
+    .order("run_at")
+    .limit(200);
+  if (result.error) {
+    if (missingRelation(result.error)) return [];
+    fail(result.error, "קריאת טיימרים נכשלה");
+  }
+  return (result.data ?? []).map((row) => ({
+    id: String(row.id),
+    deviceId: String(row.device_id),
+    kind: row.kind === "later_on" ? "later_on" : "timer_off",
+    runAt: String(row.run_at),
+    attempts: Number(row.attempts ?? 0),
+  }));
+}
+
+export async function cancelSchedule(tenantId: string, id: string) {
+  await ready();
+  const devices = await client().from("devices").select("device_id").eq("tenant_id", tenantId);
+  if (devices.error) fail(devices.error, "ביטול התזמון נכשל");
+  const ids = (devices.data ?? []).map((row) => String(row.device_id));
+  if (!ids.length) throw new HttpError(404, "התזמון לא נמצא");
+  const result = await client()
+    .from("schedules")
+    .update({ done_at: new Date().toISOString() })
+    .eq("id", id)
+    .in("device_id", ids)
+    .is("done_at", null)
+    .select("id");
+  if (result.error) fail(result.error, "ביטול התזמון נכשל");
+  if (!result.data?.length) throw new HttpError(404, "התזמון לא נמצא");
+}
+
 export async function listTenantDevices(tenantId: string): Promise<DeviceView[]> {
   await ready();
   return sortDevices((await deviceRows(tenantId)).map(mapDevice), false).map(presentDevice);

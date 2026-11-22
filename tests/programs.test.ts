@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CLOCK, formatClock, hebrewMonthCaption, monthBoard, upcomingPrograms, yomTovDates } from "../lib/hebrew/calendar";
+import { setMevarhimGetter } from "../lib/hebrew/mevarhim";
+
+setMevarhimGetter(async () => {
+  throw new Error("mevarhim off");
+});
 import { handleMenu } from "../lib/ivr/menu";
 import { mergeVisibleDevices } from "../lib/programs/devices";
 import { looseId, programId, syncTenantPrograms } from "../lib/programs/sync";
@@ -69,8 +74,13 @@ test("the calendar marks yom tov and leaves Chanukah and Purim as weekdays", asy
   );
   assert.equal(marked.includes("2025-12-15"), false);
   const pesach = await monthBoard("jerusalem", 2026, 4);
+  assert.equal(pesach.find((day) => day.date === "2026-04-01")?.eve, "פסח");
+  assert.equal(pesach.find((day) => day.date === "2026-04-01")?.yomTov, null);
+  assert.match(pesach.find((day) => day.date === "2026-04-01")?.candles ?? "", /^\d{2}:\d{2}$/);
   assert.equal(pesach.find((day) => day.date === "2026-04-02")?.yomTov, "פסח");
+  assert.equal(pesach.find((day) => day.date === "2026-04-02")?.eve, null);
   assert.equal(pesach.find((day) => day.date === "2026-04-02")?.cholHaMoed, null);
+  assert.equal(pesach.find((day) => day.date === "2026-04-07")?.eve, "פסח");
   assert.equal(pesach.find((day) => day.date === "2026-04-03")?.yomTov, null);
   assert.equal(pesach.find((day) => day.date === "2026-04-03")?.cholHaMoed, "א׳ חול המועד");
   assert.equal(pesach.find((day) => day.date === "2026-04-07")?.cholHaMoed, "ה׳ חול המועד");
@@ -81,6 +91,50 @@ test("the calendar marks yom tov and leaves Chanukah and Purim as weekdays", asy
   assert.equal(adar.find((day) => day.date === "2026-03-03")?.yomTov, null);
   assert.match(adar.find((day) => day.date === "2026-03-03")?.holiday ?? "", /פורים/);
 });
+
+test("sunset, tzeit, and holiday entry come from Mevarhim", async () => {
+  setMevarhimGetter(async (path) => {
+    const query = new URLSearchParams(path.split("?")[1] ?? "");
+    if (path.startsWith("zmanim")) {
+      const date = query.get("date");
+      if (date === "2026-04-01") return zmanim(date, "19:02", "2026-04-01T19:02:51+03:00", "19:18", "2026-04-01T19:17:25+03:00");
+      if (date === "2026-04-02") return zmanim(date, "19:03", "2026-04-02T19:03:32+03:00", "19:19", "2026-04-02T19:18:06+03:00");
+      return { data: {} };
+    }
+    return {
+      data: {
+        candle_lighting: { time: "18:24", iso: "2026-04-03T18:24:12+03:00" },
+        shabbat_end: { time: "19:27", iso: "2026-04-04T19:26:11+03:00" },
+        candle_offset: 40,
+      },
+    };
+  });
+  try {
+    const pesach = await monthBoard("jerusalem", 2026, 4);
+    const erev = pesach.find((day) => day.date === "2026-04-01");
+    assert.equal(erev?.eve, "פסח");
+    assert.equal(erev?.sunset, "19:02");
+    assert.equal(erev?.tzeit, "19:18");
+    assert.equal(erev?.candles, "18:22");
+    assert.equal(pesach.find((day) => day.date === "2026-04-02")?.havdalah, "19:19");
+    assert.equal(pesach.find((day) => day.date === "2026-04-03")?.candles, "18:24");
+    assert.equal(pesach.find((day) => day.date === "2026-04-04")?.havdalah, "19:27");
+  } finally {
+    setMevarhimGetter(async () => {
+      throw new Error("mevarhim off");
+    });
+  }
+});
+
+function zmanim(date: string, sunset: string, sunsetIso: string, tzeit: string, tzeitIso: string) {
+  return {
+    data: {
+      sunset: { time: sunset, iso: sunsetIso },
+      tzeit_hakochavim: { time: tzeit, iso: tzeitIso },
+    },
+    date,
+  };
+}
 
 test("a civil month shows the Hebrew months it spans", async () => {
   assert.equal(await hebrewMonthCaption(2026, 11), "חשוון – כסלו תשפ״ז");

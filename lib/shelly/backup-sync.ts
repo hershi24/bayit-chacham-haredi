@@ -1,4 +1,5 @@
 import { upcomingAgenda } from "@/lib/hebrew/calendar";
+import { israelDate, jerusalemInstant, shiftDate } from "@/lib/time";
 import {
   actionsForUnit,
   assessClock,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/shelly/backup-plan";
 import { expiryFromScript, expiryScript, idleScript, planFromScript, planScript, scriptName, sentCode } from "@/lib/shelly/backup-script";
 import { channelStatesFromStatus } from "@/lib/shelly/rpc";
+import { HttpError } from "@/lib/http-error";
 import { parseShellyChannelId, type ShellyChannel } from "@/lib/shelly/ids";
 import { getShellyHub } from "@/lib/shelly/hub";
 import type { ShellyBackupRow } from "@/lib/shelly/backup-record";
@@ -32,7 +34,14 @@ import {
 
 const ALERT_AFTER = 3;
 const RETRY_AFTER_ALERT_MS = 5 * 60_000;
+/** A chosen Shelly is checked about once a month, and a missed connection is tried the next day. */
+export const SHELLY_WATCH_EVERY_MS = 30 * 24 * 60 * 60 * 1000;
+export const SHELLY_WATCH_RETRY_MS = 24 * 60 * 60 * 1000;
 const touched = new Map<string, number>();
+
+type SyncOptions = { force?: boolean; patrol?: boolean; today?: boolean };
+
+const TODAY_LABEL = "היום";
 
 export type ShellyRpc = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 
@@ -49,6 +58,9 @@ export type ShellyBackupView = {
   verifiedAt: string | null;
   error: string | null;
   code: string | null;
+  watch: boolean;
+  checkedAt: string | null;
+  nextCheckAt: string | null;
 };
 
 export type ShellyBackupUnit = {
@@ -62,10 +74,11 @@ export async function syncShellyBackups(now = new Date()) {
   const tenants = await listTenants();
   for (const tenant of tenants) {
     for (const unit of await unitsOf(tenant.id)) {
+      const due = await watchDue(unit.shellyId, now);
       const at = touched.get(unit.shellyId) ?? 0;
-      if (Date.now() - at < 60_000) continue;
+      if (!due && Date.now() - at < 60_000) continue;
       touched.set(unit.shellyId, Date.now());
-      await syncUnitOnline(unit, now);
+      await syncUnitOnline(unit, now, due ? { patrol: true } : undefined);
     }
   }
 }
@@ -102,8 +115,34 @@ export async function shellyBackupViews(tenantId: string, now = new Date()): Pro
       verifiedAt: row?.verifiedAt ?? null,
       error: row?.error ?? null,
       code: row?.planCode || preview,
+      watch: row?.watch ?? false,
+      checkedAt: row?.checkedAt ?? null,
+      nextCheckAt: row?.nextCheckAt ?? null,
     };
   });
+}
+
+/** Write today's upcoming actions to the Shelly, so a power cut does not drop them. */
+export async function sendShellyBackup(tenantId: string, shellyId: string, now = new Date()) {
+  const unit = await unitById(tenantId, shellyId);
+  touched.set(shellyId, Date.now());
+  return syncUnitOnline(unit, now, { force: true, today: true });
+}
+
+/** Turn the monthly connection check on or off. Turning it on runs the first check immediately. */
+export async function setShellyWatch(tenantId: string, shellyId: string, watch: boolean, now = new Date()) {
+  const unit = await unitById(tenantId, shellyId);
+  const previous = await getShellyBackup(shellyId);
+  await saveShellyBackup({
+    ...(previous ?? emptyRow(unit)),
+    tenantId,
+    watch,
+    nextCheckAt: watch ? now.toISOString() : null,
+    updatedAt: now.toISOString(),
+  });
+  if (!watch) return;
+  touched.set(shellyId, Date.now());
+  await syncUnitOnline(unit, now, { patrol: true });
 }
 
 /** Server-side program runs inside a verified local window must not be sent again. WLTE ids never match. */
@@ -116,8 +155,27 @@ export async function shellyBackupCoversRun(deviceId: string, runAt: string): Pr
   return at >= Date.parse(row.windowStart) && at <= Date.parse(row.windowEnd);
 }
 
-export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now = new Date()): Promise<ShellyBackupRow> {
+export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now = new Date(), options: SyncOptions = {}): Promise<ShellyBackupRow> {
   const previous = await getShellyBackup(unit.shellyId);
+  if (previous && !options.today && holdingToday(previous, now)) {
+    if (!options.patrol) return previous;
+    const today = todayBlock(now);
+    const todayActions = await actionsFor(unit, today, now);
+    const verdict = await confirmInstalled(rpc, todayActions, Math.floor(Date.parse(today.end) / 1000), previous);
+    if (verdict === "offline") return postponeWatch(previous, now);
+    if (verdict === "match") {
+      if (insideBlock(today, now)) await reconcileRelays(rpc, todayActions, Math.floor(Date.parse(today.end) / 1000), now);
+      return saveShellyBackup({ ...previous, ...watchFields(previous, now, true), error: null, updatedAt: now.toISOString() });
+    }
+    if (!todayActions.length) return previous;
+    return writeBackup(unit, rpc, now, previous, today, todayActions, { ...options, today: true });
+  }
+  if (options.today) {
+    const today = todayBlock(now);
+    const todayActions = await actionsFor(unit, today, now);
+    if (!todayActions.length) throw new HttpError(400, "אין פעולות להיום על השלי הזה");
+    return writeBackup(unit, rpc, now, previous, today, todayActions, options);
+  }
   const block = await blockFor(unit.tenantId, now);
   if (!block || !shouldPushBackup(block, now)) {
     return saveShellyBackup({
@@ -131,24 +189,49 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
       updatedAt: now.toISOString(),
     });
   }
-  if (previous?.status === "failed" && previous.attempts >= ALERT_AFTER && now.getTime() - Date.parse(previous.updatedAt) < RETRY_AFTER_ALERT_MS) {
+  if (!options.force && previous?.status === "failed" && previous.attempts >= ALERT_AFTER && now.getTime() - Date.parse(previous.updatedAt) < RETRY_AFTER_ALERT_MS) {
     return previous;
   }
 
-  const runs = await listProgramRuns(unit.tenantId);
-  const channels = new Map(unit.channels.map((channel) => [channel.deviceId, channel]));
-  const actions = actionsForUnit(runs, unit.shellyId, channels, block, now);
+  const fresh = options.force ? null : await getShellyBackup(unit.shellyId);
+  if (holdingToday(fresh, now)) return fresh as ShellyBackupRow;
+  const actions = await actionsFor(unit, block, now);
   const hash = planHash(actions, block);
+  const endSeconds = Math.floor(Date.parse(block.end) / 1000);
   if (
+    !options.force &&
     previous?.status === "verified" &&
     previous.planHash === hash &&
     previous.windowStart === block.start &&
     previous.windowEnd === block.end
   ) {
-    if (insideBlock(block, now)) await reconcileRelays(rpc, actions, Math.floor(Date.parse(block.end) / 1000), now);
-    return previous;
+    if (options.patrol) {
+      const verdict = await confirmInstalled(rpc, actions, endSeconds, previous);
+      if (verdict === "offline") return postponeWatch(previous, now);
+      if (verdict === "match") {
+        if (insideBlock(block, now)) await reconcileRelays(rpc, actions, endSeconds, now);
+        return saveShellyBackup({ ...previous, ...watchFields(previous, now, true), error: null, updatedAt: now.toISOString() });
+      }
+    } else {
+      if (insideBlock(block, now)) await reconcileRelays(rpc, actions, endSeconds, now);
+      return previous;
+    }
   }
 
+  return writeBackup(unit, rpc, now, previous, block, actions, options);
+}
+
+async function writeBackup(
+  unit: ShellyBackupUnit,
+  rpc: ShellyRpc,
+  now: Date,
+  previous: ShellyBackupRow | null,
+  block: BackupBlock,
+  actions: BackupAction[],
+  options: SyncOptions,
+) {
+  const hash = planHash(actions, block);
+  const endSeconds = Math.floor(Date.parse(block.end) / 1000);
   await saveShellyBackup({
     ...(previous ?? emptyRow(unit)),
     tenantId: unit.tenantId,
@@ -164,11 +247,18 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
 
   try {
     await ensureClock(rpc, now);
-    const endSeconds = Math.floor(Date.parse(block.end) / 1000);
-    const written = await writePlan(rpc, actions, endSeconds, previous?.scheduleIds ?? [], now >= new Date(block.start), now);
+    const written = await writePlan(
+      rpc,
+      actions,
+      endSeconds,
+      previous?.scheduleIds ?? [],
+      options.today ? false : now >= new Date(block.start),
+      now,
+      unit.channels.filter((channel) => !channel.frozen).map((channel) => channel.channel),
+    );
     await verifyPlan(rpc, written, actions, endSeconds);
     if (insideBlock(block, now)) await reconcileRelays(rpc, actions, endSeconds, now);
-    const saved = await saveShellyBackup({
+    return saveShellyBackup({
       ...(previous ?? emptyRow(unit)),
       tenantId: unit.tenantId,
       status: "verified",
@@ -185,9 +275,9 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
       error: null,
       attempts: 0,
       alertedAt: null,
+      ...watchFields(previous, now, Boolean(options.patrol || previous?.watch)),
       updatedAt: now.toISOString(),
     });
-    return saved;
   } catch (error) {
     const message = error instanceof Error ? error.message : "סנכרון הגיבוי נכשל";
     const attempts = (previous?.attempts ?? 0) + 1;
@@ -221,14 +311,70 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
   }
 }
 
-async function syncUnitOnline(unit: ShellyBackupUnit, now: Date) {
+function todayBlock(now: Date): BackupBlock {
+  const day = israelDate(now);
+  const start = jerusalemInstant(day, "00:00");
+  const end = jerusalemInstant(shiftDate(day, 1), "00:00");
+  if (!start || !end) throw new HttpError(500, "לא ניתן לחשב את יום היום");
+  return { start: start.toISOString(), end: end.toISOString(), label: TODAY_LABEL };
+}
+
+function holdingToday(row: ShellyBackupRow | null, now: Date) {
+  return Boolean(row && row.status === "verified" && row.windowLabel === TODAY_LABEL && row.windowEnd && Date.parse(row.windowEnd) > now.getTime());
+}
+
+async function actionsFor(unit: ShellyBackupUnit, block: BackupBlock, now: Date) {
+  const runs = await listProgramRuns(unit.tenantId);
+  const channels = new Map(unit.channels.map((channel) => [channel.deviceId, channel]));
+  return actionsForUnit(runs, unit.shellyId, channels, block, now);
+}
+
+async function syncUnitOnline(unit: ShellyBackupUnit, now: Date, options: SyncOptions = {}) {
+  const previous = await getShellyBackup(unit.shellyId);
   const online = getShellyHub().isOnline(unit.shellyId);
+  if (!online && options.patrol && !options.force) {
+    return postponeWatch({ ...(previous ?? emptyRow(unit)), watch: true }, now);
+  }
   const rpc: ShellyRpc = online
     ? (method, params) => getShellyHub().rpc(unit.shellyId, method, params)
     : async () => {
         throw new Error("התקן Shelly אינו מחובר כעת");
       };
-  await syncShellyUnit(unit, rpc, now);
+  return syncShellyUnit(unit, rpc, now, options);
+}
+
+async function unitById(tenantId: string, shellyId: string) {
+  const unit = (await unitsOf(tenantId)).find((item) => item.shellyId === shellyId);
+  if (!unit) throw new HttpError(404, "ההתקן לא נמצא");
+  return unit;
+}
+
+async function watchDue(shellyId: string, now: Date) {
+  const row = await getShellyBackup(shellyId);
+  return Boolean(row?.watch && row.nextCheckAt && Date.parse(row.nextCheckAt) <= now.getTime());
+}
+
+function watchFields(previous: ShellyBackupRow | null, now: Date, stamp: boolean) {
+  if (!stamp) {
+    return {
+      watch: previous?.watch ?? false,
+      checkedAt: previous?.checkedAt ?? null,
+      nextCheckAt: previous?.nextCheckAt ?? null,
+    };
+  }
+  return {
+    watch: previous?.watch ?? false,
+    checkedAt: now.toISOString(),
+    nextCheckAt: new Date(now.getTime() + SHELLY_WATCH_EVERY_MS).toISOString(),
+  };
+}
+
+async function postponeWatch(row: ShellyBackupRow, now: Date) {
+  return saveShellyBackup({
+    ...row,
+    nextCheckAt: new Date(now.getTime() + SHELLY_WATCH_RETRY_MS).toISOString(),
+    updatedAt: now.toISOString(),
+  });
 }
 
 async function blockFor(tenantId: string, now: Date): Promise<BackupBlock | null> {
@@ -294,7 +440,15 @@ async function reconcileRelays(rpc: ShellyRpc, actions: BackupAction[], endSecon
   for (const fix of fixes) await rpc("Switch.Set", { id: fix.channel, on: fix.on });
 }
 
-async function writePlan(rpc: ShellyRpc, actions: BackupAction[], endSeconds: number, rememberedIds: number[], windowStarted: boolean, now: Date): Promise<Written> {
+async function writePlan(
+  rpc: ShellyRpc,
+  actions: BackupAction[],
+  endSeconds: number,
+  rememberedIds: number[],
+  windowStarted: boolean,
+  now: Date,
+  channels: ShellyChannel[],
+): Promise<Written> {
   const listed = await listSchedules(rpc);
   const owned = new Set<number>([...rememberedIds, ...(await kvsIds(rpc))]);
   for (const id of owned) {
@@ -323,8 +477,49 @@ async function writePlan(rpc: ShellyRpc, actions: BackupAction[], endSeconds: nu
   const script = mode === "script" ? (actions.length ? planScript(actions, endSeconds) : idleScript()) : expiryScript(actions, endSeconds, ids);
   await installScript(rpc, script, mode === "schedule" || actions.length > 0);
   await rpc("KVS.Set", { key: "pikud/ids", value: ids.join(",") });
+  await rememberPower(rpc, channels);
   const kept = mode === "schedule" ? jobs : [];
   return { mode, ids, jobs: kept, code: sentCode(mode, script, kept) };
+}
+
+async function confirmInstalled(
+  rpc: ShellyRpc,
+  actions: BackupAction[],
+  endSeconds: number,
+  previous: ShellyBackupRow,
+): Promise<"match" | "mismatch" | "offline"> {
+  try {
+    const code = await readScript(rpc);
+    const plan = code ? planFromScript(code) : null;
+    if (!plan || plan.end !== endSeconds || !sameActions(plan.actions, actions)) return "mismatch";
+    if (previous.mode === "schedule") {
+      const listed = await listSchedules(rpc);
+      if (!previous.scheduleIds.length || !previous.scheduleIds.every((id) => listed.some((job) => job.id === id))) return "mismatch";
+    }
+    return "match";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    return message.includes("אינו מחובר") ? "offline" : "mismatch";
+  }
+}
+
+/** After a power cut the relay returns to the state it held. The script corrects that during Shabbat. */
+async function rememberPower(rpc: ShellyRpc, channels: ShellyChannel[]) {
+  for (const id of channels) {
+    try {
+      const config = await rpc("Switch.GetConfig", { id });
+      if (readInitial(config) === "restore_last") continue;
+      await rpc("Switch.SetConfig", { id, config: { initial_state: "restore_last" } });
+    } catch {
+      // The plan is already on the device. A plug that rejects this setting still restarts its script.
+    }
+  }
+}
+
+function readInitial(value: unknown) {
+  if (!value || typeof value !== "object") return "";
+  const state = (value as { initial_state?: unknown }).initial_state;
+  return typeof state === "string" ? state : "";
 }
 
 function sameActions(left: BackupAction[], right: BackupAction[]) {
@@ -485,6 +680,9 @@ function emptyRow(unit: ShellyBackupUnit): ShellyBackupRow {
     error: null,
     attempts: 0,
     alertedAt: null,
+    watch: false,
+    checkedAt: null,
+    nextCheckAt: null,
     updatedAt: new Date(0).toISOString(),
   };
 }

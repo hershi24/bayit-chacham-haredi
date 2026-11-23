@@ -296,6 +296,15 @@ function ensureShellyBackups(database: DatabaseSync) {
   if (!columns.some((column) => column.name === "plan_code")) {
     database.exec("ALTER TABLE shelly_backups ADD COLUMN plan_code TEXT");
   }
+  if (!columns.some((column) => column.name === "watch")) {
+    database.exec("ALTER TABLE shelly_backups ADD COLUMN watch INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!columns.some((column) => column.name === "checked_at")) {
+    database.exec("ALTER TABLE shelly_backups ADD COLUMN checked_at TEXT");
+  }
+  if (!columns.some((column) => column.name === "next_check_at")) {
+    database.exec("ALTER TABLE shelly_backups ADD COLUMN next_check_at TEXT");
+  }
 }
 
 function ensureAccessTables(database: DatabaseSync) {
@@ -1544,8 +1553,9 @@ export function saveShellyBackup(row: ShellyBackupRow): ShellyBackupRow {
     .prepare(
       `INSERT INTO shelly_backups (
         shelly_id, tenant_id, status, mode, window_start, window_end, window_label, plan_hash,
-        action_count, plan_code, schedule_ids, synced_at, verified_at, error, attempts, alerted_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        action_count, plan_code, schedule_ids, synced_at, verified_at, error, attempts, alerted_at,
+        watch, checked_at, next_check_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(shelly_id) DO UPDATE SET
         tenant_id = excluded.tenant_id,
         status = excluded.status,
@@ -1562,6 +1572,9 @@ export function saveShellyBackup(row: ShellyBackupRow): ShellyBackupRow {
         error = excluded.error,
         attempts = excluded.attempts,
         alerted_at = excluded.alerted_at,
+        watch = excluded.watch,
+        checked_at = excluded.checked_at,
+        next_check_at = excluded.next_check_at,
         updated_at = excluded.updated_at`,
     )
     .run(
@@ -1581,6 +1594,9 @@ export function saveShellyBackup(row: ShellyBackupRow): ShellyBackupRow {
       row.error,
       row.attempts,
       row.alertedAt,
+      row.watch ? 1 : 0,
+      row.checkedAt,
+      row.nextCheckAt,
       row.updatedAt,
     );
   return row;
@@ -1613,6 +1629,9 @@ function mapShellyBackup(row: Row): ShellyBackupRow {
     error: textOrNull(row, "error"),
     attempts: Number(row.attempts ?? 0),
     alertedAt: textOrNull(row, "alerted_at"),
+    watch: Number(row.watch ?? 0) === 1,
+    checkedAt: textOrNull(row, "checked_at"),
+    nextCheckAt: textOrNull(row, "next_check_at"),
     updatedAt: text(row, "updated_at"),
   };
 }

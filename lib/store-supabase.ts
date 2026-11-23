@@ -1796,6 +1796,10 @@ export async function saveShellyBackup(row: ShellyBackupRow): Promise<ShellyBack
     const { plan_code: _ignored, ...withoutCode } = record;
     result = await client().from("shelly_backups").upsert(withoutCode, { onConflict: "shelly_id" });
   }
+  if (result.error && (columnMissing(result.error, "watch") || columnMissing(result.error, "checked_at") || columnMissing(result.error, "next_check_at"))) {
+    const { watch: _watch, checked_at: _checked, next_check_at: _next, ...withoutWatch } = record;
+    result = await client().from("shelly_backups").upsert(withoutWatch, { onConflict: "shelly_id" });
+  }
   if (result.error) {
     if (missingBackup(result.error)) throw new HttpError(500, "טבלת גיבוי Shelly חסרה. הריצו את supabase/migrations/20261120_shelly_backup.sql");
     fail(result.error, "שמירת גיבוי Shelly נכשלה");
@@ -1821,6 +1825,9 @@ function shellyBackupRecord(row: ShellyBackupRow) {
     error: row.error,
     attempts: row.attempts,
     alerted_at: row.alertedAt,
+    watch: row.watch,
+    checked_at: row.checkedAt,
+    next_check_at: row.nextCheckAt,
     updated_at: row.updatedAt,
   };
 }
@@ -1853,6 +1860,9 @@ function mapShellyBackup(row: Record<string, unknown>): ShellyBackupRow {
     error: row.error == null ? null : String(row.error),
     attempts: Number(row.attempts ?? 0),
     alertedAt: row.alerted_at == null ? null : String(row.alerted_at),
+    watch: row.watch === true || row.watch === 1 || row.watch === "1",
+    checkedAt: row.checked_at == null ? null : String(row.checked_at),
+    nextCheckAt: row.next_check_at == null ? null : String(row.next_check_at),
     updatedAt: String(row.updated_at ?? ""),
   };
 }

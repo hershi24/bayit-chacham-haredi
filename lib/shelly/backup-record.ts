@@ -16,5 +16,9 @@ export type ShellyBackupRow = {
   error: string | null;
   attempts: number;
   alertedAt: string | null;
+  /** The site checks about once a month that this Shelly is online and still holds the plan. */
+  watch: boolean;
+  checkedAt: string | null;
+  nextCheckAt: string | null;
   updatedAt: string;
 };

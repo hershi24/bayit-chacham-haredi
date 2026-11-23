@@ -42,6 +42,9 @@ type ShellyBackup = {
   verifiedAt: string | null;
   error: string | null;
   code: string | null;
+  watch: boolean;
+  checkedAt: string | null;
+  nextCheckAt: string | null;
 };
 
 type BoardSchedule = {
@@ -143,6 +146,22 @@ export function ProgramsBoard() {
     const timer = window.setTimeout(() => setZmanim(readZmanim()), 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  async function pushBackup(item: ShellyBackup) {
+    const payload = await send({ action: "shelly-send", shellyId: item.shellyId }, `shelly:${item.shellyId}`);
+    const next = payload?.shellyBackup?.find((row) => row.shellyId === item.shellyId);
+    if (next) setBackup(next);
+    if (!next) return;
+    if (next.status === "failed") toast.error(next.error || "השליחה נכשלה");
+    else if (next.status === "verified" && next.actionCount) toast.success("התוכנית נשלחה. אפשר לנתק את החשמל לדקה ולבדוק שהשקע חוזר.");
+    else toast.success("אין תוכנית קרובה לשליחה.");
+  }
+
+  async function toggleWatch(item: ShellyBackup) {
+    const payload = await send({ action: "shelly-watch", shellyId: item.shellyId, watch: !item.watch }, `watch:${item.shellyId}`);
+    const next = payload?.shellyBackup?.find((row) => row.shellyId === item.shellyId);
+    if (next) setBackup(next);
+  }
 
   function saveZmanim(next: ZmanimView) {
     setZmanim(next);
@@ -832,6 +851,31 @@ export function ProgramsBoard() {
           <DialogContent className="sm:max-w-2xl">
             <DialogTitle>גיבוי {backup.name}</DialogTitle>
             <DialogDescription>{backupSummary(backup)}</DialogDescription>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="h-9 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                disabled={pending === `shelly:${backup.shellyId}`}
+                onClick={() => void pushBackup(backup)}
+              >
+                {pending === `shelly:${backup.shellyId}` ? "שולח…" : "שליחה עכשיו"}
+              </button>
+              <button
+                type="button"
+                className="h-9 rounded-lg border px-3 text-sm font-medium disabled:opacity-50"
+                aria-pressed={backup.watch}
+                disabled={pending === `watch:${backup.shellyId}`}
+                onClick={() => void toggleWatch(backup)}
+              >
+                {backup.watch ? "בדיקה חודשית פעילה" : "הפעלת בדיקה חודשית"}
+              </button>
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              השליחה שומרת את תוכנית השבת והחג על השלי, ומכוונת אותו לחזור למצב שהיה לפני הפסקת החשמל. בתוך שבת או חג הסקריפט מיישר את השקע לפי התוכנית, גם בלי האינטרנט.
+              {backup.watch
+                ? " הבדיקה החודשית בודקת שההתקן מחובר ושהתוכנית עדיין עליו. אם משהו חסר היא נשלחת שוב, ואם אין קשר היא חוזרת למחרת."
+                : ""}
+            </p>
             {backup.code ? (
               <pre dir="ltr" className="max-h-[55vh] overflow-auto rounded-xl bg-muted p-3 text-left text-[11px] leading-5 text-foreground">
                 {backup.code}
@@ -1125,7 +1169,7 @@ function backupSummary(item: ShellyBackup) {
         : item.status === "pending"
           ? "הקוד בדרך להתקן."
           : "הקוד יישלח להתקן לפני הכניסה.";
-  return [item.windowLabel, detail, item.verifiedAt ? `סנכרון אחרון ${formatIsrael(item.verifiedAt)}` : null, item.error]
+  return [item.windowLabel, detail, item.verifiedAt ? `סנכרון אחרון ${formatIsrael(item.verifiedAt)}` : null, item.checkedAt ? `בדיקה אחרונה ${formatIsrael(item.checkedAt)}` : null, item.watch && item.nextCheckAt ? `בדיקה הבאה ${formatIsrael(item.nextCheckAt)}` : null, item.error]
     .filter(Boolean)
     .join(" ");
 }

@@ -7,6 +7,7 @@ import { maxDayClocks, maxProgramDays, maxSlots, sortSlots } from "@/lib/program
 import type { DayClock, ProgramSlot, StoredProgram } from "@/lib/programs/types";
 import { cleanWeekdays } from "@/lib/programs/weekdays";
 import { programsPayload } from "@/lib/programs/view";
+import { sendShellyBackup, setShellyWatch } from "@/lib/shelly/backup-sync";
 import { requireUser, withErrors } from "@/lib/session";
 import {
   cancelSchedule,
@@ -136,6 +137,14 @@ export function POST(request: Request) {
       const current = (await listPrograms(tenantId)).find((program) => program.id === id && program.programKey.startsWith("days:"));
       if (!current) throw new HttpError(404, "התוכנית לא נמצאה");
       await upsertProgram({ ...current, skippedDates: skippedList(body.skippedDates) });
+    } else if (action === "shelly-send") {
+      const shellyId = typeof body.shellyId === "string" ? body.shellyId.trim() : "";
+      if (!shellyId) throw new HttpError(400, "חסר התקן");
+      await sendShellyBackup(tenantId, shellyId);
+    } else if (action === "shelly-watch") {
+      const shellyId = typeof body.shellyId === "string" ? body.shellyId.trim() : "";
+      if (!shellyId) throw new HttpError(400, "חסר התקן");
+      await setShellyWatch(tenantId, shellyId, body.watch === true);
     } else if (action === "program-delete") {
       const id = typeof body.id === "string" ? body.id : "";
       const current = (await listPrograms(tenantId)).find((program) => program.id === id && program.programKey.startsWith("days:"));

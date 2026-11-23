@@ -15,7 +15,7 @@ import {
   type BackupAction,
 } from "../lib/shelly/backup-plan";
 import { expiryScript, planFromScript, planScript } from "../lib/shelly/backup-script";
-import { shellyBackupCoversRun, syncShellyUnit, type ShellyRpc } from "../lib/shelly/backup-sync";
+import { SHELLY_WATCH_EVERY_MS, SHELLY_WATCH_RETRY_MS, shellyBackupCoversRun, syncShellyUnit, type ShellyRpc } from "../lib/shelly/backup-sync";
 import {
   createShellyPro3,
   createTenant,
@@ -321,6 +321,105 @@ test("a clock that is not synced fails, retries, and alerts an admin once", asyn
   }
 });
 
+test("a manual send writes the plan again and tells the Shelly to restore its last state after power returns", async () => {
+  const tenant = await createTenant({ name: "שליחה ידנית", phone: null });
+  const shellyId = `shellysend${String(Date.now()).slice(-6)}`;
+  const deviceId = `${shellyId}_ch0`;
+  const programId = `prog_${tenant.id}_send`;
+  const device = deviceOf(shellyId);
+  try {
+    await createShellyPro3({ shellyId, tenantId: tenant.id, kind: "panel", channels: ["אולם", "מזגן", "דוד"] });
+    const block = await nextBlock();
+    assert.ok(block);
+    await upsertProgram({
+      id: programId,
+      tenantId: tenant.id,
+      programKey: "days:send",
+      name: "גיבוי",
+      enabled: true,
+      deviceIds: [deviceId],
+      startDate: null,
+      endDate: null,
+      days: [],
+      weekdays: [],
+      onTime: null,
+      offTime: null,
+      slots: [],
+    });
+    await replaceProgramRuns(programId, [
+      { deviceId, action: "ON", runAt: new Date(Date.parse(block.start) + 30 * 60_000).toISOString(), label: "הדלקה" },
+      { deviceId, action: "OFF", runAt: new Date(Date.parse(block.start) + 90 * 60_000).toISOString(), label: "כיבוי" },
+    ]);
+    const target = unit(tenant.id, shellyId, deviceId);
+    await syncShellyUnit(target, device.rpc, now);
+    const before = device.creates;
+    const again = await syncShellyUnit(target, device.rpc, now, { force: true });
+    assert.equal(again.status, "verified");
+    assert.ok(device.creates > before);
+    assert.equal(device.initial.get(0), "restore_last");
+    assert.equal(device.initial.get(1), "restore_last");
+    assert.equal(device.initial.has(2), false);
+  } finally {
+    await deleteProgram(tenant.id, programId).catch(() => undefined);
+    await deleteDevice(deviceId).catch(() => undefined);
+    await deleteTenant(tenant.id).catch(() => undefined);
+  }
+});
+
+test("a monthly check leaves a healthy plan in place, rewrites a missing one, and waits a day when the Shelly is offline", async () => {
+  const tenant = await createTenant({ name: "בדיקה חודשית", phone: null });
+  const shellyId = `shellywatch${String(Date.now()).slice(-6)}`;
+  const deviceId = `${shellyId}_ch0`;
+  const programId = `prog_${tenant.id}_watch`;
+  const device = deviceOf(shellyId);
+  try {
+    await createShellyPro3({ shellyId, tenantId: tenant.id, kind: "panel", channels: ["אולם", "מזגן", "דוד"] });
+    const block = await nextBlock();
+    assert.ok(block);
+    await upsertProgram({
+      id: programId,
+      tenantId: tenant.id,
+      programKey: "days:watch",
+      name: "גיבוי",
+      enabled: true,
+      deviceIds: [deviceId],
+      startDate: null,
+      endDate: null,
+      days: [],
+      weekdays: [],
+      onTime: null,
+      offTime: null,
+      slots: [],
+    });
+    await replaceProgramRuns(programId, [
+      { deviceId, action: "ON", runAt: new Date(Date.parse(block.start) + 30 * 60_000).toISOString(), label: "הדלקה" },
+    ]);
+    const target = unit(tenant.id, shellyId, deviceId);
+    const saved = await syncShellyUnit(target, device.rpc, now);
+    const creates = device.creates;
+    const checked = await syncShellyUnit(target, device.rpc, now, { patrol: true });
+    assert.equal(checked.status, "verified");
+    assert.equal(device.creates, creates);
+    assert.equal(Date.parse(checked.nextCheckAt ?? "") - now.getTime(), SHELLY_WATCH_EVERY_MS);
+
+    device.scripts.clear();
+    const repaired = await syncShellyUnit(target, device.rpc, now, { patrol: true });
+    assert.equal(repaired.status, "verified");
+    assert.ok(device.creates > creates);
+    assert.ok([...device.scripts.values()].some((script) => script.code.includes("var PLAN")));
+
+    device.offline = true;
+    const later = new Date(now.getTime() + 60_000);
+    const waiting = await syncShellyUnit(target, device.rpc, later, { patrol: true });
+    assert.equal(waiting.status, "verified");
+    assert.equal(Date.parse(waiting.nextCheckAt ?? "") - later.getTime(), SHELLY_WATCH_RETRY_MS);
+  } finally {
+    await deleteProgram(tenant.id, programId).catch(() => undefined);
+    await deleteDevice(deviceId).catch(() => undefined);
+    await deleteTenant(tenant.id).catch(() => undefined);
+  }
+});
+
 function unit(tenantId: string, shellyId: string, deviceId: string) {
   return {
     shellyId,
@@ -348,6 +447,9 @@ function deviceOf(shellyId: string) {
   let drift = 0;
   let nextId = 10;
   let scriptSeq = 1;
+  let creates = 0;
+  let offline = false;
+  const initial = new Map<number, string>();
   const jobs = new Map<number, { id: number; timespec: string; calls: Array<{ method: "Switch.Set"; params: { id: 0 | 1 | 2; on: boolean } }> }>();
   jobs.set(7, { id: 7, timespec: "0 0 12 * * *", calls: [{ method: "Switch.Set", params: { id: 0, on: true } }] });
   const scripts = new Map<number, { id: number; name: string; code: string; enable: boolean }>();
@@ -364,10 +466,24 @@ function deviceOf(shellyId: string) {
     set drift(value: number) {
       drift = value;
     },
+    get creates() {
+      return creates;
+    },
+    set offline(value: boolean) {
+      offline = value;
+    },
+    initial,
     corrupt: false,
   };
   const rpc: ShellyRpc = async (method, params = {}) => {
+    if (offline) throw new Error("התקן Shelly אינו מחובר כעת");
     if (method === "Sys.GetStatus") return { unixtime: Math.floor(now.getTime() / 1000) + drift };
+    if (method === "Switch.GetConfig") return { id: params.id, initial_state: initial.get(Number(params.id)) ?? "off" };
+    if (method === "Switch.SetConfig") {
+      const config = params.config as { initial_state?: string } | undefined;
+      if (config?.initial_state) initial.set(Number(params.id), config.initial_state);
+      return {};
+    }
     if (method === "Sys.GetConfig") return { location: { tz } };
     if (method === "Sys.SetConfig") {
       const next = (params.location as { tz?: string } | undefined)?.tz;
@@ -384,6 +500,7 @@ function deviceOf(shellyId: string) {
       return {};
     }
     if (method === "Schedule.Create") {
+      creates += 1;
       const id = nextId++;
       jobs.set(id, {
         id,

@@ -140,6 +140,7 @@ export function POST(request: Request) {
     } else if (action === "shelly-send") {
       const shellyId = typeof body.shellyId === "string" ? body.shellyId.trim() : "";
       if (!shellyId) throw new HttpError(400, "חסר התקן");
+      await syncTenantPrograms(tenantId, new Date(), false);
       await sendShellyBackup(tenantId, shellyId);
     } else if (action === "shelly-watch") {
       const shellyId = typeof body.shellyId === "string" ? body.shellyId.trim() : "";

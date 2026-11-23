@@ -1,4 +1,5 @@
 import { upcomingAgenda } from "@/lib/hebrew/calendar";
+import { israelDate, jerusalemInstant, shiftDate } from "@/lib/time";
 import {
   actionsForUnit,
   assessClock,
@@ -38,7 +39,9 @@ export const SHELLY_WATCH_EVERY_MS = 30 * 24 * 60 * 60 * 1000;
 export const SHELLY_WATCH_RETRY_MS = 24 * 60 * 60 * 1000;
 const touched = new Map<string, number>();
 
-type SyncOptions = { force?: boolean; patrol?: boolean };
+type SyncOptions = { force?: boolean; patrol?: boolean; today?: boolean };
+
+const TODAY_LABEL = "היום";
 
 export type ShellyRpc = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 
@@ -119,11 +122,11 @@ export async function shellyBackupViews(tenantId: string, now = new Date()): Pro
   });
 }
 
-/** Write the current Shabbat plan now, including the power-return setting. */
+/** Write today's upcoming actions to the Shelly, so a power cut does not drop them. */
 export async function sendShellyBackup(tenantId: string, shellyId: string, now = new Date()) {
   const unit = await unitById(tenantId, shellyId);
   touched.set(shellyId, Date.now());
-  return syncUnitOnline(unit, now, { force: true });
+  return syncUnitOnline(unit, now, { force: true, today: true });
 }
 
 /** Turn the monthly connection check on or off. Turning it on runs the first check immediately. */
@@ -154,6 +157,25 @@ export async function shellyBackupCoversRun(deviceId: string, runAt: string): Pr
 
 export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now = new Date(), options: SyncOptions = {}): Promise<ShellyBackupRow> {
   const previous = await getShellyBackup(unit.shellyId);
+  if (previous && !options.today && holdingToday(previous, now)) {
+    if (!options.patrol) return previous;
+    const today = todayBlock(now);
+    const todayActions = await actionsFor(unit, today, now);
+    const verdict = await confirmInstalled(rpc, todayActions, Math.floor(Date.parse(today.end) / 1000), previous);
+    if (verdict === "offline") return postponeWatch(previous, now);
+    if (verdict === "match") {
+      if (insideBlock(today, now)) await reconcileRelays(rpc, todayActions, Math.floor(Date.parse(today.end) / 1000), now);
+      return saveShellyBackup({ ...previous, ...watchFields(previous, now, true), error: null, updatedAt: now.toISOString() });
+    }
+    if (!todayActions.length) return previous;
+    return writeBackup(unit, rpc, now, previous, today, todayActions, { ...options, today: true });
+  }
+  if (options.today) {
+    const today = todayBlock(now);
+    const todayActions = await actionsFor(unit, today, now);
+    if (!todayActions.length) throw new HttpError(400, "אין פעולות להיום על השלי הזה");
+    return writeBackup(unit, rpc, now, previous, today, todayActions, options);
+  }
   const block = await blockFor(unit.tenantId, now);
   if (!block || !shouldPushBackup(block, now)) {
     return saveShellyBackup({
@@ -171,9 +193,9 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
     return previous;
   }
 
-  const runs = await listProgramRuns(unit.tenantId);
-  const channels = new Map(unit.channels.map((channel) => [channel.deviceId, channel]));
-  const actions = actionsForUnit(runs, unit.shellyId, channels, block, now);
+  const fresh = options.force ? null : await getShellyBackup(unit.shellyId);
+  if (holdingToday(fresh, now)) return fresh as ShellyBackupRow;
+  const actions = await actionsFor(unit, block, now);
   const hash = planHash(actions, block);
   const endSeconds = Math.floor(Date.parse(block.end) / 1000);
   if (
@@ -196,6 +218,20 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
     }
   }
 
+  return writeBackup(unit, rpc, now, previous, block, actions, options);
+}
+
+async function writeBackup(
+  unit: ShellyBackupUnit,
+  rpc: ShellyRpc,
+  now: Date,
+  previous: ShellyBackupRow | null,
+  block: BackupBlock,
+  actions: BackupAction[],
+  options: SyncOptions,
+) {
+  const hash = planHash(actions, block);
+  const endSeconds = Math.floor(Date.parse(block.end) / 1000);
   await saveShellyBackup({
     ...(previous ?? emptyRow(unit)),
     tenantId: unit.tenantId,
@@ -216,13 +252,13 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
       actions,
       endSeconds,
       previous?.scheduleIds ?? [],
-      now >= new Date(block.start),
+      options.today ? false : now >= new Date(block.start),
       now,
       unit.channels.filter((channel) => !channel.frozen).map((channel) => channel.channel),
     );
     await verifyPlan(rpc, written, actions, endSeconds);
     if (insideBlock(block, now)) await reconcileRelays(rpc, actions, endSeconds, now);
-    const saved = await saveShellyBackup({
+    return saveShellyBackup({
       ...(previous ?? emptyRow(unit)),
       tenantId: unit.tenantId,
       status: "verified",
@@ -242,7 +278,6 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
       ...watchFields(previous, now, Boolean(options.patrol || previous?.watch)),
       updatedAt: now.toISOString(),
     });
-    return saved;
   } catch (error) {
     const message = error instanceof Error ? error.message : "סנכרון הגיבוי נכשל";
     const attempts = (previous?.attempts ?? 0) + 1;
@@ -274,6 +309,24 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
       updatedAt: now.toISOString(),
     });
   }
+}
+
+function todayBlock(now: Date): BackupBlock {
+  const day = israelDate(now);
+  const start = jerusalemInstant(day, "00:00");
+  const end = jerusalemInstant(shiftDate(day, 1), "00:00");
+  if (!start || !end) throw new HttpError(500, "לא ניתן לחשב את יום היום");
+  return { start: start.toISOString(), end: end.toISOString(), label: TODAY_LABEL };
+}
+
+function holdingToday(row: ShellyBackupRow | null, now: Date) {
+  return Boolean(row && row.status === "verified" && row.windowLabel === TODAY_LABEL && row.windowEnd && Date.parse(row.windowEnd) > now.getTime());
+}
+
+async function actionsFor(unit: ShellyBackupUnit, block: BackupBlock, now: Date) {
+  const runs = await listProgramRuns(unit.tenantId);
+  const channels = new Map(unit.channels.map((channel) => [channel.deviceId, channel]));
+  return actionsForUnit(runs, unit.shellyId, channels, block, now);
 }
 
 async function syncUnitOnline(unit: ShellyBackupUnit, now: Date, options: SyncOptions = {}) {

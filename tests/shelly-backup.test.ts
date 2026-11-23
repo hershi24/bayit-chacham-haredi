@@ -321,6 +321,55 @@ test("a clock that is not synced fails, retries, and alerts an admin once", asyn
   }
 });
 
+test("a manual send writes today's upcoming actions, not Shabbat, and a later sync leaves them until midnight", async () => {
+  const tenant = await createTenant({ name: "תוכנית היום", phone: null });
+  const shellyId = `shellytoday${String(Date.now()).slice(-6)}`;
+  const deviceId = `${shellyId}_ch0`;
+  const programId = `prog_${tenant.id}_today`;
+  const device = deviceOf(shellyId);
+  try {
+    await createShellyPro3({ shellyId, tenantId: tenant.id, kind: "panel", channels: ["אולם", "מזגן", "דוד"] });
+    const soon = [5, 10, 15].map((minutes) => new Date(now.getTime() + minutes * 60_000).toISOString());
+    const block = await nextBlock();
+    assert.ok(block);
+    await upsertProgram({
+      id: programId,
+      tenantId: tenant.id,
+      programKey: "days:today",
+      name: "היום",
+      enabled: true,
+      deviceIds: [deviceId],
+      startDate: null,
+      endDate: null,
+      days: [],
+      weekdays: [],
+      onTime: null,
+      offTime: null,
+      slots: [],
+    });
+    await replaceProgramRuns(programId, [
+      ...soon.map((runAt, index) => ({ deviceId, action: "ON" as const, runAt, label: `היום ${index + 1}` })),
+      { deviceId, action: "ON" as const, runAt: new Date(Date.parse(block.start) + 30 * 60_000).toISOString(), label: "שבת" },
+      { deviceId, action: "ON" as const, runAt: new Date(now.getTime() + 26 * 60 * 60_000).toISOString(), label: "מחר" },
+    ]);
+    const target = unit(tenant.id, shellyId, deviceId);
+    const saved = await syncShellyUnit(target, device.rpc, now, { force: true, today: true });
+    assert.equal(saved.status, "verified");
+    assert.equal(saved.windowLabel, "היום");
+    assert.equal(saved.actionCount, 3);
+    assert.equal(saved.mode, "schedule");
+    assert.equal(device.initial.get(0), "restore_last");
+    const kept = await syncShellyUnit(target, device.rpc, new Date(now.getTime() + 60_000));
+    assert.equal(kept.planHash, saved.planHash);
+    assert.equal(kept.windowLabel, "היום");
+    assert.equal(kept.actionCount, 3);
+  } finally {
+    await deleteProgram(tenant.id, programId).catch(() => undefined);
+    await deleteDevice(deviceId).catch(() => undefined);
+    await deleteTenant(tenant.id).catch(() => undefined);
+  }
+});
+
 test("a manual send writes the plan again and tells the Shelly to restore its last state after power returns", async () => {
   const tenant = await createTenant({ name: "שליחה ידנית", phone: null });
   const shellyId = `shellysend${String(Date.now()).slice(-6)}`;

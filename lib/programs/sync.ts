@@ -15,7 +15,7 @@ import { israelDate, jerusalemInstant, shiftDate } from "@/lib/time";
 
 const refreshed = new Map<string, number>();
 
-export async function syncTenantPrograms(tenantId: string, now = new Date()) {
+export async function syncTenantPrograms(tenantId: string, now = new Date(), shelly = true) {
   const programs = await listPrograms(tenantId);
   const clocks = await listDayClocks(tenantId);
   const allowed = new Set((await listTenantDevices(tenantId)).map((device) => device.deviceId));
@@ -46,6 +46,7 @@ export async function syncTenantPrograms(tenantId: string, now = new Date()) {
   );
   await replaceProgramRuns(looseId(tenantId), runsFor("שעון", loose, allowed, now));
   refreshed.set(tenantId, Date.now());
+  if (!shelly) return;
   void import("@/lib/shelly/backup-sync")
     .then((mod) => mod.syncShellyBackupsForTenant(tenantId, now))
     .catch((error: unknown) => {

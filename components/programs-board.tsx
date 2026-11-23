@@ -153,8 +153,8 @@ export function ProgramsBoard() {
     if (next) setBackup(next);
     if (!next) return;
     if (next.status === "failed") toast.error(next.error || "השליחה נכשלה");
-    else if (next.status === "verified" && next.actionCount) toast.success("התוכנית נשלחה. אפשר לנתק את החשמל לדקה ולבדוק שהשקע חוזר.");
-    else toast.success("אין תוכנית קרובה לשליחה.");
+    else if (next.status === "verified" && next.actionCount) toast.success("תוכנית היום נשלחה. אפשר לנתק את החשמל לדקה. ההדלקות הקרובות נשארות על השלי.");
+    else toast.success("אין פעולות להיום על השלי הזה.");
   }
 
   async function toggleWatch(item: ShellyBackup) {
@@ -858,7 +858,7 @@ export function ProgramsBoard() {
                 disabled={pending === `shelly:${backup.shellyId}`}
                 onClick={() => void pushBackup(backup)}
               >
-                {pending === `shelly:${backup.shellyId}` ? "שולח…" : "שליחה עכשיו"}
+                {pending === `shelly:${backup.shellyId}` ? "שולח…" : "שליחת תוכנית היום"}
               </button>
               <button
                 type="button"
@@ -871,7 +871,7 @@ export function ProgramsBoard() {
               </button>
             </div>
             <p className="text-xs leading-5 text-muted-foreground">
-              השליחה שומרת את תוכנית השבת והחג על השלי, ומכוונת אותו לחזור למצב שהיה לפני הפסקת החשמל. בתוך שבת או חג הסקריפט מיישר את השקע לפי התוכנית, גם בלי האינטרנט.
+              השליחה כותבת לשלי את פעולות היום, גם אם הן בעוד כמה דקות. אחרי הפסקת חשמל הן נשארות על ההתקן ומתבצעות שם. גיבוי השבת חוזר מעצמו אחרי חצות.
               {backup.watch
                 ? " הבדיקה החודשית בודקת שההתקן מחובר ושהתוכנית עדיין עליו. אם משהו חסר היא נשלחת שוב, ואם אין קשר היא חוזרת למחרת."
                 : ""}

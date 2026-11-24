@@ -229,4 +229,18 @@ body {
     min-height: 44px;
     font-size: 17px;
   }
+
+  [data-plan-dialog] input[type="time"],
+  [data-plan-dialog] select {
+    min-width: 0;
+    max-width: 100%;
+    font-size: 17px;
+  }
+
+  [data-plan-dialog] input[type="time"]::-webkit-datetime-edit,
+  [data-plan-dialog] input[type="time"]::-webkit-datetime-edit-fields-wrapper {
+    display: inline-flex;
+    min-width: 0;
+    padding: 0;
+  }
 }

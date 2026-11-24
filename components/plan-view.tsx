@@ -59,9 +59,12 @@ export function PlanViewDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <div className="border-b px-5 pb-4 pt-5 pe-14">
-          <DialogTitle className="text-lg font-extrabold leading-7">{title}</DialogTitle>
+      <DialogContent
+        data-plan-view
+        className="flex max-h-[min(92dvh,760px)] w-[min(28rem,calc(100vw-1rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-md max-sm:!inset-x-0 max-sm:!top-auto max-sm:!bottom-0 max-sm:!h-auto max-sm:!max-h-[100dvh] max-sm:!w-full max-sm:!max-w-none max-sm:!translate-x-0 max-sm:!translate-y-0 max-sm:!rounded-b-none max-sm:!rounded-t-2xl"
+      >
+        <div className="border-b px-5 pt-5 pb-4 pe-14">
+          <DialogTitle className="text-lg leading-7 font-extrabold">{title}</DialogTitle>
           <DialogDescription className="mt-1.5 text-[13px] leading-6">
             {program
               ? repeatCaption({
@@ -74,7 +77,7 @@ export function PlanViewDialog({
           </DialogDescription>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {ids.length ? (
             <div>
               <p className="mb-2 text-[11px] font-bold tracking-wide text-muted-foreground">שקעים</p>
@@ -100,21 +103,23 @@ export function PlanViewDialog({
               <div className="space-y-3">
                 {days.map((day) => (
                   <section key={day.key}>
-                    <h4 className="mb-1.5 text-sm font-bold">{day.title}</h4>
+                    <h4 className="mb-1.5 px-1 text-sm font-bold">{day.title}</h4>
                     <ul className="space-y-1.5">
                       {day.actions.map((item, index) => (
-                        <li key={`${day.key}:${item.time}:${item.action}:${index}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-muted/60 px-3 py-2.5">
-                          <span dir="ltr" className="tabular-nums text-sm font-semibold">
+                        <li key={`${day.key}:${item.time}:${item.action}:${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/50 px-4 py-3">
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold">{actionWord(item.action)}</span>
+                            {sharedDevices ? null : (
+                              <span className="mt-0.5 block truncate text-[11px] font-medium text-muted-foreground">
+                                {item.deviceIds
+                                  .map((id) => devices.find((entry) => entry.deviceId === id)?.name ?? id)
+                                  .join(" · ")}
+                              </span>
+                            )}
+                          </span>
+                          <span dir="ltr" className="shrink-0 text-sm font-semibold tabular-nums">
                             {item.time}
                           </span>
-                          <span className="text-sm font-semibold">{actionWord(item.action)}</span>
-                          {sharedDevices ? null : (
-                            <span className="text-[11px] font-medium text-muted-foreground">
-                              {item.deviceIds
-                                .map((id) => devices.find((entry) => entry.deviceId === id)?.name ?? id)
-                                .join(" · ")}
-                            </span>
-                          )}
                         </li>
                       ))}
                     </ul>
@@ -130,9 +135,9 @@ export function PlanViewDialog({
           {skipped.length ? <p className="text-xs leading-5 text-muted-foreground">מושהה ב־{skipped.join(", ")}</p> : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t bg-muted/30 px-4 py-3">
+        <div className="flex flex-col gap-2 border-t bg-muted/30 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {program ? (
-            <>
+            <div className="flex items-center justify-between gap-2">
               <label className="inline-flex items-center gap-2 text-sm font-bold">
                 <span className={cn("relative h-6 w-11 rounded-full transition-colors", program.enabled ? "bg-online" : "bg-muted-foreground/40")}>
                   <input
@@ -160,12 +165,12 @@ export function PlanViewDialog({
                 <Pause className="size-3.5" />
                 השהיה{skipped.length ? ` (${skipped.length})` : ""}
               </button>
-            </>
+            </div>
           ) : null}
           {onCancel ? (
             <button
               type="button"
-              className="inline-flex h-10 items-center rounded-xl border border-destructive/30 px-3 text-sm font-bold text-destructive"
+              className="inline-flex h-11 items-center justify-center rounded-xl border border-destructive/30 px-3 text-sm font-bold text-destructive"
               disabled={pending}
               onClick={onCancel}
             >
@@ -174,7 +179,7 @@ export function PlanViewDialog({
           ) : null}
           <button
             type="button"
-            className="ms-auto inline-flex h-10 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-bold text-primary-foreground"
+            className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-bold text-primary-foreground"
             onClick={onEdit}
           >
             <Pencil className="size-4" />

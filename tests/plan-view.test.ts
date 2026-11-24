@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clockGroups } from "../lib/programs/plan-view";
+import { clockGroups, scheduledDays } from "../lib/programs/plan-view";
 
 test("clocks that share Friday and Shabbat are titled with both days", () => {
   const groups = clockGroups(
@@ -44,6 +44,37 @@ test("a clock that belongs to one day is not mixed into the other day", () => {
     [
       ["יום ו׳", "hall", "18:30"],
       ["שבת", "ac", "10:00"],
+    ],
+  );
+});
+
+test("Friday and Saturday actions are listed on their own day, earliest first", () => {
+  const days = scheduledDays(
+    {
+      weekdays: [5, 6],
+      deviceIds: ["ac"],
+      slots: [
+        { onTime: "18:30", offTime: "10:00", weekdays: [5] },
+        {
+          onTime: "10:00",
+          offTime: "03:00",
+          actions: [
+            { action: "OFF", time: "03:00" },
+            { action: "ON", time: "10:00" },
+            { action: "OFF", time: "12:00" },
+            { action: "ON", time: "14:00" },
+          ],
+          weekdays: [6],
+        },
+      ],
+    },
+    [],
+  );
+  assert.deepEqual(
+    days.map((day) => [day.title, day.actions.map((action) => `${action.action} ${action.time}`)]),
+    [
+      ["יום ו׳", ["ON 18:30"]],
+      ["שבת", ["OFF 03:00", "ON 10:00", "OFF 10:00", "OFF 12:00", "ON 14:00"]],
     ],
   );
 });

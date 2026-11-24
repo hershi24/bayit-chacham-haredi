@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { clockGroups, scheduledDays } from "../lib/programs/plan-view";
+import { weeklyClockDays } from "../lib/programs/weekdays";
 
 test("clocks that share Friday and Shabbat are titled with both days", () => {
   const groups = clockGroups(
@@ -46,6 +47,17 @@ test("a clock that belongs to one day is not mixed into the other day", () => {
       ["שבת", "ac", "10:00"],
     ],
   );
+});
+
+test("a Saturday date stays on Saturday and a Friday date stays on Friday", () => {
+  assert.deepEqual(weeklyClockDays(["2026-11-27", "2026-11-28"], [5, 6]), [[5], [6]]);
+});
+
+test("clocks that share one date keep every marked day", () => {
+  assert.deepEqual(weeklyClockDays(["2026-11-27", "2026-11-27"], [0, 1, 2, 3, 4]), [
+    [0, 1, 2, 3, 4],
+    [0, 1, 2, 3, 4],
+  ]);
 });
 
 test("actions marked for Friday and Saturday together run on both days, earliest first", () => {

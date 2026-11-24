@@ -9,6 +9,22 @@ export function cleanWeekdays(weekdays: number[]): number[] {
   return [...new Set(weekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort((left, right) => left - right);
 }
 
+/**
+ * The date on a weekly clock is that clock's day.
+ * Clocks dated on different marked days each stay on their own day.
+ * Clocks that all share one date keep every day marked on the program.
+ */
+export function weeklyClockDays(dates: string[], selected: number[]): number[][] {
+  const days = cleanWeekdays(selected);
+  const parsed = dates.map((date) => (/^\d{4}-\d{2}-\d{2}$/.test(date) ? weekdayOf(date) : null));
+  const distinct = new Set(parsed.filter((day): day is number => day != null && days.includes(day)));
+  return parsed.map((day) => {
+    if (!days.length) return day == null ? [] : [day];
+    if (day == null || !days.includes(day) || distinct.size <= 1) return days;
+    return [day];
+  });
+}
+
 export function weekdayPhrase(weekdays: number[]): string {
   const days = cleanWeekdays(weekdays);
   if (days.length === 7) return "כל יום";

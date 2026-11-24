@@ -1,5 +1,6 @@
-import type { ClockAction } from "@/lib/programs/actions";
+import { resolveActions, type ClockAction } from "@/lib/programs/actions";
 import { WEEKDAY_LABELS, cleanWeekdays, weekdayOf } from "@/lib/programs/weekdays";
+import { shiftDate } from "@/lib/time";
 
 export type ViewSlot = {
   onTime: string | null;
@@ -33,7 +34,20 @@ type OwnedClock = {
   day: string;
   onTime: string | null;
   offTime: string | null;
+  actions?: ClockAction[];
   deviceIds: string[];
+};
+
+export type ScheduledAction = {
+  time: string;
+  action: "ON" | "OFF";
+  deviceIds: string[];
+};
+
+export type ScheduledDay = {
+  key: string;
+  title: string;
+  actions: ScheduledAction[];
 };
 
 function clockOf(slot: ViewSlot, fallback: string[]): ViewClock | null {
@@ -106,4 +120,51 @@ export function clockGroups(program: ProgramInput, owned: OwnedClock[]): ClockGr
 export function clocksShareDevices(groups: ClockGroup[]) {
   const ids = groups.flatMap((group) => group.clocks.map((clock) => clock.deviceIds.join(",")));
   return new Set(ids).size <= 1;
+}
+
+function sortActions(actions: ScheduledAction[]) {
+  return [...actions].sort(
+    (left, right) => left.time.localeCompare(right.time) || (left.action === right.action ? 0 : left.action === "ON" ? -1 : 1),
+  );
+}
+
+function remember(bucket: Map<string, ScheduledAction[]>, key: string, action: ScheduledAction) {
+  const list = bucket.get(key) ?? [];
+  const signature = `${action.time}|${action.action}|${action.deviceIds.join(",")}`;
+  if (!list.some((item) => `${item.time}|${item.action}|${item.deviceIds.join(",")}` === signature)) list.push(action);
+  bucket.set(key, list);
+}
+
+/** Each day in week order, with that day's actions from earliest to latest. An earlier switch-off stays on the next morning. */
+export function scheduledDays(program: ProgramInput, owned: OwnedClock[]): ScheduledDay[] {
+  if (program.weekdays.length) {
+    const origin = Math.min(...program.weekdays);
+    const bucket = new Map<string, ScheduledAction[]>();
+    for (const slot of program.slots) {
+      const days = cleanWeekdays(slot.weekdays?.length ? slot.weekdays : program.weekdays);
+      const deviceIds = slot.deviceIds?.length ? slot.deviceIds : program.deviceIds;
+      for (const day of days) {
+        for (const step of resolveActions(slot)) {
+          const target = step.nextDay ? (day + 1) % 7 : day;
+          remember(bucket, String(target), { time: step.time, action: step.action, deviceIds });
+        }
+      }
+    }
+    return [...bucket.entries()]
+      .sort((left, right) => ((Number(left[0]) - origin + 7) % 7) - ((Number(right[0]) - origin + 7) % 7))
+      .map(([day, actions]) => ({ key: day, title: weekdayTitle(Number(day)), actions: sortActions(actions) }));
+  }
+
+  const bucket = new Map<string, ScheduledAction[]>();
+  for (const clock of owned) {
+    const deviceIds = clock.deviceIds.length ? clock.deviceIds : program.deviceIds;
+    for (const step of resolveActions(clock)) {
+      if (!clock.day) continue;
+      const day = step.nextDay ? shiftDate(clock.day, 1) : clock.day;
+      remember(bucket, day, { time: step.time, action: step.action, deviceIds });
+    }
+  }
+  return [...bucket.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([day, actions]) => ({ key: day, title: dateTitle(day), actions: sortActions(actions) }));
 }

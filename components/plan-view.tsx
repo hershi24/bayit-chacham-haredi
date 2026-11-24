@@ -4,17 +4,12 @@ import { Pause, Pencil } from "lucide-react";
 import { DeviceGlyph } from "@/components/device-glyph";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { PlannerClock, PlannerDevice, PlannerProgram } from "@/components/plan-dialog";
-import { formatClockActions } from "@/lib/programs/actions";
-import { clockGroups, clocksShareDevices, dateTitle, type ClockGroup } from "@/lib/programs/plan-view";
+import { scheduledDays, type ScheduledDay } from "@/lib/programs/plan-view";
 import { repeatCaption } from "@/lib/programs/weekdays";
 import { cn } from "cn";
 
-function ClockTime({ onTime, offTime, actions }: { onTime: string | null; offTime: string | null; actions?: ClockGroup["clocks"][number]["actions"] }) {
-  const label = formatClockActions({ onTime, offTime, actions });
-  if (!label) return null;
-  return (
-    <span className="tabular-nums">{label}</span>
-  );
+function actionWord(action: "ON" | "OFF") {
+  return action === "ON" ? "הדלקה" : "כיבוי";
 }
 
 export function PlanViewDialog({
@@ -43,22 +38,19 @@ export function PlanViewDialog({
   const title = program?.name ?? clock?.label ?? "שעון";
   const ids = program?.deviceIds ?? clock?.deviceIds ?? [];
   const skipped = program?.skippedDates ?? [];
-  const groups: ClockGroup[] = program
-    ? clockGroups(
+  const days: ScheduledDay[] = program
+    ? scheduledDays(
         program,
         clocks.filter((item) => !item.recurring && item.programId === program.id),
       )
     : clock
-      ? [
-          {
-            key: clock.id,
-            title: clock.day ? dateTitle(clock.day) : "שעון",
-            clocks: [{ onTime: clock.onTime, offTime: clock.offTime, actions: clock.actions, deviceIds: clock.deviceIds }],
-          },
-        ]
+      ? scheduledDays(
+          { weekdays: [], deviceIds: clock.deviceIds, slots: [] },
+          [clock],
+        )
       : [];
-  const sharedDevices = clocksShareDevices(groups);
-  const clockCount = groups.reduce((sum, group) => sum + group.clocks.length, 0);
+  const sharedDevices = new Set(days.flatMap((day) => day.actions.map((action) => action.deviceIds.join(",")))).size <= 1;
+  const actionCount = days.reduce((sum, day) => sum + day.actions.length, 0);
 
   return (
     <Dialog
@@ -100,24 +92,22 @@ export function PlanViewDialog({
             </div>
           ) : null}
 
-          {groups.length ? (
+          {days.length ? (
             <div>
               <p className="mb-2 text-[11px] font-bold tracking-wide text-muted-foreground">
-                {clockCount === 1 ? "שעון" : `${clockCount} שעונים`}
+                {actionCount === 1 ? "פעולה אחת" : `${actionCount} פעולות לפי סדר היום`}
               </p>
               <div className="space-y-3">
-                {groups.map((group) => (
-                  <section key={group.key}>
-                    <h4 className="mb-1.5 text-sm font-bold">{group.title}</h4>
+                {days.map((day) => (
+                  <section key={day.key}>
+                    <h4 className="mb-1.5 text-sm font-bold">{day.title}</h4>
                     <ul className="space-y-1.5">
-                      {group.clocks.map((item, index) => (
-                        <li key={`${group.key}:${index}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-muted/60 px-3 py-2.5">
-                          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-card text-[11px] font-bold text-muted-foreground">
-                            {index + 1}
+                      {day.actions.map((item, index) => (
+                        <li key={`${day.key}:${item.time}:${item.action}:${index}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-muted/60 px-3 py-2.5">
+                          <span dir="ltr" className="tabular-nums text-sm font-semibold">
+                            {item.time}
                           </span>
-                          <span className="text-sm font-semibold">
-                            <ClockTime onTime={item.onTime} offTime={item.offTime} actions={item.actions} />
-                          </span>
+                          <span className="text-sm font-semibold">{actionWord(item.action)}</span>
                           {sharedDevices ? null : (
                             <span className="text-[11px] font-medium text-muted-foreground">
                               {item.deviceIds

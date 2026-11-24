@@ -10,18 +10,16 @@ export function cleanWeekdays(weekdays: number[]): number[] {
 }
 
 /**
- * The date on a weekly clock is that clock's day.
- * Clocks dated on different marked days each stay on their own day.
- * Clocks that all share one date keep every day marked on the program.
+ * The date on a weekly clock is that clock's only day.
+ * A clock dated Friday runs on Friday, and a clock dated Saturday runs on Saturday.
  */
 export function weeklyClockDays(dates: string[], selected: number[]): number[][] {
   const days = cleanWeekdays(selected);
-  const parsed = dates.map((date) => (/^\d{4}-\d{2}-\d{2}$/.test(date) ? weekdayOf(date) : null));
-  const distinct = new Set(parsed.filter((day): day is number => day != null && days.includes(day)));
-  return parsed.map((day) => {
-    if (!days.length) return day == null ? [] : [day];
-    if (day == null || !days.includes(day) || distinct.size <= 1) return days;
-    return [day];
+  return dates.map((date) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return days;
+    const day = weekdayOf(date);
+    if (!days.length || days.includes(day)) return [day];
+    return days;
   });
 }
 

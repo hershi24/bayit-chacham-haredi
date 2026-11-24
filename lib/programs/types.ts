@@ -26,6 +26,8 @@ export type ProgramSlot = {
   /** Chosen actions, in the order they should run. Missing means the older on-then-off pair. */
   actions?: ClockAction[];
   weekdays?: number[];
+  /** The date chosen for this clock. Its weekday is the day the clock runs. */
+  date?: string | null;
   /** When set, this clock runs only on these devices. Empty or missing means the program's devices. */
   deviceIds?: string[];
 };

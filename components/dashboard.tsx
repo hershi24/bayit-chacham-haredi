@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ListOrdered, Power, PowerOff, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -11,9 +10,8 @@ import { mergeBoardDevices } from "@/lib/board-merge";
 import { boardLine } from "@/lib/board-summary";
 import { api } from "@/lib/client-api";
 import type { DeviceIconKey } from "@/lib/devices/icons";
-import { planWhen, seenWhen } from "@/lib/time";
-import { auditSucceeded } from "@/lib/audit-result";
-import type { AuditView, BridgeStatus, DeviceView, RelayAction, SessionUser } from "@/lib/types";
+import { seenWhen } from "@/lib/time";
+import type { BridgeStatus, DeviceView, RelayAction, SessionUser } from "@/lib/types";
 type Payload = { devices: DeviceView[]; status: BridgeStatus; user?: SessionUser };
 
 export function Dashboard({ user }: { user?: SessionUser | null }) {
@@ -21,7 +19,6 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [role, setRole] = useState<SessionUser["role"] | null>(user?.role ?? null);
   const [name, setName] = useState(user?.name ?? "");
-  const [audit, setAudit] = useState<AuditView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, RelayAction | null>>({});
   const [bulkBusy, setBulkBusy] = useState<RelayAction | null>(null);
@@ -74,23 +71,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
     });
   }, []);
 
-  const loadAudit = useCallback(async () => {
-    try {
-      const query = focusTenant ? `?tenantId=${encodeURIComponent(focusTenant)}` : "";
-      const payload = await api<{ entries: AuditView[] | null }>(`/api/audit${query}`);
-      setAudit(payload.entries ?? []);
-    } catch {
-      setAudit((current) => current ?? []);
-    }
-  }, [focusTenant]);
-
-  useEffect(() => {
-    if (!focusTenant) return;
-    void loadAudit();
-  }, [focusTenant, loadAudit]);
-
   const load = useCallback(async (refresh: boolean) => {
-    void loadAudit();
     try {
       const [session, board] = await Promise.all([
         api<{ user: SessionUser }>("/api/auth/me"),
@@ -104,12 +85,11 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "טעינת הלוח נכשלה");
     }
-  }, [loadAudit]);
+  }, []);
 
   const refreshBoard = useCallback(async () => {
     setRefreshing(true);
     setRefreshNote("מתחיל לסנכרן את השקעים…");
-    void loadAudit();
     try {
       let list = devices;
       if (!list) {
@@ -179,7 +159,7 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
       setRefreshNote(null);
       setRefreshingIds([]);
     }
-  }, [applyDevice, devices, focusTenant, loadAudit]);
+  }, [applyDevice, devices, focusTenant]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(false).then(() => load(true)), 0);
@@ -248,7 +228,6 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
       throw cause;
     } finally {
       setBusy((current) => ({ ...current, [device.deviceId]: null }));
-      if (!options?.quiet) void loadAudit();
     }
   }
 
@@ -296,7 +275,6 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
       await load(false);
     }
     setBulkBusy(null);
-    void loadAudit();
   }
 
   async function chooseIcon(device: DeviceView, icon: DeviceIconKey) {
@@ -357,7 +335,6 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
     applyDevice(result.device);
     if (!result.saved) throw new Error(result.message);
     toast.success(result.message);
-    void loadAudit();
     return result;
   }
 
@@ -379,73 +356,15 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
   const count = boardDevices?.length ?? 0;
   const connected = boardDevices?.filter((device) => device.connectivity === "ONLINE").length ?? 0;
   const running = boardDevices?.filter((device) => device.relayOn === true).length ?? 0;
-  const upcoming = (boardDevices ?? [])
-    .filter((device): device is DeviceView & { next: NonNullable<DeviceView["next"]> } => Boolean(device.next))
-    .sort((a, b) => Date.parse(a.next.at) - Date.parse(b.next.at))
-    .slice(0, 5);
-  const recent = (audit ?? []).filter((entry) => entry.deviceName && auditSucceeded(entry.result)).slice(0, 5);
-  const compactBoard = count > 0 && count <= 2;
-
-  const deviceGrid =
+  const deviceGrid = "flex w-full flex-wrap items-stretch justify-center gap-4";
+  const deviceWidth =
     count <= 1
-      ? "grid w-full min-w-0 gap-4"
-      : count === 2
-        ? "grid w-full min-w-0 gap-4 sm:grid-cols-2"
-        : "grid w-full min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3";
-
-  const upcomingBlock = (
-    <div className="min-w-0">
-      <h2 className="mb-3 text-[13px] font-medium text-muted-foreground">בהמשך</h2>
-      {upcoming.length === 0 ? (
-        <p className="rounded-2xl border border-border/60 bg-card px-4 py-3 text-[14px] text-muted-foreground">אין פעולות מתוכננות.</p>
-      ) : (
-        <ol className="overflow-hidden rounded-2xl border border-border/60 bg-card">
-          {upcoming.map((device) => (
-            <li key={device.deviceId} className="flex min-w-0 items-center gap-3 border-b border-border/50 px-4 py-3 text-[15px] last:border-b-0">
-              <span className="shrink-0 text-[13px] text-foreground tabular-nums" dir="ltr">
-                {planWhen(device.next.at)}
-              </span>
-              <span className="min-w-0 flex-1 truncate">{device.name}</span>
-              <span className="shrink-0 text-[13px] text-muted-foreground">{device.next.action === "ON" ? "יידלק" : "יכבה"}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
-
-  const recentBlock = (
-    <div className="min-w-0">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 className="text-[13px] font-medium text-muted-foreground">פעילות אחרונה</h2>
-        <Link href={focusTenant ? `/audit?tenantId=${encodeURIComponent(focusTenant)}` : "/audit"} className="shrink-0 text-[12px] text-primary hover:underline">
-          ליומן
-        </Link>
-      </div>
-      {audit === null ? null : recent.length === 0 ? (
-        <p className="rounded-2xl border border-border/60 bg-card px-4 py-3 text-[14px] text-muted-foreground">עוד אין פעולות.</p>
-      ) : (
-        <ol className="overflow-hidden rounded-2xl border border-border/60 bg-card">
-          {recent.map((entry) => (
-            <li key={entry.id} className="flex min-w-0 items-center gap-3 border-b border-border/50 px-4 py-3 last:border-b-0">
-              <span className="shrink-0 text-[13px] text-muted-foreground tabular-nums" dir="ltr">
-                {planWhen(entry.at)}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px]">{entry.deviceName}</span>
-                <span className="text-[13px] text-muted-foreground">{auditAction(entry.action)}</span>
-              </span>
-              <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[12px] text-muted-foreground">{sources[entry.source] ?? entry.source}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
+      ? "w-full max-w-md"
+      : "w-full sm:w-[calc(50%-0.5rem)] lg:w-[calc(33.333%-0.75rem)]";
 
   const anyBusy = bulkBusy !== null || Object.values(busy).some(Boolean);
   const socketsBlock = (
-    <div className="min-w-0">
+    <div className="mx-auto w-full min-w-0 max-w-5xl">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-[13px] font-medium tracking-[0.08em] text-muted-foreground uppercase">השקעים</h2>
         {count > 0 ? (
@@ -534,11 +453,11 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
           {(boardDevices ?? []).map((device) => (
             <div
               key={device.deviceId}
-              className={
+              className={`flex min-w-0 [&>article]:w-full [&>article]:flex-1 ${deviceWidth} ${
                 refreshingIds.includes(device.deviceId)
                   ? "rounded-2xl ring-1 ring-primary/25 transition-shadow duration-300"
                   : "transition-shadow duration-300"
-              }
+              }`}
             >
               <SocketCard
                 device={device}
@@ -622,36 +541,11 @@ export function Dashboard({ user }: { user?: SessionUser | null }) {
         <div className="mt-8">
           {devices ? <AdminOverview devices={devices} onOpen={setFocusTenant} /> : <div className="h-28 animate-pulse rounded-2xl bg-muted" />}
         </div>
-      ) : compactBoard ? (
-        <div className="mt-8 grid min-w-0 items-start gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(17rem,0.9fr)]">
-          {socketsBlock}
-          <aside className="grid min-w-0 gap-8">{upcomingBlock}{recentBlock}</aside>
-        </div>
       ) : (
-        <>
-          <div className="mt-8">{socketsBlock}</div>
-          <div className="mt-10 grid min-w-0 gap-8 md:grid-cols-2">
-            {upcomingBlock}
-            {recentBlock}
-          </div>
-        </>
+        <div className="mt-8">{socketsBlock}</div>
       )}
     </section>
   );
-}
-
-const sources: Record<AuditView["source"], string> = {
-  web: "אתר",
-  ivr: "טלפון",
-  stream: "בשקע",
-  system: "מערכת",
-};
-
-function auditAction(action: string) {
-  if (action === "ON") return "הופעל";
-  if (action === "OFF") return "כובה";
-  if (action.startsWith("TIMER")) return "טיימר";
-  return action;
 }
 
 function jerusalemHour() {

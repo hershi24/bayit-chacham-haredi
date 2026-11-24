@@ -48,6 +48,38 @@ test("a clock that belongs to one day is not mixed into the other day", () => {
   );
 });
 
+test("actions marked for Friday and Saturday together run on both days, earliest first", () => {
+  const days = scheduledDays(
+    {
+      weekdays: [5, 6],
+      deviceIds: ["ac"],
+      slots: [
+        { onTime: "18:30", offTime: "10:00", weekdays: [5, 6] },
+        {
+          onTime: "10:00",
+          offTime: "03:00",
+          actions: [
+            { action: "OFF", time: "03:00" },
+            { action: "ON", time: "10:00" },
+            { action: "OFF", time: "12:00" },
+            { action: "ON", time: "14:00" },
+          ],
+          weekdays: [5, 6],
+        },
+      ],
+    },
+    [],
+  );
+  assert.deepEqual(
+    days.map((day) => [day.title, day.actions.map((action) => `${action.action} ${action.time}`)]),
+    [
+      ["יום ו׳", ["OFF 03:00", "ON 10:00", "OFF 12:00", "ON 14:00", "ON 18:30"]],
+      ["שבת", ["OFF 03:00", "ON 10:00", "OFF 10:00", "OFF 12:00", "ON 14:00", "ON 18:30"]],
+      ["יום א׳", ["OFF 10:00"]],
+    ],
+  );
+});
+
 test("Friday and Saturday actions are listed on their own day, earliest first", () => {
   const days = scheduledDays(
     {

@@ -4,39 +4,17 @@ import { Pause, Pencil } from "lucide-react";
 import { DeviceGlyph } from "@/components/device-glyph";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { PlannerClock, PlannerDevice, PlannerProgram } from "@/components/plan-dialog";
+import { formatClockActions } from "@/lib/programs/actions";
 import { clockGroups, clocksShareDevices, dateTitle, type ClockGroup } from "@/lib/programs/plan-view";
 import { repeatCaption } from "@/lib/programs/weekdays";
 import { cn } from "cn";
 
-function ClockTime({ onTime, offTime }: { onTime: string | null; offTime: string | null }) {
-  if (onTime && offTime) {
-    return (
-      <span dir="ltr" className="tabular-nums">
-        {onTime}–{offTime}
-      </span>
-    );
-  }
-  if (onTime) {
-    return (
-      <>
-        הדלקה ב־
-        <span dir="ltr" className="tabular-nums">
-          {onTime}
-        </span>
-      </>
-    );
-  }
-  if (offTime) {
-    return (
-      <>
-        כיבוי ב־
-        <span dir="ltr" className="tabular-nums">
-          {offTime}
-        </span>
-      </>
-    );
-  }
-  return null;
+function ClockTime({ onTime, offTime, actions }: { onTime: string | null; offTime: string | null; actions?: ClockGroup["clocks"][number]["actions"] }) {
+  const label = formatClockActions({ onTime, offTime, actions });
+  if (!label) return null;
+  return (
+    <span className="tabular-nums">{label}</span>
+  );
 }
 
 export function PlanViewDialog({
@@ -75,7 +53,7 @@ export function PlanViewDialog({
           {
             key: clock.id,
             title: clock.day ? dateTitle(clock.day) : "שעון",
-            clocks: [{ onTime: clock.onTime, offTime: clock.offTime, deviceIds: clock.deviceIds }],
+            clocks: [{ onTime: clock.onTime, offTime: clock.offTime, actions: clock.actions, deviceIds: clock.deviceIds }],
           },
         ]
       : [];
@@ -138,7 +116,7 @@ export function PlanViewDialog({
                             {index + 1}
                           </span>
                           <span className="text-sm font-semibold">
-                            <ClockTime onTime={item.onTime} offTime={item.offTime} />
+                            <ClockTime onTime={item.onTime} offTime={item.offTime} actions={item.actions} />
                           </span>
                           {sharedDevices ? null : (
                             <span className="text-[11px] font-medium text-muted-foreground">

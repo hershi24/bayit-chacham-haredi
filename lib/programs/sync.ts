@@ -1,4 +1,5 @@
 import { yomTovDates } from "@/lib/hebrew/calendar";
+import { actionDay, resolveActions } from "@/lib/programs/actions";
 import { skipsHoliday } from "@/lib/programs/holidays";
 import { slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
@@ -101,6 +102,7 @@ function runsForWeekdays(program: StoredProgram, allowed: Set<string>, now: Date
           day,
           onTime: slot.onTime,
           offTime: slot.offTime,
+          actions: slot.actions,
           deviceIds: slot.deviceIds?.length ? slot.deviceIds : program.deviceIds,
         });
       }
@@ -114,25 +116,13 @@ function runsFor(name: string, clocks: DayClock[], allowed: Set<string>, now: Da
   const runs = [];
   for (const clock of clocks) {
     for (const deviceId of clock.deviceIds.filter((id) => allowed.has(id))) {
-      if (clock.onTime) {
-        const at = jerusalemInstant(clock.day, clock.onTime);
-        if (at && at.getTime() > now.getTime() - 60_000) {
-          runs.push({ deviceId, action: "ON" as const, runAt: at.toISOString(), label: `${name}: הדלקה ${clock.onTime}` });
-        }
-      }
-      if (clock.offTime) {
-        const rolls = Boolean(clock.onTime && clock.offTime <= clock.onTime);
-        const day = rolls ? shiftDate(clock.day, 1) : clock.day;
-        const at = jerusalemInstant(day, clock.offTime);
-        if (at && at.getTime() > now.getTime() - 60_000) {
-          const suffix = rolls ? " למחרת" : "";
-          runs.push({
-            deviceId,
-            action: "OFF" as const,
-            runAt: at.toISOString(),
-            label: `${name}: כיבוי ${clock.offTime}${suffix}`,
-          });
-        }
+      for (const step of resolveActions(clock)) {
+        const day = actionDay(clock.day, step);
+        const at = jerusalemInstant(day, step.time);
+        if (!at || at.getTime() <= now.getTime() - 60_000) continue;
+        const word = step.action === "ON" ? "הדלקה" : "כיבוי";
+        const suffix = step.nextDay ? " למחרת" : "";
+        runs.push({ deviceId, action: step.action, runAt: at.toISOString(), label: `${name}: ${word} ${step.time}${suffix}` });
       }
     }
   }

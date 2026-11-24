@@ -154,8 +154,11 @@ create table if not exists clocks (
   on_time text,
   off_time text,
   device_ids text not null default '[]',
+  actions text not null default '[]',
   created_at text not null
 );
+
+alter table clocks add column if not exists actions text not null default '[]';
 
 create index if not exists clocks_tenant_day_idx on clocks (tenant_id, day);
 

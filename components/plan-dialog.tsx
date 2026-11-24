@@ -5,6 +5,7 @@ import { CalendarClock, ChevronDown, Clock, Repeat, SunMedium, Timer } from "luc
 import { DeviceGlyph } from "@/components/device-glyph";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { formatClockActions, resolveActions, type ClockAction } from "@/lib/programs/actions";
 import type { OccurrenceClock, OccurrenceProgram } from "@/lib/programs/occurrences";
 import { maxDayClocks, maxProgramDays, maxSlots, slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
@@ -39,10 +40,16 @@ export type PlannerDraft = {
 
 type Frequency = "once" | "weekly" | "daily";
 type ScheduleKind = "times" | "duration" | "sun";
+type Step = {
+  key: number;
+  action: "on" | "off";
+  time: string;
+  nextDay: boolean;
+};
+
 type Range = {
   key: number;
-  on: string;
-  off: string;
+  steps: Step[];
   date: string;
   clockId: string | null;
   originalDate: string | null;
@@ -122,8 +129,32 @@ function clockRange(
   originalDate: string | null = null,
   weekdays?: number[],
   deviceIds: string[] = [],
+  actions?: ClockAction[],
 ) {
-  return { key: rangeId(), on, off, date, clockId, originalDate, weekdays, deviceIds: [...deviceIds] };
+  return { key: rangeId(), steps: stepsFrom(on, off, actions), date, clockId, originalDate, weekdays, deviceIds: [...deviceIds] };
+}
+
+function stepsFrom(on: string, off: string, actions?: ClockAction[]): Step[] {
+  const source = actions?.length ? actions : resolveActions({ onTime: on || null, offTime: off || null });
+  if (!source.length) return [{ key: rangeId(), action: "on", time: "", nextDay: false }];
+  return source.map((step) => ({
+    key: rangeId(),
+    action: step.action === "OFF" ? "off" : "on",
+    time: step.time,
+    nextDay: Boolean(step.nextDay),
+  }));
+}
+
+function filledSteps(range: Range) {
+  return range.steps.filter((step) => /^\d{2}:\d{2}$/.test(step.time));
+}
+
+function savedActions(range: Range): ClockAction[] {
+  return filledSteps(range).map((step) => ({
+    action: step.action === "off" ? "OFF" : "ON",
+    time: step.time,
+    ...(step.nextDay ? { nextDay: true } : {}),
+  }));
 }
 
 function isIso(value: string) {
@@ -155,15 +186,15 @@ function rangesFromProgram(draft: PlannerDraft, program: PlannerProgram): Range[
   const fallback = knownIds(program.deviceIds, draft.devices);
   if (program.weekdays.length === 7) {
     const rows = program.slots
-      .filter((slot) => slot.onTime || slot.offTime)
+      .filter((slot) => slot.onTime || slot.offTime || slot.actions?.length)
       .map((slot) =>
-        clockRange(slot.onTime ?? "", slot.offTime ?? "", origin, null, null, undefined, knownIds(slot.deviceIds?.length ? slot.deviceIds : fallback, draft.devices)),
+        clockRange(slot.onTime ?? "", slot.offTime ?? "", origin, null, null, undefined, knownIds(slot.deviceIds?.length ? slot.deviceIds : fallback, draft.devices), slot.actions),
       );
     return rows.length ? rows : [clockRange("08:00", "09:00", origin, null, null, undefined, fallback)];
   }
   if (program.weekdays.length) {
     const rows = program.slots
-      .filter((slot) => slot.onTime || slot.offTime)
+      .filter((slot) => slot.onTime || slot.offTime || slot.actions?.length)
       .map((slot) => {
         const days = slot.weekdays?.length ? slot.weekdays : program.weekdays;
         const weekday = days[0] ?? weekdayOf(origin);
@@ -175,6 +206,7 @@ function rangesFromProgram(draft: PlannerDraft, program: PlannerProgram): Range[
           null,
           days,
           knownIds(slot.deviceIds?.length ? slot.deviceIds : fallback, draft.devices),
+          slot.actions,
         );
       });
     return rows.length ? rows : [clockRange("", "", origin, null, null, program.weekdays, fallback)];
@@ -189,6 +221,7 @@ function rangesFromProgram(draft: PlannerDraft, program: PlannerProgram): Range[
       clock.day,
       undefined,
       knownIds(clock.deviceIds.length ? clock.deviceIds : fallback, draft.devices),
+      clock.actions,
     ),
   );
   return rows.length ? rows : [clockRange("", "", draft.date, null, null, undefined, fallback)];
@@ -233,6 +266,7 @@ function buildForm(draft: PlannerDraft): FormState {
           null,
           undefined,
           knownIds(draft.clock.deviceIds, draft.devices),
+          draft.clock.actions,
         ),
       ],
       deviceIds: knownIds(draft.clock.deviceIds, draft.devices),
@@ -279,16 +313,22 @@ function clockShift(time: string, minutes: number) {
 function activeRanges(form: FormState): Range[] {
   if (form.schedule === "duration") {
     const shifted = clockShift(form.durationStart, Number(form.durationMinutes));
-    return [{ key: 0, on: form.durationStart, off: shifted.time, date: form.startDate, clockId: null, originalDate: null, deviceIds: [...form.deviceIds] }];
+    return [
+      {
+        key: 0,
+        steps: stepsFrom(form.durationStart, shifted.nextDay ? "" : shifted.time).concat(
+          shifted.nextDay && shifted.time ? [{ key: 0, action: "off", time: shifted.time, nextDay: true }] : [],
+        ),
+        date: form.startDate,
+        clockId: null,
+        originalDate: null,
+        deviceIds: [...form.deviceIds],
+      },
+    ];
   }
   return form.ranges.map((range) => ({
-    key: range.key,
-    on: range.on,
-    off: range.off,
-    date: range.date,
-    clockId: range.clockId,
-    originalDate: range.originalDate,
-    weekdays: range.weekdays,
+    ...range,
+    steps: range.steps.map((step) => ({ ...step })),
     deviceIds: [...range.deviceIds],
   }));
 }
@@ -302,10 +342,6 @@ function seriesStart(form: FormState, dates: string[]) {
   if (form.frequency === "daily") return form.startDate || earliestDate(dates, "");
   if (form.frequency === "weekly") return earliestDate(dates, form.startDate);
   return form.startDate;
-}
-
-function cleanTime(value: string) {
-  return /^\d{2}:\d{2}$/.test(value) ? value : null;
 }
 
 function summaryText(form: FormState, places: PlannerPlace[]) {
@@ -325,11 +361,10 @@ function summaryText(form: FormState, places: PlannerPlace[]) {
   const how =
     form.schedule === "times"
       ? form.ranges
-          .map((range) =>
-            form.frequency === "once"
-              ? `${range.on || "--:--"}–${range.off || "--:--"} (${range.date || "תאריך חסר"})`
-              : `${range.on || "--:--"}–${range.off || "--:--"}`,
-          )
+          .map((range) => {
+            const label = formatClockActions({ actions: savedActions(range) }) || "--:--";
+            return form.frequency === "once" ? `${label} (${range.date || "תאריך חסר"})` : label;
+          })
           .join(" | ")
       : form.schedule === "duration"
         ? `הדלקה ב־${form.durationStart || "--:--"} למשך ${form.durationMinutes || 0} דקות`
@@ -359,7 +394,9 @@ function validate(form: FormState) {
   if (form.frequency === "weekly" && !cleanWeekdays(form.weekdays).length) return "יש לסמן לפחות יום אחד בשבוע";
   if (form.schedule === "times") {
     if (form.ranges.length > maxSlots) return `אפשר עד ${maxSlots} שעונים בתוכנית`;
-    if (form.ranges.some((range) => !range.on || !range.off)) return "יש למלא את כל שעות ההדלקה והכיבוי";
+    if (form.ranges.some((range) => range.steps.length > 8)) return "אפשר עד 8 פעולות בשעון";
+    if (form.ranges.some((range) => range.steps.some((step) => !/^\d{2}:\d{2}$/.test(step.time)))) return "מלאו שעה לכל פעולה, או הסירו את השורה הריקה";
+    if (form.ranges.some((range) => !filledSteps(range).length)) return "לכל שעון צריכה להיות לפחות פעולה אחת";
     if (form.ranges.some((range) => !isIso(range.date))) return "יש לבחור תאריך לכל שעון";
     const perDay = new Map<string, number>();
     for (const range of form.ranges) perDay.set(range.date, (perDay.get(range.date) ?? 0) + 1);
@@ -387,19 +424,39 @@ function minutes(value: string) {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-function intervals(today: Array<{ on: string; off: string }>, previous: Array<{ on: string; off: string }>) {
+function intervals(today: Step[][], previous: Step[][]) {
   const out: Array<[number, number]> = [];
-  for (const range of today) {
-    const on = range.on ? minutes(range.on) : null;
-    const off = range.off ? minutes(range.off) : null;
-    if (on != null && off != null) out.push(off <= on ? [on, 1440] : [on, off]);
-    else if (on != null) out.push([on, on + 1]);
-    else if (off != null) out.push([off, off + 1]);
+  for (const steps of today) out.push(...marksOn(steps, false));
+  for (const steps of previous) out.push(...marksOn(steps, true));
+  return out;
+}
+
+function marksOn(steps: Step[], previousDay: boolean): Array<[number, number]> {
+  const filled = steps.filter((step) => minutes(step.time) != null);
+  const out: Array<[number, number]> = [];
+  if (previousDay) {
+    for (const step of filled) {
+      if (!step.nextDay) continue;
+      const at = minutes(step.time);
+      if (at != null) out.push([0, at]);
+    }
+    return out;
   }
-  for (const range of previous) {
-    const on = range.on ? minutes(range.on) : null;
-    const off = range.off ? minutes(range.off) : null;
-    if (on != null && off != null && off <= on) out.push([0, off]);
+  for (const step of filled) {
+    if (step.nextDay) continue;
+    const at = minutes(step.time);
+    if (at != null) out.push([at, at + 1]);
+  }
+  for (const on of filled.filter((step) => step.action === "on" && !step.nextDay)) {
+    const start = minutes(on.time);
+    if (start == null) continue;
+    const later = filled
+      .filter((step) => step.action === "off")
+      .map((step) => ({ at: minutes(step.time), nextDay: step.nextDay }))
+      .filter((step): step is { at: number; nextDay: boolean } => step.at != null && (step.nextDay || step.at > start))
+      .sort((left, right) => Number(left.nextDay) - Number(right.nextDay) || left.at - right.at)[0];
+    if (!later) continue;
+    out.push(later.nextDay ? [start, 1440] : [start, later.at]);
   }
   return out;
 }
@@ -409,28 +466,28 @@ function overlaps(left: [number, number], right: [number, number]) {
 }
 
 function draftRanges(form: FormState, day: string) {
-  const chosen = activeRanges(form).filter((range) => (range.on || range.off) && isIso(range.date));
-  if (form.frequency === "once") return chosen.filter((range) => range.date === day).map((range) => ({ on: range.on, off: range.off }));
+  const chosen = activeRanges(form).filter((range) => filledSteps(range).length && isIso(range.date));
+  if (form.frequency === "once") return chosen.filter((range) => range.date === day).map((range) => range.steps);
   const start = seriesStart(
     form,
     chosen.map((range) => range.date),
   );
   if (!coversDay(day, start || null, form.endDate || null)) return [];
-  if (form.frequency === "daily") return chosen.map((range) => ({ on: range.on, off: range.off }));
+  if (form.frequency === "daily") return chosen.map((range) => range.steps);
   const days = cleanWeekdays(form.weekdays);
   if (!days.includes(weekdayOf(day))) return [];
-  return chosen.map((range) => ({ on: range.on, off: range.off }));
+  return chosen.map((range) => range.steps);
 }
 
-function storedRanges(program: PlannerProgram, clocks: PlannerClock[], day: string) {
+function storedRanges(program: PlannerProgram, clocks: PlannerClock[], day: string): Step[][] {
   if (!program.enabled || (program.skippedDates ?? []).includes(day)) return [];
   if (program.weekdays.length) {
     if (!program.weekdays.includes(weekdayOf(day)) || !coversDay(day, program.startDate, program.endDate)) return [];
-    return slotsForWeekday(program.slots, weekdayOf(day)).map((slot) => ({ on: slot.onTime ?? "", off: slot.offTime ?? "" }));
+    return slotsForWeekday(program.slots, weekdayOf(day)).map((slot) => stepsFrom(slot.onTime ?? "", slot.offTime ?? "", slot.actions));
   }
   return clocks
     .filter((clock) => !clock.recurring && clock.programId === program.id && clock.day === day)
-    .map((clock) => ({ on: clock.onTime ?? "", off: clock.offTime ?? "" }));
+    .map((clock) => stepsFrom(clock.onTime ?? "", clock.offTime ?? "", clock.actions));
 }
 
 function conflictName(form: FormState, programs: PlannerProgram[], clocks: PlannerClock[]) {
@@ -456,7 +513,7 @@ function conflictName(form: FormState, programs: PlannerProgram[], clocks: Plann
     for (const clock of clocks) {
       if (clock.recurring || clock.programId || clock.id === form.looseClockId) continue;
       if (!myDevices.some((id) => clock.deviceIds.includes(id))) continue;
-      const row = { on: clock.onTime ?? "", off: clock.offTime ?? "" };
+      const row = stepsFrom(clock.onTime ?? "", clock.offTime ?? "", clock.actions);
       const theirs = intervals(clock.day === day ? [row] : [], clock.day === previous ? [row] : []);
       if (mine.some((left) => theirs.some((right) => overlaps(left, right)))) return "שעון";
     }
@@ -465,15 +522,19 @@ function conflictName(form: FormState, programs: PlannerProgram[], clocks: Plann
 }
 
 function buildBody(form: FormState) {
-  const ranges = activeRanges(form).filter((range) => range.on || range.off);
+  const ranges = activeRanges(form).filter((range) => filledSteps(range).length);
   if (form.frequency === "once") {
-    const grouped = new Map<string, Array<{ id: string; onTime: string | null; offTime: string | null; deviceIds: string[] }>>();
+    const grouped = new Map<string, Array<{ id: string; onTime: string | null; offTime: string | null; actions: ClockAction[]; deviceIds: string[] }>>();
     for (const range of ranges) {
       const clocks = grouped.get(range.date) ?? [];
+      const actions = savedActions(range);
+      const onTime = actions.find((step) => step.action === "ON")?.time ?? null;
+      const offTime = actions.find((step) => step.action === "OFF")?.time ?? null;
       clocks.push({
         id: range.clockId && range.date === range.originalDate ? range.clockId : "",
-        onTime: cleanTime(range.on),
-        offTime: cleanTime(range.off),
+        onTime,
+        offTime,
+        actions,
         deviceIds: range.deviceIds,
       });
       grouped.set(range.date, clocks);
@@ -494,16 +555,17 @@ function buildBody(form: FormState) {
   }
   const seen = new Set<string>();
   const slots = ranges.flatMap((range) => {
-    const onTime = cleanTime(range.on);
-    const offTime = cleanTime(range.off);
+    const actions = savedActions(range);
+    const onTime = actions.find((step) => step.action === "ON")?.time ?? null;
+    const offTime = actions.find((step) => step.action === "OFF")?.time ?? null;
     if (form.frequency === "daily") {
-      const key = `${onTime}|${offTime}|${range.deviceIds.join(",")}`;
+      const key = `${actions.map((step) => `${step.action}${step.nextDay ? "+" : ""}${step.time}`).join(",")}|${range.deviceIds.join(",")}`;
       if (seen.has(key)) return [];
       seen.add(key);
-      return [{ onTime, offTime, weekdays: [] as number[], deviceIds: range.deviceIds }];
+      return [{ onTime, offTime, actions, weekdays: [] as number[], deviceIds: range.deviceIds }];
     }
     const days = cleanWeekdays(form.weekdays);
-    return [{ onTime, offTime, weekdays: days, deviceIds: range.deviceIds }];
+    return [{ onTime, offTime, actions, weekdays: days, deviceIds: range.deviceIds }];
   });
   const weekdays = form.frequency === "daily" ? [0, 1, 2, 3, 4, 5, 6] : cleanWeekdays(form.weekdays);
   const deviceIds = [...new Set(ranges.flatMap((range) => range.deviceIds))];
@@ -755,7 +817,7 @@ export function PlanDialog({
                   active={form.schedule === "times"}
                   icon={<Clock className="mx-auto size-5" />}
                   title="שעות קבועות"
-                  detail="הדלקה וכיבוי"
+                  detail="הדלקה, כיבוי, או שניהם"
                   onClick={() => patch((current) => (current.schedule === "times" ? current : { ...current, schedule: "times" }), true)}
                 />
                 <Choice
@@ -835,49 +897,122 @@ export function PlanDialog({
                             </span>
                           </label>
                         )}
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <label className="text-xs font-bold">
-                            <span className="mb-1 flex items-center gap-1">
-                              <i className="size-1.5 rounded-full bg-online" /> הדלקה
-                            </span>
-                            <input
-                              className={control}
-                              dir="ltr"
-                              type="time"
-                              value={range.on}
-                              aria-label={`הדלקה, טווח ${index + 1}`}
-                              onChange={(event) =>
-                                patch(
-                                  (current) => ({
-                                    ...current,
-                                    ranges: current.ranges.map((item) => (item.key === range.key ? { ...item, on: event.target.value } : item)),
+                        <div className="space-y-2">
+                          {range.steps.map((step, stepIndex) => (
+                            <div key={step.key} className="grid grid-cols-[7.5rem_minmax(0,1fr)_auto] items-center gap-2">
+                              <select
+                                className={control}
+                                value={step.action}
+                                aria-label={`פעולה ${stepIndex + 1}, שעון ${index + 1}`}
+                                onChange={(event) => {
+                                  const action = event.target.value === "off" ? "off" : "on";
+                                  patch(
+                                    (current) => ({
+                                      ...current,
+                                      ranges: current.ranges.map((item) =>
+                                        item.key === range.key
+                                          ? {
+                                              ...item,
+                                              steps: item.steps.map((row) => (row.key === step.key ? { ...row, action } : row)),
+                                            }
+                                          : item,
+                                      ),
+                                    }),
+                                    true,
+                                  );
+                                }}
+                              >
+                                <option value="on">הדלקה</option>
+                                <option value="off">כיבוי</option>
+                              </select>
+                              <input
+                                className={control}
+                                dir="ltr"
+                                type="time"
+                                value={step.time}
+                                aria-label={`שעה ${stepIndex + 1}, שעון ${index + 1}`}
+                                onChange={(event) =>
+                                  patch(
+                                    (current) => ({
+                                      ...current,
+                                      ranges: current.ranges.map((item) =>
+                                        item.key === range.key
+                                          ? {
+                                              ...item,
+                                              steps: item.steps.map((row) => (row.key === step.key ? { ...row, time: event.target.value } : row)),
+                                            }
+                                          : item,
+                                      ),
+                                    }),
+                                    true,
+                                  )
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="rounded-lg px-2 py-1 text-xs font-bold text-muted-foreground disabled:opacity-30"
+                                disabled={range.steps.length === 1}
+                                aria-label={`הסרת פעולה ${stepIndex + 1}, שעון ${index + 1}`}
+                                onClick={() =>
+                                  patch(
+                                    (current) => ({
+                                      ...current,
+                                      ranges: current.ranges.map((item) =>
+                                        item.key === range.key ? { ...item, steps: item.steps.filter((row) => row.key !== step.key) } : item,
+                                      ),
+                                    }),
+                                    true,
+                                  )
+                                }
+                              >
+                                הסרה
+                              </button>
+                              <label className="col-span-3 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+                                <input
+                                  type="checkbox"
+                                  className="size-3.5 accent-primary"
+                                  checked={step.nextDay}
+                                  onChange={(event) => {
+                                    const nextDay = event.target.checked;
+                                    patch(
+                                      (current) => ({
+                                        ...current,
+                                        ranges: current.ranges.map((item) =>
+                                          item.key === range.key
+                                            ? {
+                                                ...item,
+                                                steps: item.steps.map((row) => (row.key === step.key ? { ...row, nextDay } : row)),
+                                              }
+                                            : item,
+                                        ),
+                                      }),
+                                      true,
+                                    );
+                                  }}
+                                />
+                                למחרת
+                              </label>
+                            </div>
+                          ))}
+                          {range.steps.length < 8 ? (
+                            <button
+                              type="button"
+                              className="text-xs font-bold text-primary"
+                              onClick={() =>
+                                patch((current) => ({
+                                  ...current,
+                                  ranges: current.ranges.map((item) => {
+                                    if (item.key !== range.key) return item;
+                                    const last = item.steps.at(-1);
+                                    const action = last?.action === "on" ? "off" : "on";
+                                    return { ...item, steps: [...item.steps, { key: rangeId(), action, time: "", nextDay: false }] };
                                   }),
-                                  true,
-                                )
+                                }))
                               }
-                            />
-                          </label>
-                          <label className="text-xs font-bold">
-                            <span className="mb-1 flex items-center gap-1">
-                              <i className="size-1.5 rounded-full bg-destructive" /> כיבוי
-                            </span>
-                            <input
-                              className={control}
-                              dir="ltr"
-                              type="time"
-                              value={range.off}
-                              aria-label={`כיבוי, טווח ${index + 1}`}
-                              onChange={(event) =>
-                                patch(
-                                  (current) => ({
-                                    ...current,
-                                    ranges: current.ranges.map((item) => (item.key === range.key ? { ...item, off: event.target.value } : item)),
-                                  }),
-                                  true,
-                                )
-                              }
-                            />
-                          </label>
+                            >
+                              הוספת פעולה
+                            </button>
+                          ) : null}
                         </div>
                         <div className="mt-4 border-t border-border/70 pt-4">
                           <div className="mb-2 flex items-center justify-between gap-3">
@@ -982,8 +1117,8 @@ export function PlanDialog({
                   ) : null}
                   <p className="mt-4 rounded-xl bg-primary/5 px-4 py-3.5 text-xs leading-6 text-muted-foreground">
                     {form.frequency === "weekly"
-                      ? "ימי הפעולה מסומנים למעלה. לכל שעון בוחרים שעות, תאריך הפעלה ראשון, ואילו התקנים הוא מפעיל. כיבוי בשעה מוקדמת מההדלקה ייחשב לכיבוי ביום הבא."
-                      : "לכל שעון בוחרים תאריך, שעות, ואילו התקנים הוא מפעיל. אפשר כמה שעונים לאותו תאריך או לתאריכים שונים. כיבוי בשעה מוקדמת מההדלקה ייחשב לכיבוי ביום הבא."}
+                      ? "ימי הפעולה מסומנים למעלה. בכל שעון בוחרים פעולה ושעה, ואפשר להוסיף עוד פעולה. אין חובה גם להדלקה וגם לכיבוי. פעולה למחרת מסומנת במפורש."
+                      : "לכל שעון בוחרים תאריך, פעולה ושעה, ואילו התקנים הוא מפעיל. אפשר להוסיף עוד הדלקה או כיבוי על אותו שעון, ואין חובה לשעה משלימה. פעולה למחרת מסומנת במפורש."}
                   </p>
                 </div>
 

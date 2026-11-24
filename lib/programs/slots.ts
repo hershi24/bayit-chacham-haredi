@@ -1,3 +1,4 @@
+import { parseActions } from "@/lib/programs/actions";
 import type { ProgramSlot } from "@/lib/programs/types";
 import { cleanWeekdays } from "@/lib/programs/weekdays";
 
@@ -40,14 +41,16 @@ export function parseSlots(raw: unknown, onTime: string | null, offTime: string 
           const deviceIds = Array.isArray(record.deviceIds)
             ? [...new Set(record.deviceIds.filter((item): item is string => typeof item === "string" && item.length > 0))]
             : [];
+          const actions = parseActions(record.actions);
           return {
             onTime: time(record.onTime),
             offTime: time(record.offTime),
+            ...(actions.length ? { actions } : {}),
             weekdays: Array.isArray(record.weekdays) ? cleanWeekdays(record.weekdays.map((item) => Number(item))) : [],
             ...(deviceIds.length ? { deviceIds } : {}),
           };
         })
-        .filter((slot) => slot.onTime || slot.offTime)
+        .filter((slot) => slot.onTime || slot.offTime || slot.actions?.length)
     : [];
   if (slots.length) return sortSlots(slots).slice(0, maxSlots);
   return onTime || offTime ? [{ onTime, offTime, weekdays: [] }] : [];

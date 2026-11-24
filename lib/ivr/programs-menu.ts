@@ -1,4 +1,5 @@
 import { spokenClockTime, spokenDateWords, type MenuRead } from "@/lib/ivr/flow";
+import { resolveActions } from "@/lib/programs/actions";
 import { sortSlots } from "@/lib/programs/slots";
 import type { ProgramSlot, StoredProgram } from "@/lib/programs/types";
 
@@ -146,12 +147,14 @@ function clockLine(slot: ProgramSlot, index: number, program: SpokenProgram, inc
 }
 
 function speakSlotTimes(slot: ProgramSlot): string {
-  const parts: string[] = [];
-  if (slot.onTime) parts.push(`יידלק ב${spokenClockTime(slot.onTime)}`);
-  if (slot.offTime) parts.push(`יכבה ב${spokenClockTime(slot.offTime)}`);
-  if (slot.onTime && slot.offTime && slot.offTime <= slot.onTime) parts.push("הכיבוי למחרת");
-  if (!parts.length) return "בלי שעות הדלקה וכיבוי";
-  return parts.join(", ");
+  const actions = resolveActions(slot);
+  if (!actions.length) return "בלי שעות הדלקה וכיבוי";
+  return actions
+    .map((step) => {
+      const word = step.action === "ON" ? "יידלק" : "יכבה";
+      return `${word} ב${spokenClockTime(step.time)}${step.nextDay ? " למחרת" : ""}`;
+    })
+    .join(", ");
 }
 
 function speakSlotDays(slot: ProgramSlot, program: SpokenProgram): string {

@@ -8,6 +8,7 @@ import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { resolveDateClocks } from "@/lib/programs/dates";
+import { parseActions } from "@/lib/programs/actions";
 import { parseSlots } from "@/lib/programs/slots";
 import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type {
@@ -166,6 +167,10 @@ function ensureDayClocks(database: DatabaseSync) {
     );
     CREATE INDEX IF NOT EXISTS clocks_tenant_day_idx ON clocks (tenant_id, day);
   `);
+  const columns = database.prepare("PRAGMA table_info(clocks)").all() as Array<{ name?: string }>;
+  if (!columns.some((column) => column.name === "actions")) {
+    database.exec("ALTER TABLE clocks ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'");
+  }
 }
 
 function migrate(database: DatabaseSync) {
@@ -1391,6 +1396,7 @@ function mapClock(row: Row): DayClock {
     day: text(row, "day"),
     onTime: textOrNull(row, "on_time"),
     offTime: textOrNull(row, "off_time"),
+    actions: parseActions(text(row, "actions")),
     deviceIds: jsonList(row, "device_ids"),
   };
 }
@@ -1408,13 +1414,14 @@ export function saveDayClock(clock: DayClock) {
   database
     .prepare(
       `INSERT INTO clocks (
-        id, tenant_id, program_id, day, on_time, off_time, device_ids, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        id, tenant_id, program_id, day, on_time, off_time, actions, device_ids, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         program_id = excluded.program_id,
         day = excluded.day,
         on_time = excluded.on_time,
         off_time = excluded.off_time,
+        actions = excluded.actions,
         device_ids = excluded.device_ids`,
     )
     .run(
@@ -1424,6 +1431,7 @@ export function saveDayClock(clock: DayClock) {
       clock.day,
       clock.onTime,
       clock.offTime,
+      JSON.stringify(clock.actions ?? []),
       JSON.stringify(clock.deviceIds),
       new Date().toISOString(),
     );

@@ -678,8 +678,8 @@ export function PlanDialog({
       <DialogContent
         data-plan-dialog
         showCloseButton={false}
-        className="max-h-[min(94vh,980px)] gap-0 overflow-hidden p-0 sm:max-w-[1080px]"
-        style={{ width: "min(1080px, calc(100vw - 2rem))", display: "flex", flexDirection: "column", maxHeight: "min(94vh, 980px)" }}
+        className="flex max-h-[min(94dvh,980px)] w-[min(1080px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-[1080px] max-sm:!inset-0 max-sm:!h-dvh max-sm:!max-h-dvh max-sm:!w-full max-sm:!max-w-none max-sm:!translate-x-0 max-sm:!translate-y-0 max-sm:!rounded-none"
+        style={{ width: "min(1080px, calc(100vw - 2rem))" }}
       >
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void submit(event)}>
           <div className="flex items-start justify-between gap-3 border-b px-5 py-5 sm:px-8">
@@ -717,7 +717,7 @@ export function PlanDialog({
             </section>
             <section className="mb-8">
               <SectionTitle n="02">מתי התוכנית תפעל?</SectionTitle>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <Choice
                   active={form.frequency === "once"}
                   icon={<CalendarClock className="mx-auto size-5" />}
@@ -836,7 +836,7 @@ export function PlanDialog({
             </section>
             <section className="mb-8">
               <SectionTitle n="03">איך ההתקנים יפעלו?</SectionTitle>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <Choice
                   active={form.schedule === "times"}
                   icon={<Clock className="mx-auto size-5" />}
@@ -926,9 +926,9 @@ export function PlanDialog({
                         )}
                         <div className="space-y-2">
                           {range.steps.map((step, stepIndex) => (
-                            <div key={step.key} className="grid grid-cols-[7.5rem_minmax(0,1fr)_auto] items-center gap-2">
+                            <div key={step.key} className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_auto]">
                               <select
-                                className={control}
+                                className={cn(control, "min-w-0")}
                                 value={step.action}
                                 aria-label={`פעולה ${stepIndex + 1}, שעון ${index + 1}`}
                                 onChange={(event) => {
@@ -953,7 +953,7 @@ export function PlanDialog({
                                 <option value="off">כיבוי</option>
                               </select>
                               <input
-                                className={control}
+                                className={cn(control, "min-w-0 text-base tabular-nums sm:text-sm")}
                                 dir="ltr"
                                 type="time"
                                 value={step.time}
@@ -977,7 +977,7 @@ export function PlanDialog({
                               />
                               <button
                                 type="button"
-                                className="rounded-lg px-2 py-1 text-xs font-bold text-muted-foreground disabled:opacity-30"
+                                className="h-10 w-fit justify-self-start rounded-xl border px-3 text-xs font-bold text-muted-foreground disabled:opacity-30"
                                 disabled={range.steps.length === 1}
                                 aria-label={`הסרת פעולה ${stepIndex + 1}, שעון ${index + 1}`}
                                 onClick={() =>
@@ -1131,7 +1131,7 @@ export function PlanDialog({
                     <label className="text-xs font-bold">
                       שעת הדלקה
                       <input
-                        className={cn(control, "mt-2")}
+                        className={cn(control, "mt-2 min-w-0 text-base tabular-nums sm:text-sm")}
                         dir="ltr"
                         type="time"
                         value={form.durationStart}
@@ -1275,18 +1275,23 @@ export function PlanDialog({
               ) : null}
             </section>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-4 sm:px-8">
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground">השמירה בחשבון, והשקעים יפעלו לפי התוכנית</span>
+          <div className="flex flex-col gap-3 border-t px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-4">
+            <p className="text-xs leading-5 text-muted-foreground">
+              השמירה בחשבון, והשקעים יפעלו לפי התוכנית
               {editing ? (
-                <button type="button" className="text-sm font-bold text-destructive" disabled={pending} onClick={() => {
-                  if (window.confirm(form.programId ? "למחוק את התוכנית?" : "למחוק את השעון?")) onDelete();
-                }}>
+                <button
+                  type="button"
+                  className="ms-3 font-bold text-destructive"
+                  disabled={pending}
+                  onClick={() => {
+                    if (window.confirm(form.programId ? "למחוק את התוכנית?" : "למחוק את השעון?")) onDelete();
+                  }}
+                >
                   מחיקה
                 </button>
               ) : null}
-            </div>
-            <div className="flex gap-2">
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:flex">
               <Button type="button" variant="outline" className="h-11 rounded-xl px-4" disabled={pending} onClick={reset}>
                 ניקוי
               </Button>
@@ -1303,9 +1308,9 @@ export function PlanDialog({
 
 function SectionTitle({ n, children }: { n: string; children: ReactNode }) {
   return (
-    <h3 className="mb-4 flex items-center gap-2 text-[15px] font-extrabold sm:text-base">
-      <span className="grid size-6 place-items-center rounded-lg bg-primary/10 text-xs text-primary">{n}</span>
-      {children}
+    <h3 className="mb-3 flex items-start gap-2 text-[15px] leading-6 font-extrabold sm:text-base">
+      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg bg-primary/10 text-xs text-primary">{n}</span>
+      <span className="min-w-0">{children}</span>
     </h3>
   );
 }
@@ -1328,14 +1333,16 @@ function Choice({
       type="button"
       aria-pressed={active}
       className={cn(
-        "rounded-xl border px-2 py-3 text-center sm:px-3 sm:py-4",
-        active ? "border-primary bg-primary/5 shadow-[0_0_0_1px_var(--primary)]" : "border-border bg-card",
+        "flex items-center gap-3 rounded-2xl border px-3 py-3 text-start sm:block sm:px-3 sm:py-4 sm:text-center",
+        active ? "border-primary bg-primary/5 shadow-[inset_0_0_0_1px_var(--primary)]" : "border-border bg-card",
       )}
       onClick={onClick}
     >
-      <span className="mb-1 block text-primary">{icon}</span>
-      <strong className="block text-[13px]">{title}</strong>
-      <small className="mt-0.5 block text-[11px] text-muted-foreground">{detail}</small>
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary sm:mx-auto sm:mb-2 sm:size-auto sm:bg-transparent">{icon}</span>
+      <span className="min-w-0">
+        <strong className="block text-sm leading-5">{title}</strong>
+        <small className="mt-0.5 block text-xs leading-5 text-muted-foreground">{detail}</small>
+      </span>
     </button>
   );
 }

@@ -149,11 +149,15 @@ function clockLine(slot: ProgramSlot, index: number, program: SpokenProgram, inc
 function speakSlotTimes(slot: ProgramSlot): string {
   const actions = resolveActions(slot);
   if (!actions.length) return "בלי שעות הדלקה וכיבוי";
+  const classic =
+    actions.length === 2 && actions[0]?.action === "ON" && actions[1]?.action === "OFF" && !actions[0].nextDay;
+  if (classic && actions[1]) {
+    const parts = [`יידלק ב${spokenClockTime(actions[0].time)}`, `יכבה ב${spokenClockTime(actions[1].time)}`];
+    if (actions[1].nextDay) parts.push("הכיבוי למחרת");
+    return parts.join(", ");
+  }
   return actions
-    .map((step) => {
-      const word = step.action === "ON" ? "יידלק" : "יכבה";
-      return `${word} ב${spokenClockTime(step.time)}${step.nextDay ? " למחרת" : ""}`;
-    })
+    .map((step) => `${step.action === "ON" ? "יידלק" : "יכבה"} ב${spokenClockTime(step.time)}`)
     .join(", ");
 }
 

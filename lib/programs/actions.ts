@@ -71,14 +71,12 @@ export function formatClockActions(input: {
   if (!actions.length) return "";
   if (actions.length === 1) {
     const step = actions[0];
-    return `${step.action === "ON" ? "הדלקה" : "כיבוי"} ${step.time}${step.nextDay ? " למחרת" : ""}`;
+    return `${step.action === "ON" ? "הדלקה" : "כיבוי"} ${step.time}`;
   }
   const ons = actions.filter((step) => step.action === "ON");
   const offs = actions.filter((step) => step.action === "OFF");
   if (ons.length === 1 && offs.length === 1 && !ons[0].nextDay && (offs[0].nextDay || offs[0].time > ons[0].time)) {
-    return `${ons[0].time}–${offs[0].time}${offs[0].nextDay ? " למחרת" : ""}`;
+    return `${ons[0].time}–${offs[0].time}`;
   }
-  return actions
-    .map((step) => `${step.action === "ON" ? "הדלקה" : "כיבוי"} ${step.time}${step.nextDay ? " למחרת" : ""}`)
-    .join(" · ");
+  return actions.map((step) => `${step.action === "ON" ? "הדלקה" : "כיבוי"} ${step.time}`).join(" · ");
 }

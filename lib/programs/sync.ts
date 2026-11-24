@@ -121,8 +121,7 @@ function runsFor(name: string, clocks: DayClock[], allowed: Set<string>, now: Da
         const at = jerusalemInstant(day, step.time);
         if (!at || at.getTime() <= now.getTime() - 60_000) continue;
         const word = step.action === "ON" ? "הדלקה" : "כיבוי";
-        const suffix = step.nextDay ? " למחרת" : "";
-        runs.push({ deviceId, action: step.action, runAt: at.toISOString(), label: `${name}: ${word} ${step.time}${suffix}` });
+        runs.push({ deviceId, action: step.action, runAt: at.toISOString(), label: `${name}: ${word} ${step.time}` });
       }
     }
   }

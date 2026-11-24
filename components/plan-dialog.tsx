@@ -967,31 +967,6 @@ export function PlanDialog({
                               >
                                 הסרה
                               </button>
-                              <label className="col-span-3 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
-                                <input
-                                  type="checkbox"
-                                  className="size-3.5 accent-primary"
-                                  checked={step.nextDay}
-                                  onChange={(event) => {
-                                    const nextDay = event.target.checked;
-                                    patch(
-                                      (current) => ({
-                                        ...current,
-                                        ranges: current.ranges.map((item) =>
-                                          item.key === range.key
-                                            ? {
-                                                ...item,
-                                                steps: item.steps.map((row) => (row.key === step.key ? { ...row, nextDay } : row)),
-                                              }
-                                            : item,
-                                        ),
-                                      }),
-                                      true,
-                                    );
-                                  }}
-                                />
-                                למחרת
-                              </label>
                             </div>
                           ))}
                           {range.steps.length < 8 ? (
@@ -1117,8 +1092,8 @@ export function PlanDialog({
                   ) : null}
                   <p className="mt-4 rounded-xl bg-primary/5 px-4 py-3.5 text-xs leading-6 text-muted-foreground">
                     {form.frequency === "weekly"
-                      ? "ימי הפעולה מסומנים למעלה. בכל שעון בוחרים פעולה ושעה, ואפשר להוסיף עוד פעולה. אין חובה גם להדלקה וגם לכיבוי. פעולה למחרת מסומנת במפורש."
-                      : "לכל שעון בוחרים תאריך, פעולה ושעה, ואילו התקנים הוא מפעיל. אפשר להוסיף עוד הדלקה או כיבוי על אותו שעון, ואין חובה לשעה משלימה. פעולה למחרת מסומנת במפורש."}
+                      ? "ימי הפעולה מסומנים למעלה. בכל שעון בוחרים פעולה ושעה, ואפשר להוסיף עוד פעולה. אין חובה גם להדלקה וגם לכיבוי."
+                      : "לכל שעון בוחרים תאריך, פעולה ושעה, ואילו התקנים הוא מפעיל. אפשר להוסיף עוד הדלקה או כיבוי על אותו שעון, ואין חובה לשעה משלימה."}
                   </p>
                 </div>
 

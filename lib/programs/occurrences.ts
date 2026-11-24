@@ -12,7 +12,7 @@ export type OccurrenceProgram = {
   weekdays: number[];
   startDate: string | null;
   endDate: string | null;
-  slots: Array<{ onTime: string | null; offTime: string | null; actions?: ClockAction[]; weekdays?: number[]; deviceIds?: string[] }>;
+  slots: Array<{ onTime: string | null; offTime: string | null; actions?: ClockAction[]; weekdays?: number[]; date?: string | null; deviceIds?: string[] }>;
   deviceIds: string[];
   skippedDates?: string[];
   skipHolidays?: boolean;

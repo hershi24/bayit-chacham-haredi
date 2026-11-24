@@ -207,15 +207,17 @@ function rangesFromProgram(draft: PlannerDraft, program: PlannerProgram): Range[
     const rows = program.slots
       .filter((slot) => slot.onTime || slot.offTime || slot.actions?.length)
       .map((slot) => {
-        const days = slot.weekdays?.length ? slot.weekdays : program.weekdays;
-        const weekday = days[0] ?? weekdayOf(origin);
+        const stored = slot.date && isIso(slot.date) ? slot.date : "";
+        const days = cleanWeekdays(slot.weekdays?.length ? slot.weekdays : program.weekdays);
+        const date = stored || dateForWeekday(days[0] ?? weekdayOf(origin), origin);
+        const own = stored ? [weekdayOf(stored)] : days;
         return clockRange(
           slot.onTime ?? "",
           slot.offTime ?? "",
-          dateForWeekday(weekday, origin),
+          date,
           null,
           null,
-          days,
+          own,
           knownIds(slot.deviceIds?.length ? slot.deviceIds : fallback, draft.devices),
           slot.actions,
         );
@@ -580,7 +582,14 @@ function buildBody(form: FormState) {
       seen.add(key);
       return [{ onTime, offTime, actions, weekdays: [] as number[], deviceIds: range.deviceIds }];
     }
-    return [{ onTime, offTime, actions, weekdays: ownedDays[index] ?? markedDays, deviceIds: range.deviceIds }];
+    return [{
+      onTime,
+      offTime,
+      actions,
+      weekdays: ownedDays[index] ?? markedDays,
+      ...(isIso(range.date) ? { date: range.date } : {}),
+      deviceIds: range.deviceIds,
+    }];
   });
   const weekdays = form.frequency === "daily" ? [0, 1, 2, 3, 4, 5, 6] : cleanWeekdays(form.weekdays);
   const deviceIds = [...new Set(ranges.flatMap((range) => range.deviceIds))];

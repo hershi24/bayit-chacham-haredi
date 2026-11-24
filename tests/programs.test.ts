@@ -600,13 +600,15 @@ test("parseSlots keeps per-slot device ids", async () => {
   const slots = parseSlots(
     [
       { onTime: "06:00", offTime: "07:00", deviceIds: ["a"] },
-      { onTime: "18:00", offTime: "19:00", deviceIds: ["b", "c"] },
+      { onTime: "18:00", offTime: "19:00", deviceIds: ["b", "c"], date: "2026-11-28", weekdays: [6] },
     ],
     null,
     null,
   );
   assert.deepEqual(slots[0]?.deviceIds, ["a"]);
   assert.deepEqual(slots[1]?.deviceIds, ["b", "c"]);
+  assert.equal(slots[1]?.date, "2026-11-28");
+  assert.deepEqual(slots[1]?.weekdays, [6]);
 });
 
 test("skip holidays is saved on the program and stays off until chosen", async () => {

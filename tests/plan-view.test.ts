@@ -53,11 +53,9 @@ test("a Saturday date stays on Saturday and a Friday date stays on Friday", () =
   assert.deepEqual(weeklyClockDays(["2026-11-27", "2026-11-28"], [5, 6]), [[5], [6]]);
 });
 
-test("clocks that share one date keep every marked day", () => {
-  assert.deepEqual(weeklyClockDays(["2026-11-27", "2026-11-27"], [0, 1, 2, 3, 4]), [
-    [0, 1, 2, 3, 4],
-    [0, 1, 2, 3, 4],
-  ]);
+test("a clock keeps the weekday of its own date", () => {
+  assert.deepEqual(weeklyClockDays(["2026-11-27", "2026-11-27"], [5, 6]), [[5], [5]]);
+  assert.deepEqual(weeklyClockDays(["2026-11-28"], [5, 6]), [[6]]);
 });
 
 test("actions marked for Friday and Saturday together run on both days, earliest first", () => {

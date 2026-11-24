@@ -305,11 +305,13 @@ function slotList(body: Record<string, unknown>, allowed: string[], fallback: st
       const actions = parseActions(record.actions);
       if (actions.length > maxClockActions) throw new HttpError(400, `אפשר עד ${maxClockActions} פעולות בשעון`);
       const mirrored = actions.length ? mirrorTimes(actions) : { onTime: clockTime(record.onTime), offTime: clockTime(record.offTime) };
+      const date = typeof record.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(record.date) ? record.date : null;
       return {
         onTime: mirrored.onTime,
         offTime: mirrored.offTime,
         ...(actions.length ? { actions } : {}),
         weekdays: cleanWeekdays(Array.isArray(record.weekdays) ? record.weekdays.map((item) => Number(item)) : []),
+        ...(date ? { date } : {}),
         ...(deviceIds.length ? { deviceIds } : {}),
       };
     })

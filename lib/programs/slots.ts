@@ -42,11 +42,13 @@ export function parseSlots(raw: unknown, onTime: string | null, offTime: string 
             ? [...new Set(record.deviceIds.filter((item): item is string => typeof item === "string" && item.length > 0))]
             : [];
           const actions = parseActions(record.actions);
+          const date = typeof record.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(record.date) ? record.date : null;
           return {
             onTime: time(record.onTime),
             offTime: time(record.offTime),
             ...(actions.length ? { actions } : {}),
             weekdays: Array.isArray(record.weekdays) ? cleanWeekdays(record.weekdays.map((item) => Number(item))) : [],
+            ...(date ? { date } : {}),
             ...(deviceIds.length ? { deviceIds } : {}),
           };
         })

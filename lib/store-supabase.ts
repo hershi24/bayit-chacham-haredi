@@ -9,6 +9,7 @@ import { compareDevices } from "@/lib/devices/order";
 import type { ClockSettings } from "@/lib/hebrew/calendar";
 import { DEFAULT_CLOCK } from "@/lib/hebrew/calendar";
 import { resolveDateClocks } from "@/lib/programs/dates";
+import { parseActions } from "@/lib/programs/actions";
 import { parseSlots } from "@/lib/programs/slots";
 import type { DayClock, ProgramRun, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { PlanItem } from "@/lib/devices/upcoming";
@@ -1551,8 +1552,10 @@ function mapClock(row: {
   day: string;
   on_time: string | null;
   off_time: string | null;
+  actions?: string | null;
   device_ids: string;
 }): DayClock {
+  const actions = parseActions(row.actions);
   return {
     id: String(row.id),
     tenantId: String(row.tenant_id),
@@ -1560,6 +1563,7 @@ function mapClock(row: {
     day: String(row.day),
     onTime: row.on_time,
     offTime: row.off_time,
+    ...(actions.length ? { actions } : {}),
     deviceIds: jsonList(row.device_ids),
   };
 }
@@ -1584,6 +1588,7 @@ export async function saveDayClock(clock: DayClock) {
       day: clock.day,
       on_time: clock.onTime,
       off_time: clock.offTime,
+      actions: JSON.stringify(clock.actions ?? []),
       device_ids: JSON.stringify(clock.deviceIds),
       created_at: new Date().toISOString(),
     },

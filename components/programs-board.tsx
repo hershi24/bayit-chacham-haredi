@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/client-api";
 import type { MonthDay } from "@/lib/hebrew/calendar";
+import { formatClockActions } from "@/lib/programs/actions";
 import { occurrencesOn, type Occurrence } from "@/lib/programs/occurrences";
 import { repeatCaption, weekdayOf } from "@/lib/programs/weekdays";
 import { formatIsrael, israelDate, shiftDate } from "@/lib/time";
@@ -547,7 +548,7 @@ export function ProgramsBoard() {
                         <div className="min-w-0 flex-1">
                           <b>{clock.label || "שעון"}</b>
                           <p className="truncate text-[11px] text-muted-foreground">
-                            {prettyDay(clock.day)} · {clock.onTime ?? ""}{clock.offTime ? `–${clock.offTime}` : ""}
+                            {prettyDay(clock.day)} · {formatClockActions(clock)}
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1">

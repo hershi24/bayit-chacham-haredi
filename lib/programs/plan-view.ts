@@ -1,8 +1,10 @@
+import type { ClockAction } from "@/lib/programs/actions";
 import { WEEKDAY_LABELS, cleanWeekdays, weekdayOf } from "@/lib/programs/weekdays";
 
 export type ViewSlot = {
   onTime: string | null;
   offTime: string | null;
+  actions?: ClockAction[];
   weekdays?: number[];
   deviceIds?: string[];
 };
@@ -10,6 +12,7 @@ export type ViewSlot = {
 export type ViewClock = {
   onTime: string | null;
   offTime: string | null;
+  actions?: ClockAction[];
   deviceIds: string[];
 };
 
@@ -34,10 +37,11 @@ type OwnedClock = {
 };
 
 function clockOf(slot: ViewSlot, fallback: string[]): ViewClock | null {
-  if (!slot.onTime && !slot.offTime) return null;
+  if (!slot.onTime && !slot.offTime && !slot.actions?.length) return null;
   return {
     onTime: slot.onTime,
     offTime: slot.offTime,
+    actions: slot.actions,
     deviceIds: slot.deviceIds?.length ? slot.deviceIds : fallback,
   };
 }

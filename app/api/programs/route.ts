@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { clampClock } from "@/lib/hebrew/calendar";
 import { HttpError } from "@/lib/http-error";
+import { maxClockActions, mirrorTimes, parseActions } from "@/lib/programs/actions";
 import { mergeVisibleDevices } from "@/lib/programs/devices";
 import { programId, syncTenantPrograms } from "@/lib/programs/sync";
 import { maxDayClocks, maxProgramDays, maxSlots, sortSlots } from "@/lib/programs/slots";
@@ -177,9 +178,11 @@ async function presentPrograms(user: SessionUser, tenantId: string, when?: { yea
 
 async function saveClockAction(user: SessionUser, tenantId: string, body: Record<string, unknown>) {
   const day = dayString(body.day);
-  const onTime = clockTime(body.onTime);
-  const offTime = clockTime(body.offTime);
-  if (!onTime && !offTime) throw new HttpError(400, "בחרו שעת הדלקה או כיבוי");
+  const actions = parseActions(body.actions);
+  const mirrored = actions.length ? mirrorTimes(actions) : { onTime: clockTime(body.onTime), offTime: clockTime(body.offTime) };
+  const onTime = mirrored.onTime;
+  const offTime = mirrored.offTime;
+  if (!onTime && !offTime && !actions.length) throw new HttpError(400, "בחרו שעת הדלקה או כיבוי");
   const allowed = await tenantDeviceIds(user, tenantId);
   const deviceIds = deviceList(body.deviceIds, allowed);
   if (!deviceIds.length) throw new HttpError(400, "בחרו לפחות שקע אחד");
@@ -207,6 +210,7 @@ async function saveClockAction(user: SessionUser, tenantId: string, body: Record
     day,
     onTime,
     offTime,
+    ...(actions.length ? { actions } : {}),
     deviceIds,
   });
 }
@@ -298,14 +302,18 @@ function slotList(body: Record<string, unknown>, allowed: string[], fallback: st
       const record = (item ?? {}) as Record<string, unknown>;
       const chosen = deviceList(record.deviceIds, allowed);
       const deviceIds = chosen.length ? chosen : fallback;
+      const actions = parseActions(record.actions);
+      if (actions.length > maxClockActions) throw new HttpError(400, `אפשר עד ${maxClockActions} פעולות בשעון`);
+      const mirrored = actions.length ? mirrorTimes(actions) : { onTime: clockTime(record.onTime), offTime: clockTime(record.offTime) };
       return {
-        onTime: clockTime(record.onTime),
-        offTime: clockTime(record.offTime),
+        onTime: mirrored.onTime,
+        offTime: mirrored.offTime,
+        ...(actions.length ? { actions } : {}),
         weekdays: cleanWeekdays(Array.isArray(record.weekdays) ? record.weekdays.map((item) => Number(item)) : []),
         ...(deviceIds.length ? { deviceIds } : {}),
       };
     })
-    .filter((slot) => slot.onTime || slot.offTime);
+    .filter((slot) => slot.onTime || slot.offTime || slot.actions?.length);
   if (!slots.length) throw new HttpError(400, "הוסיפו לפחות שעון אחד עם שעת הדלקה או כיבוי");
   if (slots.length > maxSlots) throw new HttpError(400, `אפשר עד ${maxSlots} שעונים בתוכנית`);
   if (slots.some((slot) => !(slot.deviceIds?.length))) throw new HttpError(400, "בחרו לפחות שקע אחד לכל שעון");
@@ -334,13 +342,14 @@ function datePlan(body: Record<string, unknown>) {
     if (record.clocks.length > maxDayClocks) throw new HttpError(400, `אפשר עד ${maxDayClocks} שעונים ביום`);
     const clocks = record.clocks.map((entry) => {
       const row = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
-      const onTime = clockTime(row.onTime);
-      const offTime = clockTime(row.offTime);
-      if (!onTime && !offTime) throw new HttpError(400, "בחרו שעת הדלקה או כיבוי");
+      const actions = parseActions(row.actions);
+      if (actions.length > maxClockActions) throw new HttpError(400, `אפשר עד ${maxClockActions} פעולות בשעון`);
+      const mirrored = actions.length ? mirrorTimes(actions) : { onTime: clockTime(row.onTime), offTime: clockTime(row.offTime) };
+      if (!mirrored.onTime && !mirrored.offTime && !actions.length) throw new HttpError(400, "בחרו שעת הדלקה או כיבוי");
       const deviceIds = Array.isArray(row.deviceIds)
         ? row.deviceIds.filter((item): item is string => typeof item === "string")
         : [];
-      return { id: clockKey(row.id), onTime, offTime, deviceIds };
+      return { id: clockKey(row.id), onTime: mirrored.onTime, offTime: mirrored.offTime, ...(actions.length ? { actions } : {}), deviceIds };
     });
     return { day, clocks };
   });
@@ -381,6 +390,7 @@ async function saveProgramAction(user: SessionUser, tenantId: string, body: Reco
         day: item.day,
         onTime: clock.onTime,
         offTime: clock.offTime,
+        actions: clock.actions,
         deviceIds: deviceIdsForClock,
       };
     }),

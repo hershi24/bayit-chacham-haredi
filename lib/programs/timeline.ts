@@ -1,3 +1,4 @@
+import { resolveActions, type ClockAction } from "@/lib/programs/actions";
 import { skipsHoliday } from "@/lib/programs/holidays";
 import { coversDay } from "@/lib/programs/span";
 import { weekdayOf } from "@/lib/programs/weekdays";
@@ -8,6 +9,7 @@ export type TimelineClock = {
   day: string;
   onTime: string | null;
   offTime: string | null;
+  actions?: ClockAction[];
   deviceIds: string[];
   programId: string | null;
   recurring: boolean;
@@ -21,7 +23,7 @@ export type TimelineProgram = {
   weekdays: number[];
   onTime: string | null;
   offTime: string | null;
-  slots?: Array<{ onTime: string | null; offTime: string | null; weekdays?: number[]; deviceIds?: string[] }>;
+  slots?: Array<{ onTime: string | null; offTime: string | null; actions?: ClockAction[]; weekdays?: number[]; deviceIds?: string[] }>;
   deviceIds: string[];
   startDate?: string | null;
   endDate?: string | null;
@@ -58,60 +60,6 @@ function formatMin(value: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function pushSpan(
-  bars: DayBar[],
-  input: {
-    key: string;
-    source: "clock" | "program";
-    sourceId: string;
-    deviceIds: string[];
-    name: string;
-    muted: boolean;
-    on: number | null;
-    off: number | null;
-    portion: "same" | "next";
-  },
-) {
-  const { on, off, portion } = input;
-  let start: number | null = null;
-  let end: number | null = null;
-  if (on != null && off != null && off > on) {
-    if (portion === "same") {
-      start = on;
-      end = off;
-    }
-  } else if (on != null && off != null) {
-    if (portion === "same") {
-      start = on;
-      end = 1440;
-    } else if (off > 0) {
-      start = 0;
-      end = off;
-    }
-  } else if (on != null && portion === "same") {
-    start = on;
-    end = 1440;
-  } else if (off != null && portion === "same") {
-    start = 0;
-    end = off;
-  }
-  if (start == null || end == null || end <= start) return;
-  const title = `${input.name} ${formatMin(start)}–${formatMin(end)}`;
-  for (const deviceId of input.deviceIds) {
-    bars.push({
-      key: `${input.key}:${deviceId}:${input.portion}`,
-      deviceId,
-      name: input.name,
-      start,
-      end,
-      muted: input.muted,
-      title,
-      source: input.source,
-      sourceId: input.sourceId,
-    });
-  }
-}
-
 export function dayBars(
   date: string,
   clocks: TimelineClock[],
@@ -126,18 +74,29 @@ export function dayBars(
     if (clock.recurring) continue;
     const owner = clock.programId ? owners.get(clock.programId) : undefined;
     if (owner && ((owner.skippedDates ?? []).includes(clock.day) || skipsHoliday(owner, clock.day, yomTov))) continue;
-    const shared = {
-      key: clock.id,
-      source: "clock" as const,
-      sourceId: clock.id,
-      deviceIds: clock.deviceIds,
-      name: owner?.name ?? clock.label ?? "שעון",
-      muted: Boolean(owner && !owner.enabled),
-      on: minutes(clock.onTime),
-      off: minutes(clock.offTime),
-    };
-    if (clock.day === date) pushSpan(bars, { ...shared, portion: "same" });
-    else if (clock.day === previous) pushSpan(bars, { ...shared, portion: "next" });
+    const groups = [
+      ...(clock.day === previous ? [{ offset: -1440, slots: [clock] }] : []),
+      ...(clock.day === date ? [{ offset: 0, slots: [clock] }] : []),
+    ];
+    const name = owner?.name ?? clock.label ?? "שעון";
+    let index = 0;
+    for (const [start, end] of programSpans(groups)) {
+      const title = `${name} ${formatMin(start)}–${formatMin(end)}`;
+      for (const deviceId of clock.deviceIds) {
+        bars.push({
+          key: `${clock.id}:${index}:${deviceId}`,
+          deviceId,
+          name,
+          start,
+          end,
+          muted: Boolean(owner && !owner.enabled),
+          title,
+          source: "clock",
+          sourceId: clock.id,
+        });
+      }
+      index += 1;
+    }
   }
 
   const weekday = weekdayOf(date);
@@ -181,7 +140,7 @@ export function dayBars(
   return bars;
 }
 
-type TimelineSlot = { onTime: string | null; offTime: string | null; weekdays?: number[]; deviceIds?: string[] };
+type TimelineSlot = { onTime: string | null; offTime: string | null; actions?: ClockAction[]; weekdays?: number[]; deviceIds?: string[] };
 
 function slotsFor(program: TimelineProgram, weekday: number): TimelineSlot[] {
   const slots = program.slots?.length
@@ -217,10 +176,11 @@ function programSpans(groups: Array<{ offset: number; slots: Array<{ onTime: str
   const events: Array<{ at: number; on: boolean }> = [];
   for (const group of groups) {
     for (const slot of group.slots) {
-      const on = minutes(slot.onTime);
-      const off = minutes(slot.offTime);
-      if (on != null) events.push({ at: group.offset + on, on: true });
-      if (off != null) events.push({ at: group.offset + off + (on != null && off <= on ? 1440 : 0), on: false });
+      for (const step of resolveActions(slot)) {
+        const at = minutes(step.time);
+        if (at == null) continue;
+        events.push({ at: group.offset + at + (step.nextDay ? 1440 : 0), on: step.action === "ON" });
+      }
     }
   }
   events.sort((left, right) => left.at - right.at || Number(left.on) - Number(right.on));

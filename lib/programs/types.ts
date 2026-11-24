@@ -1,3 +1,4 @@
+import type { ClockAction } from "@/lib/programs/actions";
 import type { RelayAction } from "@/lib/types";
 
 export type StoredProgram = {
@@ -22,6 +23,8 @@ export type StoredProgram = {
 export type ProgramSlot = {
   onTime: string | null;
   offTime: string | null;
+  /** Chosen actions, in the order they should run. Missing means the older on-then-off pair. */
+  actions?: ClockAction[];
   weekdays?: number[];
   /** When set, this clock runs only on these devices. Empty or missing means the program's devices. */
   deviceIds?: string[];
@@ -34,6 +37,7 @@ export type DayClock = {
   day: string;
   onTime: string | null;
   offTime: string | null;
+  actions?: ClockAction[];
   deviceIds: string[];
 };
 

@@ -1,3 +1,4 @@
+import { actionDay, resolveActions, type ClockAction } from "@/lib/programs/actions";
 import { skipsHoliday } from "@/lib/programs/holidays";
 import { slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
@@ -11,7 +12,7 @@ export type OccurrenceProgram = {
   weekdays: number[];
   startDate: string | null;
   endDate: string | null;
-  slots: Array<{ onTime: string | null; offTime: string | null; weekdays?: number[]; deviceIds?: string[] }>;
+  slots: Array<{ onTime: string | null; offTime: string | null; actions?: ClockAction[]; weekdays?: number[]; deviceIds?: string[] }>;
   deviceIds: string[];
   skippedDates?: string[];
   skipHolidays?: boolean;
@@ -22,6 +23,7 @@ export type OccurrenceClock = {
   day: string;
   onTime: string | null;
   offTime: string | null;
+  actions?: ClockAction[];
   deviceIds: string[];
   programId: string | null;
   recurring: boolean;
@@ -49,7 +51,7 @@ export type Occurrence = {
   deviceIds: string[];
 };
 
-type Range = { onTime: string | null; offTime: string | null };
+type Range = { onTime: string | null; offTime: string | null; actions?: ClockAction[] };
 
 export function occurrencesOn(
   day: string,
@@ -74,28 +76,15 @@ export function occurrencesOn(
 
   function pushRanges(sourceDay: string, ranges: Range[], programId: string | null, clockId: string | null, name: string, deviceIds: string[]) {
     for (const range of ranges) {
-      if (sourceDay === day && range.onTime) {
-        push({ programId, clockId, sourceDay, time: range.onTime, name, action: "on", deviceIds });
-      }
-      if (sourceDay === day && range.offTime && (!range.onTime || range.offTime > range.onTime)) {
+      for (const step of resolveActions(range)) {
+        if (actionDay(sourceDay, step) !== day) continue;
         push({
           programId,
           clockId,
           sourceDay,
-          time: range.offTime,
-          name: `כיבוי · ${name}`,
-          action: "off",
-          deviceIds,
-        });
-      }
-      if (sourceDay === previous && range.onTime && range.offTime && range.offTime <= range.onTime) {
-        push({
-          programId,
-          clockId,
-          sourceDay,
-          time: range.offTime,
-          name: `כיבוי · ${name}`,
-          action: "off",
+          time: step.time,
+          name: step.action === "ON" ? name : `כיבוי · ${name}`,
+          action: step.action === "ON" ? "on" : "off",
           deviceIds,
         });
       }

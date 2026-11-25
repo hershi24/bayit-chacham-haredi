@@ -1,6 +1,7 @@
 import { spokenClockTime, spokenDateWords, type MenuRead } from "@/lib/ivr/flow";
 import { resolveActions } from "@/lib/programs/actions";
 import { sortSlots } from "@/lib/programs/slots";
+import { sharedClockDays } from "@/lib/programs/weekdays";
 import type { ProgramSlot, StoredProgram } from "@/lib/programs/types";
 
 export const WORDS = ["", "אחד", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה"];
@@ -184,7 +185,7 @@ function slotsHaveOwnDays(slots: ProgramSlot[]): boolean {
 }
 
 export function programSlots(program: SpokenProgram): ProgramSlot[] {
-  if (program.slots.length) return sortSlots(program.slots);
+  if (program.slots.length) return sortSlots(sharedClockDays(program.slots, program.weekdays));
   if (program.onTime || program.offTime) {
     return [{ onTime: program.onTime, offTime: program.offTime, weekdays: [] }];
   }

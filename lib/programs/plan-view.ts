@@ -1,5 +1,5 @@
 import { resolveActions, type ClockAction } from "@/lib/programs/actions";
-import { WEEKDAY_LABELS, cleanWeekdays, weekdayOf } from "@/lib/programs/weekdays";
+import { WEEKDAY_LABELS, cleanWeekdays, sharedClockDays, weekdayOf } from "@/lib/programs/weekdays";
 import { shiftDate } from "@/lib/time";
 
 export type ViewSlot = {
@@ -85,7 +85,7 @@ export function dateTitle(iso: string) {
 export function clockGroups(program: ProgramInput, owned: OwnedClock[]): ClockGroup[] {
   if (program.weekdays.length) {
     const seen = new Map<string, ViewSlot[]>();
-    for (const slot of program.slots) {
+    for (const slot of sharedClockDays(program.slots, program.weekdays)) {
       const days = cleanWeekdays(slot.weekdays?.length ? slot.weekdays : program.weekdays);
       if (!days.length) continue;
       const key = days.join(",");
@@ -140,7 +140,7 @@ export function scheduledDays(program: ProgramInput, owned: OwnedClock[]): Sched
   if (program.weekdays.length) {
     const origin = Math.min(...program.weekdays);
     const bucket = new Map<string, ScheduledAction[]>();
-    for (const slot of program.slots) {
+    for (const slot of sharedClockDays(program.slots, program.weekdays)) {
       const days = cleanWeekdays(slot.weekdays?.length ? slot.weekdays : program.weekdays);
       const deviceIds = slot.deviceIds?.length ? slot.deviceIds : program.deviceIds;
       for (const day of days) {

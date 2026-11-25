@@ -2,7 +2,7 @@ import { hebrewLabels, hebrewMonthCaption, monthBoard, places, yomTovDates } fro
 import { skipsHoliday } from "@/lib/programs/holidays";
 import { slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
-import { weekdayOf } from "@/lib/programs/weekdays";
+import { sharedClockDays, weekdayOf } from "@/lib/programs/weekdays";
 import { shellyBackupViews } from "@/lib/shelly/backup-sync";
 import { getClock, listDayClocks, listPrograms, listTenantDevices, listTenantSchedules } from "@/lib/store";
 import { clockFace, israelDate, shiftDate } from "@/lib/time";
@@ -71,7 +71,7 @@ export async function programsPayload(
           !skipsHoliday(program, day.date, festivals),
       )
       .flatMap((day) =>
-        slotsForWeekday(program.slots, weekdayOf(day.date)).map((slot, index) => ({
+        slotsForWeekday(sharedClockDays(program.slots, program.weekdays), weekdayOf(day.date)).map((slot, index) => ({
           id: `week:${program.id}:${day.date}:${index}`,
           day: day.date,
           hebrew: day.hebrew,

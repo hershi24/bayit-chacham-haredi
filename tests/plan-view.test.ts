@@ -53,9 +53,27 @@ test("a Saturday date stays on Saturday and a Friday date stays on Friday", () =
   assert.deepEqual(weeklyClockDays(["2026-11-27", "2026-11-28"], [5, 6]), [[5], [6]]);
 });
 
-test("a clock keeps the weekday of its own date", () => {
-  assert.deepEqual(weeklyClockDays(["2026-11-27", "2026-11-27"], [5, 6]), [[5], [5]]);
-  assert.deepEqual(weeklyClockDays(["2026-11-28"], [5, 6]), [[6]]);
+test("clocks that share one date run on every marked day", () => {
+  assert.deepEqual(weeklyClockDays(["2026-11-27", "2026-11-27"], [5, 6]), [
+    [5, 6],
+    [5, 6],
+  ]);
+  assert.deepEqual(weeklyClockDays(["2026-11-29"], [0, 1, 2, 4]), [[0, 1, 2, 4]]);
+});
+
+test("a program pinned to Sunday still runs on every marked day", () => {
+  const days = scheduledDays(
+    {
+      weekdays: [0, 1, 2, 4],
+      deviceIds: ["ac"],
+      slots: [{ onTime: "08:00", offTime: "09:00", weekdays: [0] }],
+    },
+    [],
+  );
+  assert.deepEqual(
+    days.map((day) => day.title),
+    ["יום א׳", "יום ב׳", "יום ג׳", "יום ה׳"],
+  );
 });
 
 test("actions marked for Friday and Saturday together run on both days, earliest first", () => {

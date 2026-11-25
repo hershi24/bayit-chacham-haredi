@@ -9,7 +9,7 @@ import { formatClockActions, resolveActions, type ClockAction } from "@/lib/prog
 import type { OccurrenceClock, OccurrenceProgram } from "@/lib/programs/occurrences";
 import { maxDayClocks, maxProgramDays, maxSlots, slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
-import { WEEKDAY_LABELS, cleanWeekdays, weekdayOf, weekdayPhrase, weeklyClockDays } from "@/lib/programs/weekdays";
+import { WEEKDAY_LABELS, cleanWeekdays, sharedClockDays, weekdayOf, weekdayPhrase, weeklyClockDays } from "@/lib/programs/weekdays";
 import { israelDate, shiftDate } from "@/lib/time";
 import { cn } from "cn";
 
@@ -488,15 +488,20 @@ function draftRanges(form: FormState, day: string) {
   if (!coversDay(day, start || null, form.endDate || null)) return [];
   if (form.frequency === "daily") return chosen.map((range) => range.steps);
   const days = cleanWeekdays(form.weekdays);
-  if (!days.includes(weekdayOf(day))) return [];
-  return chosen.map((range) => range.steps);
+  const weekday = weekdayOf(day);
+  if (!days.includes(weekday)) return [];
+  const owned = weeklyClockDays(
+    chosen.map((range) => range.date),
+    days,
+  );
+  return chosen.filter((_, index) => (owned[index] ?? days).includes(weekday)).map((range) => range.steps);
 }
 
 function storedRanges(program: PlannerProgram, clocks: PlannerClock[], day: string): Step[][] {
   if (!program.enabled || (program.skippedDates ?? []).includes(day)) return [];
   if (program.weekdays.length) {
     if (!program.weekdays.includes(weekdayOf(day)) || !coversDay(day, program.startDate, program.endDate)) return [];
-    return slotsForWeekday(program.slots, weekdayOf(day)).map((slot) => stepsFrom(slot.onTime ?? "", slot.offTime ?? "", slot.actions));
+    return slotsForWeekday(sharedClockDays(program.slots, program.weekdays), weekdayOf(day)).map((slot) => stepsFrom(slot.onTime ?? "", slot.offTime ?? "", slot.actions));
   }
   return clocks
     .filter((clock) => !clock.recurring && clock.programId === program.id && clock.day === day)

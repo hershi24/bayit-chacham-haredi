@@ -10,17 +10,28 @@ export function cleanWeekdays(weekdays: number[]): number[] {
 }
 
 /**
- * The date on a weekly clock is that clock's only day.
- * A clock dated Friday runs on Friday, and a clock dated Saturday runs on Saturday.
+ * The days marked on the program are the days every clock runs.
+ * A Friday date and a Saturday date stay apart. Clocks that share one date run on all marked days.
  */
 export function weeklyClockDays(dates: string[], selected: number[]): number[][] {
   const days = cleanWeekdays(selected);
-  return dates.map((date) => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return days;
-    const day = weekdayOf(date);
-    if (!days.length || days.includes(day)) return [day];
-    return days;
-  });
+  const dated = dates.map((date) => (/^\d{4}-\d{2}-\d{2}$/.test(date) ? weekdayOf(date) : null));
+  const distinct = new Set(dated.filter((day): day is number => day != null && (!days.length || days.includes(day))));
+  if (distinct.size > 1) {
+    return dated.map((day) => (day != null && (!days.length || days.includes(day)) ? [day] : days));
+  }
+  if (days.length) return dates.map(() => days);
+  return dated.map((day) => (day == null ? [] : [day]));
+}
+
+/** A program saved before the marked days were kept pinned every clock to one weekday. Those clocks run on every marked day. */
+export function sharedClockDays<T extends { weekdays?: number[] }>(slots: T[], selected: number[]): T[] {
+  const days = cleanWeekdays(selected);
+  if (days.length < 2 || slots.length === 0) return slots;
+  const pinned = slots.map((slot) => cleanWeekdays(slot.weekdays ?? []));
+  const only = pinned[0]?.[0];
+  if (only == null || !days.includes(only) || !pinned.every((row) => row.length === 1 && row[0] === only)) return slots;
+  return slots.map((slot) => ({ ...slot, weekdays: days }));
 }
 
 export function weekdayPhrase(weekdays: number[]): string {

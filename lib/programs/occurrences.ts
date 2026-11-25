@@ -2,7 +2,7 @@ import { actionDay, resolveActions, type ClockAction } from "@/lib/programs/acti
 import { skipsHoliday } from "@/lib/programs/holidays";
 import { slotsForWeekday } from "@/lib/programs/slots";
 import { coversDay } from "@/lib/programs/span";
-import { weekdayOf } from "@/lib/programs/weekdays";
+import { sharedClockDays, weekdayOf } from "@/lib/programs/weekdays";
 import { shiftDate } from "@/lib/time";
 
 export type OccurrenceProgram = {
@@ -96,7 +96,7 @@ export function occurrencesOn(
     for (const sourceDay of [day, previous]) {
       if ((program.skippedDates ?? []).includes(sourceDay) || skipsHoliday(program, sourceDay, yomTov)) continue;
       if (!program.weekdays.includes(weekdayOf(sourceDay)) || !coversDay(sourceDay, program.startDate, program.endDate)) continue;
-      for (const slot of slotsForWeekday(program.slots, weekdayOf(sourceDay))) {
+      for (const slot of slotsForWeekday(sharedClockDays(program.slots, program.weekdays), weekdayOf(sourceDay))) {
         pushRanges(
           sourceDay,
           [slot],

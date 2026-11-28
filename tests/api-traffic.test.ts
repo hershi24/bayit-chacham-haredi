@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { STATE_STAMP_REFRESH_MS, resetStateStamps, sameObservedState, shouldPersistObservedState } from "../lib/devices/state-write";
 import { sameShellyBackup, type ShellyBackupRow } from "../lib/shelly/backup-record";
+import { shouldPushBackup } from "../lib/shelly/backup-plan";
 import { createCoalescingGuard, createRoundGuard } from "../lib/schedules/guard";
 import { DUE_INTERVAL_MS, PROGRAM_SYNC_INTERVAL_MS, SHELLY_SYNC_INTERVAL_MS } from "../lib/schedules/run";
 import { createKeyedCache } from "../lib/store-cache";
@@ -20,7 +21,7 @@ import {
   setDeviceName,
   updateDeviceState,
 } from "../lib/store";
-import { backgroundScanReads, recordTraffic, resetTraffic, trafficSnapshot } from "../lib/traffic";
+import { backgroundScanReads, classifyRequest, recordTraffic, resetTraffic, trafficSnapshot } from "../lib/traffic";
 
 test("clocks stay on a 15 second loop and the two syncs are separate", () => {
   assert.equal(DUE_INTERVAL_MS, 15_000);
@@ -208,13 +209,34 @@ test("traffic counters add up in memory", () => {
   recordTraffic("wlte", { bytesSent: 5, bytesReceived: 15 });
   recordTraffic("supabase", { bytesSent: 1, bytesReceived: 2 });
   const snap = trafficSnapshot();
-  assert.equal(snap.supabase.requests, 2);
-  assert.equal(snap.supabase.bytesSent, 21);
-  assert.equal(snap.supabase.bytesReceived, 82);
-  assert.equal(snap.wlte.requests, 1);
-  assert.equal(snap.wlte.bytesReceived, 15);
+  assert.equal(snap.supabase.measured.requests, 2);
+  assert.equal(snap.supabase.measured.bytesSent, 21);
+  assert.equal(snap.supabase.measured.bytesReceived, 82);
+  assert.equal(snap.wlte.measured.requests, 1);
+  assert.equal(snap.wlte.measured.bytesReceived, 15);
+  assert.equal(snap.supabase.hourlyIsForecast, true);
+  assert.equal(snap.supabase.monthlyIsForecast, true);
   resetTraffic();
-  assert.equal(trafficSnapshot().supabase.requests, 0);
+  assert.equal(trafficSnapshot().supabase.measured.requests, 0);
+});
+
+test("a request is filed by table and operation", () => {
+  resetTraffic();
+  recordTraffic("supabase", {
+    bytesSent: 10,
+    bytesReceived: 40,
+    ...classifyRequest("supabase", "https://example.supabase.co/rest/v1/devices?select=id", "GET"),
+  });
+  recordTraffic("wlte", {
+    bytesSent: 8,
+    bytesReceived: 12,
+    ...classifyRequest("wlte", "https://wlte.example/wlte/v1/devices/abc/relays/commands", "POST"),
+  });
+  const snap = trafficSnapshot();
+  assert.equal(snap.slices.find((slice) => slice.peer === "supabase")?.name, "devices");
+  assert.equal(snap.slices.find((slice) => slice.peer === "supabase")?.operation, "read");
+  assert.equal(snap.slices.find((slice) => slice.peer === "wlte")?.name, "command");
+  resetTraffic();
 });
 
 test("a keyed cache expires and forgets one key", () => {
@@ -227,4 +249,37 @@ test("a keyed cache expires and forgets one key", () => {
   assert.equal(cache.get("a"), undefined);
   now += 60_000;
   assert.equal(cache.get("b"), undefined);
+});
+
+test("a Shabbat window that starts within minutes is still pushed, and a changed plan is not an idle row", () => {
+  const now = new Date("2026-11-27T14:00:00.000Z");
+  const soon = {
+    start: new Date(now.getTime() + 20 * 60_000).toISOString(),
+    end: new Date(now.getTime() + 25 * 60 * 60_000).toISOString(),
+    label: "שבת",
+  };
+  assert.equal(shouldPushBackup(soon, now), true);
+  const row = {
+    shellyId: "s",
+    tenantId: "t",
+    status: "verified" as const,
+    mode: "script" as const,
+    windowStart: soon.start,
+    windowEnd: soon.end,
+    windowLabel: "שבת",
+    planHash: "old",
+    actionCount: 1,
+    planCode: "a",
+    scheduleIds: [],
+    syncedAt: now.toISOString(),
+    verifiedAt: now.toISOString(),
+    error: null,
+    attempts: 0,
+    alertedAt: null,
+    watch: false,
+    checkedAt: null,
+    nextCheckAt: null,
+    updatedAt: now.toISOString(),
+  };
+  assert.equal(sameShellyBackup(row, { ...row, planHash: "new" }), false);
 });

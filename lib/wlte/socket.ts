@@ -51,7 +51,7 @@ export function startLiveSocket(options: {
         if (socket.readyState === WebSocket.OPEN) {
           const payload = JSON.stringify(sessionPing(crypto.randomUUID()));
           socket.send(payload);
-          recordTraffic("wlte", { bytesSent: byteSize(payload) });
+          recordTraffic("wlte", { bytesSent: byteSize(payload), name: "socket", operation: "socket" });
         }
       }, 30_000);
 
@@ -72,7 +72,7 @@ export function startLiveSocket(options: {
 
       socket.addEventListener("message", (event) => {
         if (typeof event.data !== "string") return;
-        recordTraffic("wlte", { bytesReceived: byteSize(event.data) });
+        recordTraffic("wlte", { bytesReceived: byteSize(event.data), name: "socket", operation: "socket" });
         try {
           options.onMessage(JSON.parse(event.data) as unknown);
         } catch {

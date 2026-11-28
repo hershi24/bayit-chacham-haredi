@@ -17,6 +17,14 @@ const home = [ac, sun, boiler, salon];
 
 const noon = new Date("2026-11-22T10:00:00.000Z");
 
+function releasePhone(phone: string) {
+  const shared = (globalThis as { __pikudDb?: DatabaseSync }).__pikudDb;
+  const database = shared ?? new DatabaseSync(".data/pikud.sqlite");
+  database.prepare("DELETE FROM caller_numbers WHERE phone = ?").run(phone);
+  database.prepare("UPDATE tenants SET phone = NULL WHERE phone = ?").run(phone);
+  if (!shared) database.close();
+}
+
 function clock(sentence: string, now = noon, devices = home) {
   return parseVoiceCommand(sentence, devices, now);
 }
@@ -232,6 +240,8 @@ test("עוד חצי שעה waits, and לחצי שעה still turns on now", () =>
 });
 
 test("star asks for 1 before saving a one-time clock, and 2 cancels it", async () => {
+  releasePhone("035559933");
+  await deleteDevice("voiceclockce33").catch(() => undefined);
   const tenant = await createTenant({ name: "בדיקת שעון קולי", phone: "035559933" });
   await createDevice({ deviceId: "voiceclockce33", name: "מזגן", tenantId: tenant.id });
   let script = "מחר בשמונה בבוקר תפעיל את המזגן עד שתיים בצהריים";
@@ -301,14 +311,20 @@ test("star asks for 1 before saving a one-time clock, and 2 cancels it", async (
     for (const item of await listDayClocks(tenant.id)) await deleteDayClock(tenant.id, item.id);
     await syncTenantPrograms(tenant.id);
     await deleteDevice("voiceclockce33");
+    releasePhone("035559933");
     await deleteTenant(tenant.id);
     setVoicePorts(null);
   }
 });
 
 test("עוד חצי שעה asks before scheduling and does not switch the relay", async () => {
+  releasePhone("035559944");
+  await deleteDevice("voicedelayce33").catch(() => undefined);
   const tenant = await createTenant({ name: "בדיקת השהיה קולית", phone: "035559944" });
   await createDevice({ deviceId: "voicedelayce33", name: "דוד שמש", tenantId: tenant.id });
+  (globalThis as { __pikudDb?: DatabaseSync }).__pikudDb
+    ?.prepare("DELETE FROM schedules WHERE device_id = ?")
+    .run("voicedelayce33");
   setVoicePorts({
     load: async () => new Uint8Array([1, 2, 3, 4]),
     transcribe: async () => "עוד חצי שעה תפעיל את דוד שמש",
@@ -360,6 +376,7 @@ test("עוד חצי שעה asks before scheduling and does not switch the relay"
     database.prepare("DELETE FROM schedules WHERE device_id = ?").run("voicedelayce33");
     database.close();
     await deleteDevice("voicedelayce33");
+    releasePhone("035559944");
     await deleteTenant(tenant.id);
     setVoicePorts(null);
   }

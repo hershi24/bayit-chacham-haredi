@@ -6,6 +6,7 @@ import type { DayClock, ProgramRunInput, StoredProgram } from "@/lib/programs/ty
 import type { ScheduleKind } from "@/lib/schedules/types";
 import type { DeviceView, Role, SessionUser } from "@/lib/types";
 import type { ShellyBackupGate, ShellyBackupRow } from "@/lib/shelly/backup-record";
+import { invalidateIvrTargets, ivrTargetEpoch } from "@/lib/ivr/target-cache";
 import { createKeyedCache, createSingleCache } from "@/lib/store-cache";
 import { storageMode } from "@/lib/storage";
 import * as remote from "@/lib/store-supabase";
@@ -24,12 +25,14 @@ const tenantDeviceCache = createKeyedCache<DeviceView[]>(READ_CACHE_MS);
 const shellyBackupCache = createKeyedCache<ShellyBackupRow | null>(READ_CACHE_MS);
 const shellyGateCache = createKeyedCache<ShellyBackupGate | null>(READ_CACHE_MS);
 
-function forgetTenants() {
-  tenantIdCache.clear();
-}
-
 function forgetDevices() {
   tenantDeviceCache.clear();
+  invalidateIvrTargets();
+}
+
+function forgetTenants() {
+  tenantIdCache.clear();
+  invalidateIvrTargets();
 }
 
 function forgetBackup(shellyId?: string) {
@@ -86,9 +89,18 @@ export async function assertMayUseDevice(user: SessionUser, device: { deviceId: 
   if (granted && !granted.includes(device.deviceId)) throw new HttpError(403, "אין הרשאה לשקע הזה");
 }
 
-export async function listIvrTargets() {
-  if (remoteOn()) return remote.listIvrTargets();
-  return sqlite.listIvrTargets();
+const IVR_LIST_MS = 15_000;
+let ivrList: { key: string; epoch: number; at: number; value: Awaited<ReturnType<typeof sqlite.listIvrTargets>> } | null = null;
+
+export async function listIvrTargets(callId?: string) {
+  const key = callId?.trim() ?? "";
+  const epoch = ivrTargetEpoch();
+  if (key && ivrList && ivrList.key === key && ivrList.epoch === epoch && Date.now() - ivrList.at < IVR_LIST_MS) {
+    return ivrList.value;
+  }
+  const value = remoteOn() ? await remote.listIvrTargets() : sqlite.listIvrTargets();
+  if (key) ivrList = { key, epoch, at: Date.now(), value };
+  return value;
 }
 
 export async function getDevice(deviceId: string) {
@@ -263,18 +275,21 @@ export async function listCallerNumbers(tenantId: string) {
 }
 
 export async function addCallerNumber(tenantId: string, phone: string, label: string | null = null) {
-  if (remoteOn()) return remote.addCallerNumber(tenantId, phone, label);
-  return sqlite.addCallerNumber(tenantId, phone, label);
+  const created = remoteOn() ? await remote.addCallerNumber(tenantId, phone, label) : sqlite.addCallerNumber(tenantId, phone, label);
+  invalidateIvrTargets();
+  return created;
 }
 
 export async function updateCallerNumber(tenantId: string, id: string, input: { label: string | null }) {
-  if (remoteOn()) return remote.updateCallerNumber(tenantId, id, input);
-  return sqlite.updateCallerNumber(tenantId, id, input);
+  const updated = remoteOn() ? await remote.updateCallerNumber(tenantId, id, input) : sqlite.updateCallerNumber(tenantId, id, input);
+  invalidateIvrTargets();
+  return updated;
 }
 
 export async function removeCallerNumber(tenantId: string, id: string) {
-  if (remoteOn()) return remote.removeCallerNumber(tenantId, id);
-  return sqlite.removeCallerNumber(tenantId, id);
+  if (remoteOn()) await remote.removeCallerNumber(tenantId, id);
+  else sqlite.removeCallerNumber(tenantId, id);
+  invalidateIvrTargets();
 }
 
 export async function setDeviceFrozen(deviceId: string, frozen: boolean) {

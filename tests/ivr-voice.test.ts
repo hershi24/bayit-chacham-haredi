@@ -161,6 +161,13 @@ test("star records on the current menu and a clear sentence switches the socket"
     },
   });
   try {
+    await updateDeviceState("rct063285302", {
+      connectivity: "ONLINE",
+      relayOn: false,
+      stateUpdatedAt: new Date().toISOString(),
+      lastError: null,
+    });
+    await getBridge().simulate("rct063285302", { online: true, relayOn: false });
     const star = await yemotPost({ pikud_device: "*", ApiCallId: "555" });
     const starText = await star.text();
     assert.match(starText, /דבר אליי:/);
@@ -217,6 +224,14 @@ test("star records on the current menu and a clear sentence switches the socket"
     assert.equal((await getDevice("rct063285302"))?.relayOn, true);
 
     script = "תדליק את המזגן";
+    await updateDeviceState("rct063285417", {
+      connectivity: "OFFLINE",
+      relayOn: false,
+      stateUpdatedAt: new Date().toISOString(),
+      lastError: null,
+    });
+    await getBridge().simulate("rct063285417", { online: false, relayOn: false });
+    resetStatusChecks();
     const offline = await yemotPost({ pikud_device: "*", ApiCallId: "557", pikud_v1: "/6/v1125.wav" });
     assert.match(await offline.text(), /שקע מזגן אינו מחובר כעת/);
     assert.equal((await getDevice("rct063285417"))?.relayOn, false);

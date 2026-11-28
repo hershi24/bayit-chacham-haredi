@@ -18,7 +18,8 @@ import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { presentDevice, type StatePatch } from "@/lib/store-sqlite";
 import type { AuditSource, AuditView, CallerNumber, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
 import type { ShellyBackupGate, ShellyBackupRow } from "@/lib/shelly/backup-record";
-import { incomingStateIsNewer, noteStateStamp, shouldPersistObservedState, type ObservedState } from "@/lib/devices/state-write";
+import { incomingStateIsNewer, noteStateStamp, sameObservedState, shouldPersistObservedState, type ObservedState } from "@/lib/devices/state-write";
+import { invalidateIvrTargets } from "@/lib/ivr/target-cache";
 import { shellyIdsMatch, shellyMac } from "@/lib/shelly/ids";
 
 type DbError = { message: string; code?: string };
@@ -409,6 +410,7 @@ export async function updateDeviceState(
   if (!shouldPersistObservedState(observedCurrent, observedNext, current.stateUpdatedAt, next.state_updated_at)) {
     return presentDevice(current);
   }
+  if (!sameObservedState(observedCurrent, observedNext)) invalidateIvrTargets();
   const lastOnlineAt =
     next.connectivity === "ONLINE" ? next.state_updated_at || updatedAt : current.lastOnlineAt ?? null;
   let result = await client().from("device_state").upsert(

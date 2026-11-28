@@ -24,7 +24,8 @@ import type {
 } from "@/lib/types";
 import type { ShellyBackupGate, ShellyBackupRow } from "@/lib/shelly/backup-record";
 import { shellyIdsMatch, shellyMac } from "@/lib/shelly/ids";
-import { incomingStateIsNewer, noteStateStamp, shouldPersistObservedState, type ObservedState } from "@/lib/devices/state-write";
+import { incomingStateIsNewer, noteStateStamp, sameObservedState, shouldPersistObservedState, type ObservedState } from "@/lib/devices/state-write";
+import { invalidateIvrTargets } from "@/lib/ivr/target-cache";
 
 type Row = Record<string, SqlValue>;
 
@@ -539,6 +540,7 @@ export function updateDeviceState(
   if (!shouldPersistObservedState(observedCurrent, observedNext, current.stateUpdatedAt, next.stateUpdatedAt)) {
     return presentDevice(current);
   }
+  if (!sameObservedState(observedCurrent, observedNext)) invalidateIvrTargets();
   const now = new Date().toISOString();
   const lastOnlineAt = next.connectivity === "ONLINE" ? next.stateUpdatedAt || now : current.lastOnlineAt ?? null;
   db()

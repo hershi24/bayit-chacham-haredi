@@ -151,7 +151,7 @@ export async function handleMenu(request: Request) {
   if (input.values.hangup === "yes") return reply(input.format, "noop=hangup\n");
 
   if (!input.phone) return reply(input.format, yemotSpeak("לא זוהה מספר הטלפון"));
-  const targets = devicesForPhone(await listIvrTargets(), input.phone);
+  const targets = devicesForPhone(await listIvrTargets(input.values.apicallid), input.phone);
   const frozen = new Set(targets.filter((device) => device.frozen).map((device) => device.deviceId));
   // Keep the customer's chosen order (sort_order). listIvrTargets already sorts that way.
   const devices: MenuDevice[] = targets

@@ -6,6 +6,7 @@ import type { DayClock, ProgramRunInput, StoredProgram } from "@/lib/programs/ty
 import type { ScheduleKind } from "@/lib/schedules/types";
 import type { DeviceView, Role, SessionUser } from "@/lib/types";
 import type { ShellyBackupGate, ShellyBackupRow } from "@/lib/shelly/backup-record";
+import { forgetShellyStatus } from "@/lib/shelly/status-filter";
 import { invalidateIvrTargets, ivrTargetEpoch } from "@/lib/ivr/target-cache";
 import { createKeyedCache, createSingleCache } from "@/lib/store-cache";
 import { storageMode } from "@/lib/storage";
@@ -28,6 +29,7 @@ const shellyGateCache = createKeyedCache<ShellyBackupGate | null>(READ_CACHE_MS)
 function forgetDevices() {
   tenantDeviceCache.clear();
   invalidateIvrTargets();
+  forgetShellyStatus();
 }
 
 function forgetTenants() {

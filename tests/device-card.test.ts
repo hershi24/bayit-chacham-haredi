@@ -71,6 +71,11 @@ test("seenWhen speaks the last online moment", () => {
 
 test("an offline socket keeps the last time it was online", async () => {
   const at = "2026-11-15T08:00:00.000Z";
+  await updateDeviceState("rct063285302", {
+    connectivity: "OFFLINE",
+    relayOn: false,
+    stateUpdatedAt: "2026-11-15T07:00:00.000Z",
+  });
   await updateDeviceState("rct063285302", { connectivity: "ONLINE", relayOn: true, stateUpdatedAt: at });
   assert.equal((await getDevice("rct063285302"))?.lastOnlineAt, at);
   await updateDeviceState("rct063285302", {

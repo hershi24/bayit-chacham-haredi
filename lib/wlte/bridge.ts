@@ -433,8 +433,8 @@ class Bridge {
         result: "SUCCESS",
         detail: describe(before, view),
       });
+      publishDevice(view);
     }
-    publishDevice(view);
     this.pushStatus();
     if (wlteCameBack(before, event)) {
       void reconcileWlteReturn(event.deviceId).catch((error: unknown) => this.note(error));

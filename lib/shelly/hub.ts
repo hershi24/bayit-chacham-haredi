@@ -11,6 +11,7 @@ import {
   shellyCall,
   switchSetCall,
 } from "@/lib/shelly/rpc";
+import { sameObservedState } from "@/lib/devices/state-write";
 import { staleRelayReport, type RelayHold } from "@/lib/shelly/relay-hold";
 import type { RelayAction } from "@/lib/types";
 
@@ -180,7 +181,7 @@ class ShellyHub {
           stateUpdatedAt: at,
           lastError: null,
         });
-        if (view) publishDevice(view);
+        if (view && !sameObservedState(device, view)) publishDevice(view);
       }
       return true;
     }
@@ -354,7 +355,7 @@ class ShellyHub {
         lastError: null,
         deviceType: device.deviceType ?? "ShellyPro3",
       });
-      if (view) publishDevice(view);
+      if (view && !sameObservedState(device, view)) publishDevice(view);
     }
   }
 
@@ -365,7 +366,7 @@ class ShellyHub {
         connectivity: "OFFLINE",
         stateUpdatedAt: new Date().toISOString(),
       });
-      if (view) publishDevice(view);
+      if (view && !sameObservedState(device, view)) publishDevice(view);
     }
   }
 
@@ -379,7 +380,8 @@ class ShellyHub {
       if (typeof state.on !== "boolean") continue;
       const known = byChannel.get(state.channel);
       const deviceId = known?.deviceId ?? shellyChannelDeviceId(devices[0]?.externalId ?? shellyId, state.channel);
-      if (!(await getDevice(deviceId))) continue;
+      const before = await getDevice(deviceId);
+      if (!before) continue;
       const hold = this.relayHold.get(deviceId);
       const ignoreRelay = staleRelayReport(hold, state.on, Date.now());
       if (hold && state.on === hold.on) this.relayHold.delete(deviceId);
@@ -390,7 +392,7 @@ class ShellyHub {
         lastError: null,
         deviceType: "ShellyPro3",
       });
-      if (view) publishDevice(view);
+      if (view && !sameObservedState(before, view)) publishDevice(view);
     }
   }
 }

@@ -1,4 +1,5 @@
 import { sessionPing } from "@/lib/wlte/parse";
+import { byteSize, recordTraffic } from "@/lib/traffic";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -48,7 +49,9 @@ export function startLiveSocket(options: {
       const openedAt = { current: 0 };
       const ping = setInterval(() => {
         if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify(sessionPing(crypto.randomUUID())));
+          const payload = JSON.stringify(sessionPing(crypto.randomUUID()));
+          socket.send(payload);
+          recordTraffic("wlte", { bytesSent: byteSize(payload), name: "socket", operation: "socket" });
         }
       }, 30_000);
 
@@ -69,6 +72,7 @@ export function startLiveSocket(options: {
 
       socket.addEventListener("message", (event) => {
         if (typeof event.data !== "string") return;
+        recordTraffic("wlte", { bytesReceived: byteSize(event.data), name: "socket", operation: "socket" });
         try {
           options.onMessage(JSON.parse(event.data) as unknown);
         } catch {

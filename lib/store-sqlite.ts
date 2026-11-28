@@ -22,9 +22,10 @@ import type {
   TenantView,
   UserView,
 } from "@/lib/types";
-import type { ShellyBackupRow } from "@/lib/shelly/backup-record";
+import type { ShellyBackupGate, ShellyBackupRow } from "@/lib/shelly/backup-record";
 import { shellyIdsMatch, shellyMac } from "@/lib/shelly/ids";
-import { isNewerIso } from "@/lib/wlte/parse";
+import { incomingStateIsNewer, noteStateStamp, sameObservedState, shouldPersistObservedState, type ObservedState } from "@/lib/devices/state-write";
+import { invalidateIvrTargets } from "@/lib/ivr/target-cache";
 
 type Row = Record<string, SqlValue>;
 
@@ -508,11 +509,8 @@ export function updateDeviceState(
 ): DeviceView | null {
   const current = getDevice(deviceId);
   if (!current) return null;
-  if (
-    options?.onlyIfNewer &&
-    patch.stateUpdatedAt &&
-    !isNewerIso(current.stateUpdatedAt, patch.stateUpdatedAt)
-  ) {
+  const incomingStamp = patch.stateUpdatedAt === undefined ? null : patch.stateUpdatedAt;
+  if (options?.onlyIfNewer && incomingStamp && !incomingStateIsNewer(deviceId, current.stateUpdatedAt, incomingStamp)) {
     return presentDevice(current);
   }
 
@@ -524,6 +522,25 @@ export function updateDeviceState(
     sensorSummary: patch.sensorSummary === undefined ? current.sensorSummary : patch.sensorSummary,
     lastError: patch.lastError === undefined ? current.lastError : patch.lastError,
   };
+  const observedCurrent: ObservedState = {
+    connectivity: current.connectivity,
+    relayOn: current.relayOn,
+    deviceType: current.deviceType,
+    sensorSummary: current.sensorSummary,
+    lastError: current.lastError,
+  };
+  const observedNext: ObservedState = {
+    connectivity: next.connectivity,
+    relayOn: next.relayOn,
+    deviceType: next.deviceType,
+    sensorSummary: next.sensorSummary,
+    lastError: next.lastError,
+  };
+  noteStateStamp(deviceId, next.stateUpdatedAt);
+  if (!shouldPersistObservedState(observedCurrent, observedNext, current.stateUpdatedAt, next.stateUpdatedAt)) {
+    return presentDevice(current);
+  }
+  if (!sameObservedState(observedCurrent, observedNext)) invalidateIvrTargets();
   const now = new Date().toISOString();
   const lastOnlineAt = next.connectivity === "ONLINE" ? next.stateUpdatedAt || now : current.lastOnlineAt ?? null;
   db()
@@ -640,6 +657,10 @@ export function listTenants(): TenantView[] {
       userCount: Number(row.user_count ?? 0),
     };
   });
+}
+
+export function listTenantIds(): string[] {
+  return (db().prepare("SELECT id FROM tenants ORDER BY name").all() as Row[]).map((row) => text(row, "id"));
 }
 
 export function createTenant(input: { name: string; phone: string | null }): TenantView {
@@ -1549,6 +1570,21 @@ export function failProgramRun(id: string, detail: string) {
 export function getShellyBackup(shellyId: string): ShellyBackupRow | null {
   const row = db().prepare("SELECT * FROM shelly_backups WHERE shelly_id = ?").get(shellyId) as Row | undefined;
   return row ? mapShellyBackup(row) : null;
+}
+
+export function getShellyBackupGate(shellyId: string): ShellyBackupGate | null {
+  const row = db()
+    .prepare("SELECT status, window_start, window_end, watch, next_check_at FROM shelly_backups WHERE shelly_id = ?")
+    .get(shellyId) as Row | undefined;
+  if (!row) return null;
+  const status = text(row, "status");
+  return {
+    status: status === "verified" || status === "failed" || status === "pending" ? status : "idle",
+    windowStart: textOrNull(row, "window_start"),
+    windowEnd: textOrNull(row, "window_end"),
+    watch: Number(row.watch ?? 0) === 1,
+    nextCheckAt: textOrNull(row, "next_check_at"),
+  };
 }
 
 export function listShellyBackups(tenantId: string): ShellyBackupRow[] {

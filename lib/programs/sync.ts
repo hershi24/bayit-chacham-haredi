@@ -9,14 +9,38 @@ import {
   listDayClocks,
   listPrograms,
   listTenantDevices,
-  listTenants,
+  listTenantIds,
   replaceProgramRuns,
 } from "@/lib/store";
 import { israelDate, jerusalemInstant, shiftDate } from "@/lib/time";
 
 const refreshed = new Map<string, number>();
+const tenantFlight = new Map<string, { running: boolean; again: boolean; now: Date; shelly: boolean }>();
+let scanRunning = false;
 
 export async function syncTenantPrograms(tenantId: string, now = new Date(), shelly = true) {
+  const slot = tenantFlight.get(tenantId) ?? { running: false, again: false, now, shelly };
+  tenantFlight.set(tenantId, slot);
+  if (slot.running) {
+    slot.again = true;
+    slot.now = now;
+    slot.shelly = slot.shelly || shelly;
+    return;
+  }
+  slot.running = true;
+  slot.now = now;
+  slot.shelly = shelly;
+  try {
+    do {
+      slot.again = false;
+      await syncTenantProgramsOnce(tenantId, slot.now, slot.shelly);
+    } while (slot.again);
+  } finally {
+    slot.running = false;
+  }
+}
+
+async function syncTenantProgramsOnce(tenantId: string, now = new Date(), shelly = true) {
   const programs = await listPrograms(tenantId);
   const clocks = await listDayClocks(tenantId);
   const allowed = new Set((await listTenantDevices(tenantId)).map((device) => device.deviceId));
@@ -56,11 +80,17 @@ export async function syncTenantPrograms(tenantId: string, now = new Date(), she
 }
 
 export async function syncProgramsIfStale() {
-  const tenants = await listTenants();
-  for (const tenant of tenants) {
-    const at = refreshed.get(tenant.id) ?? 0;
-    if (Date.now() - at < 60 * 60 * 1000) continue;
-    await syncTenantPrograms(tenant.id);
+  if (scanRunning) return;
+  scanRunning = true;
+  try {
+    const tenants = await listTenantIds();
+    for (const tenantId of tenants) {
+      const at = refreshed.get(tenantId) ?? 0;
+      if (Date.now() - at < 60 * 60 * 1000) continue;
+      await syncTenantPrograms(tenantId);
+    }
+  } finally {
+    scanRunning = false;
   }
 }
 

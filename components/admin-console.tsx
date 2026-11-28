@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AdminTraffic } from "@/components/admin-traffic";
 import { api } from "@/lib/client-api";
 import { formatIsrael, seenWhen } from "@/lib/time";
 import type { AuditView, BridgeStatus, CallerNumber, DeviceView, TenantView, UserView } from "@/lib/types";
@@ -37,6 +38,7 @@ export function AdminConsole() {
   const [actorId, setActorId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [section, setSection] = useState("tenants");
 
   async function load() {
     try {
@@ -85,13 +87,16 @@ export function AdminConsole() {
     <section className="min-w-0">
       <h2 className="text-2xl font-semibold tracking-tight">ניהול</h2>
       <p className="mb-4 text-sm text-muted-foreground">כל נתוני הלקוח, וחיבור לימות המשיח.</p>
-      <Tabs defaultValue="tenants" className="min-w-0">
-        <TabsList className="grid h-auto w-full grid-cols-2 sm:inline-flex sm:w-fit">
+      <Tabs value={section} onValueChange={(value) => setSection(value)} className="min-w-0">
+        <TabsList className="grid h-auto w-full grid-cols-3 sm:inline-flex sm:w-fit">
           <TabsTrigger value="tenants" className="px-3 py-2">
             לקוחות
           </TabsTrigger>
           <TabsTrigger value="link" className="px-3 py-2">
             חיבור וטלפון
+          </TabsTrigger>
+          <TabsTrigger value="traffic" className="px-3 py-2">
+            תקשורת
           </TabsTrigger>
         </TabsList>
         <TabsContent value="tenants" className="min-w-0 pt-4">
@@ -106,6 +111,9 @@ export function AdminConsole() {
         </TabsContent>
         <TabsContent value="link" className="min-w-0 pt-4">
           <LinkPanel status={status} ivr={ivr} devices={devices} shellyUrl={shellyUrl} />
+        </TabsContent>
+        <TabsContent value="traffic" className="min-w-0 pt-4">
+          <AdminTraffic active={section === "traffic"} />
         </TabsContent>
       </Tabs>
     </section>

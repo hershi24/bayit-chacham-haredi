@@ -4,13 +4,20 @@ import { publishDevice, publishStatus } from "@/lib/sse";
 import { storageMode } from "@/lib/storage";
 import { getShellyHub } from "@/lib/shelly/hub";
 import { isShellyChannelId } from "@/lib/shelly/ids";
-import { addAudit, getDevice, listDeviceIds, updateDeviceState, type StatePatch } from "@/lib/store";
+import { addAudit, getDevice, listDeviceIds, updateDeviceState } from "@/lib/store";
 import type { AuditSource, BridgeStatus, DeviceView, RelayAction } from "@/lib/types";
 import { isWlteError, wlteMessage } from "@/lib/wlte/errors";
 import { createLiveGateway, requestAccessToken } from "@/lib/wlte/live";
 import { MockGateway } from "@/lib/wlte/mock-gateway";
-import { isNewerIso, parseCommandResponse, parseDeviceResponse, parseWsEvent } from "@/lib/wlte/parse";
+import { parseCommandResponse, parseDeviceResponse, parseWsEvent } from "@/lib/wlte/parse";
 import { REQUIRED_SCOPES } from "@/lib/wlte/policy";
+import {
+  classifyWlteReport,
+  forgetWlteReport,
+  noteWlteReportStamp,
+  rememberWlteReport,
+  settleWlteReport,
+} from "@/lib/wlte/report-filter";
 import { createIdempotencyKey } from "@/lib/wlte/retry";
 import { startLiveSocket } from "@/lib/wlte/socket";
 import { reconcileWlteReturn, wlteCameBack } from "@/lib/wlte/reconcile";
@@ -22,6 +29,10 @@ type Gateway = {
 };
 
 const globalBridge = globalThis as unknown as { __pikudBridge?: Bridge };
+
+function readDevice(deviceId: string) {
+  return getDevice(deviceId, { plans: false });
+}
 
 function changed(before: DeviceView | null, after: DeviceView | null) {
   if (!before || !after) return Boolean(after);
@@ -95,7 +106,7 @@ class Bridge {
     console.info(`[pikud] WLTE mode=${this.config.mode} relay=${this.config.relayStyle} storage=${storageMode()}`);
     if (this.mock) {
       for (const deviceId of await listDeviceIds()) {
-        const device = await getDevice(deviceId);
+        const device = await readDevice(deviceId);
         if (device?.vendor === "shelly" || isShellyChannelId(deviceId)) continue;
         this.mock.ensure({
           deviceId,
@@ -167,7 +178,7 @@ class Bridge {
 
   async refresh(deviceId: string, audit = true): Promise<DeviceView | null> {
     await this.ready;
-    const before = await getDevice(deviceId);
+    const before = await readDevice(deviceId);
     if (!before) return null;
     if (before.vendor === "shelly" || isShellyChannelId(deviceId)) {
       if (before.externalId) {
@@ -179,7 +190,7 @@ class Bridge {
         });
         if (view) publishDevice(view);
       }
-      return getDevice(deviceId);
+      return readDevice(deviceId);
     }
     const snapshot = await this.gateway.read(deviceId);
     const view = await updateDeviceState(
@@ -194,7 +205,7 @@ class Bridge {
       },
       { onlyIfNewer: true },
     );
-    const next = view ?? (await getDevice(deviceId));
+    const next = view ?? (await readDevice(deviceId));
     if (next && audit && changed(before, next)) {
       await addAudit({
         source: "system",
@@ -217,7 +228,7 @@ class Bridge {
     actor: string;
   }): Promise<{ device: DeviceView; commandId: string | null; status: string; idempotencyKey: string; requestId: string | null }> {
     await this.ready;
-    const current = await getDevice(input.deviceId);
+    const current = await readDevice(input.deviceId);
     if (!current) throw new HttpError(404, "השקע לא נמצא");
     if (current.frozen) throw new HttpError(403, "השקע מוקפא");
     const key = createIdempotencyKey();
@@ -241,7 +252,7 @@ class Bridge {
     }
     try {
       const command = await this.gateway.command(input.deviceId, input.action, key);
-      let device: DeviceView | null = await getDevice(input.deviceId);
+      let device: DeviceView | null = await readDevice(input.deviceId);
       if (command.status === "SUCCESS" && command.action) {
         device = await updateDeviceState(input.deviceId, {
           relayOn: command.action === "ON",
@@ -253,7 +264,7 @@ class Bridge {
         try {
           device = await this.refresh(input.deviceId, false);
         } catch {
-          device = await getDevice(input.deviceId);
+          device = await readDevice(input.deviceId);
         }
         if (command.status !== "SENT") {
           device = await updateDeviceState(input.deviceId, {
@@ -270,7 +281,7 @@ class Bridge {
         result: command.status,
         detail: command.commandId,
       });
-      const view = device ?? (await getDevice(input.deviceId));
+      const view = device ?? (await readDevice(input.deviceId));
       if (!view) throw new HttpError(404, "השקע לא נמצא");
       publishDevice(view);
       return {
@@ -309,7 +320,7 @@ class Bridge {
   ) {
     try {
       const result = await getShellyHub().command(input.deviceId, input.action);
-      const device = (await getDevice(input.deviceId)) ?? current;
+      const device = (await readDevice(input.deviceId)) ?? current;
       await addAudit({
         source: input.source,
         actor: input.actor,
@@ -350,8 +361,8 @@ class Bridge {
   async simulate(deviceId: string, patch: { relayOn?: boolean; online?: boolean }) {
     await this.ready;
     if (!this.mock) throw new HttpError(409, "דימוי לחיצה חיצונית זמין רק במצב הדגמה");
-    if (!(await getDevice(deviceId))) throw new HttpError(404, "השקע לא נמצא");
-    const device = await getDevice(deviceId);
+    if (!(await readDevice(deviceId))) throw new HttpError(404, "השקע לא נמצא");
+    const device = await readDevice(deviceId);
     if (device?.vendor === "shelly" || isShellyChannelId(deviceId)) {
       if (patch.online === false && device?.externalId) getShellyHub().mockDisconnect(device.externalId);
       else if (device?.externalId) {
@@ -369,7 +380,7 @@ class Bridge {
 
   async registerDevice(deviceId: string, name: string) {
     await this.ready;
-    const device = await getDevice(deviceId);
+    const device = await readDevice(deviceId);
     if (device?.vendor === "shelly" || isShellyChannelId(deviceId)) {
       const view = await updateDeviceState(deviceId, {
         connectivity: "OFFLINE",
@@ -399,30 +410,37 @@ class Bridge {
 
   forgetDevice(deviceId: string) {
     this.mock?.remove(deviceId);
+    forgetWlteReport(deviceId);
   }
 
   private async onPayload(payload: unknown) {
     const event = parseWsEvent(payload);
     if (!event) return;
-    const before = await getDevice(event.deviceId);
-    if (!before) return;
     this.lastEventAt = new Date().toISOString();
+    const decision = classifyWlteReport(event);
+    if (decision === "duplicate") return;
+    if (decision === "reset") {
+      noteWlteReportStamp(event.deviceId, event.stateUpdatedAt);
+      return;
+    }
+    const before = await readDevice(event.deviceId);
+    if (!before) return;
 
-    if (event.stateUpdatedAt && !isNewerIso(before.stateUpdatedAt, event.stateUpdatedAt)) return;
-
-    const patch: StatePatch =
-      event.type === "state"
-        ? {
-            relayOn: event.relayOn === null ? before.relayOn : event.relayOn,
-            stateUpdatedAt: event.stateUpdatedAt ?? new Date().toISOString(),
-            lastError: null,
-          }
-        : {
-            connectivity: event.connectivity,
-            stateUpdatedAt: event.stateUpdatedAt ?? new Date().toISOString(),
-          };
-    const view = await updateDeviceState(event.deviceId, patch);
-    if (!view) return;
+    const settled = settleWlteReport(decision, event, {
+      relayOn: before.relayOn,
+      connectivity: before.connectivity,
+      stateUpdatedAt: before.stateUpdatedAt,
+    });
+    rememberWlteReport(event.deviceId, settled.remember);
+    let view: DeviceView = before;
+    if (settled.patch) {
+      const written = await updateDeviceState(event.deviceId, settled.patch);
+      if (!written) {
+        forgetWlteReport(event.deviceId);
+        return;
+      }
+      view = written;
+    }
     if (changed(before, view)) {
       await addAudit({
         source: "stream",

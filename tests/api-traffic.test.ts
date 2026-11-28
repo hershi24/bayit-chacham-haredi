@@ -8,6 +8,7 @@ import { createCoalescingGuard, createRoundGuard } from "../lib/schedules/guard"
 import { DUE_INTERVAL_MS, PROGRAM_SYNC_INTERVAL_MS, SHELLY_SYNC_INTERVAL_MS } from "../lib/schedules/run";
 import { createKeyedCache } from "../lib/store-cache";
 import {
+  cancelSchedule,
   createDevice,
   createTenant,
   deleteDevice,
@@ -17,11 +18,13 @@ import {
   getShellyBackupGate,
   listTenantDevices,
   listTenantIds,
+  listTenantSchedules,
+  saveSchedule,
   saveShellyBackup,
   setDeviceName,
   updateDeviceState,
 } from "../lib/store";
-import { backgroundScanReads, classifyRequest, recordTraffic, resetTraffic, trafficSnapshot } from "../lib/traffic";
+import { backgroundScanReads, classifyRequest, measuredFetch, recordTraffic, resetTraffic, trafficSnapshot } from "../lib/traffic";
 
 test("clocks stay on a 15 second loop and the two syncs are separate", () => {
   assert.equal(DUE_INTERVAL_MS, 15_000);
@@ -237,6 +240,76 @@ test("a request is filed by table and operation", () => {
   assert.equal(snap.slices.find((slice) => slice.peer === "supabase")?.operation, "read");
   assert.equal(snap.slices.find((slice) => slice.peer === "wlte")?.name, "command");
   resetTraffic();
+});
+
+test("a status read skips plans, and a normal device read still returns the next one", async () => {
+  const tenant = await createTenant({ name: "מועדים בנפרד", phone: null });
+  const deviceId = `plan${String(Date.now()).slice(-6)}`;
+  const runAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  try {
+    await createDevice({ deviceId, name: "שקע", tenantId: tenant.id });
+    await saveSchedule({ deviceId, kind: "timer_off", runAt });
+    const full = await getDevice(deviceId);
+    assert.equal(full?.next?.at, runAt);
+    assert.equal(full?.next?.action, "OFF");
+    const bare = await getDevice(deviceId, { plans: false });
+    assert.equal(bare?.next, undefined);
+    assert.equal(bare?.deviceId, deviceId);
+    const written = await updateDeviceState(deviceId, {
+      connectivity: "ONLINE",
+      relayOn: true,
+      stateUpdatedAt: new Date().toISOString(),
+    });
+    assert.equal(written?.next, undefined);
+    assert.equal(written?.relayOn, true);
+    assert.equal((await getDevice(deviceId))?.next?.at, runAt);
+  } finally {
+    for (const row of await listTenantSchedules(tenant.id).catch(() => [])) {
+      await cancelSchedule(tenant.id, row.id).catch(() => undefined);
+    }
+    await deleteDevice(deviceId).catch(() => undefined);
+    await deleteTenant(tenant.id).catch(() => undefined);
+  }
+});
+
+test("an incoming response is measured from its body when content-length is absent", async () => {
+  resetTraffic();
+  const original = globalThis.fetch;
+  const payload = new TextEncoder().encode("שלום");
+  globalThis.fetch = async () =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(payload);
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  try {
+    const response = await measuredFetch("supabase", "https://example.supabase.co/rest/v1/devices?select=id", {
+      method: "GET",
+    });
+    assert.equal(await response.text(), "שלום");
+    assert.equal(trafficSnapshot().supabase.measured.bytesReceived, payload.byteLength);
+    assert.ok(payload.byteLength > 0);
+  } finally {
+    globalThis.fetch = original;
+    resetTraffic();
+  }
+});
+
+test("a declared content-length is the incoming size", async () => {
+  resetTraffic();
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response("abcdef", { status: 200, headers: { "content-length": "42" } });
+  try {
+    await measuredFetch("supabase", "https://example.supabase.co/rest/v1/devices", { method: "GET" });
+    assert.equal(trafficSnapshot().supabase.measured.bytesReceived, 42);
+  } finally {
+    globalThis.fetch = original;
+    resetTraffic();
+  }
 });
 
 test("a keyed cache expires and forgets one key", () => {

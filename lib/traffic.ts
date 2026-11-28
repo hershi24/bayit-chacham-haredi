@@ -165,10 +165,13 @@ export async function measuredFetch(peer: TrafficPeer, input: RequestInfo | URL,
     recordTraffic(peer, { bytesSent: sent, bytesReceived: 0, ...kind });
     throw error;
   }
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared >= 0) {
-    recordTraffic(peer, { bytesSent: sent, bytesReceived: declared, ...kind });
-    return response;
+  const header = response.headers.get("content-length");
+  if (header !== null && header.trim() !== "") {
+    const declared = Number(header);
+    if (Number.isFinite(declared) && declared >= 0) {
+      recordTraffic(peer, { bytesSent: sent, bytesReceived: declared, ...kind });
+      return response;
+    }
   }
   const copy = response.clone();
   const received = (await copy.arrayBuffer()).byteLength;

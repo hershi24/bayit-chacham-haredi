@@ -9,11 +9,11 @@ export function POST(_request: Request, context: { params: Promise<{ deviceId: s
   return withErrors(async () => {
     const user = await requireUser();
     const { deviceId } = await context.params;
-    const device = await getDevice(deviceId);
+    const device = await getDevice(deviceId, { plans: false });
     if (!device) throw new HttpError(404, "השקע לא נמצא");
     await assertMayUseDevice(user, device);
-    const refreshed = await getBridge().refresh(deviceId, false);
-    const next = refreshed ?? (await getDevice(deviceId));
+    await getBridge().refresh(deviceId, false);
+    const next = await getDevice(deviceId);
     if (!next) throw new HttpError(404, "השקע לא נמצא");
     return Response.json({ device: next });
   });

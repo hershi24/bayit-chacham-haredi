@@ -44,7 +44,7 @@ export async function runDueSchedules() {
   const bridge = getBridge();
   for (const job of due) {
     try {
-      if ((await getDevice(job.deviceId))?.frozen) continue;
+      if ((await getDevice(job.deviceId, { plans: false }))?.frozen) continue;
       const result = await bridge.command({
         deviceId: job.deviceId,
         action: job.kind === "timer_off" ? "OFF" : "ON",
@@ -64,7 +64,7 @@ export async function runDueSchedules() {
         await finishProgramRun(job.id);
         continue;
       }
-      if ((await getDevice(job.deviceId))?.frozen) continue;
+      if ((await getDevice(job.deviceId, { plans: false }))?.frozen) continue;
       const result = await bridge.command({
         deviceId: job.deviceId,
         action: job.action,

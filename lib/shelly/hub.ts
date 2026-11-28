@@ -380,7 +380,7 @@ class ShellyHub {
       if (typeof state.on !== "boolean") continue;
       const known = byChannel.get(state.channel);
       const deviceId = known?.deviceId ?? shellyChannelDeviceId(devices[0]?.externalId ?? shellyId, state.channel);
-      const before = await getDevice(deviceId);
+      const before = await getDevice(deviceId, { plans: false });
       if (!before) continue;
       const hold = this.relayHold.get(deviceId);
       const ignoreRelay = staleRelayReport(hold, state.on, Date.now());

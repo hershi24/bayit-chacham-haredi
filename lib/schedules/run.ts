@@ -1,36 +1,45 @@
 import { HttpError } from "@/lib/http-error";
 import { syncProgramsIfStale } from "@/lib/programs/sync";
 import { shellyBackupCoversRun, syncShellyBackups } from "@/lib/shelly/backup-sync";
+import { createRoundGuard } from "@/lib/schedules/guard";
 import { failProgramRun, failSchedule, finishProgramRun, finishSchedule, getDevice, listDueProgramRuns, listDueSchedules } from "@/lib/store";
 import { getBridge } from "@/lib/wlte/bridge";
 
 const globalScheduler = globalThis as { __pikudScheduler?: boolean };
 
+/** Due clocks and program runs. This stays on its own loop so a long sync cannot delay a command. */
+export const DUE_INTERVAL_MS = 15_000;
+/** The hourly program rebuild is checked once a minute. A saved program still syncs immediately. */
+export const PROGRAM_SYNC_INTERVAL_MS = 60_000;
+/** Matches the previous per-unit pause, without scanning every tenant on the due loop. */
+export const SHELLY_SYNC_INTERVAL_MS = 60_000;
+
 export function startScheduler() {
   if (process.env.NEXT_PHASE === "phase-production-build") return;
   if (globalScheduler.__pikudScheduler) return;
   globalScheduler.__pikudScheduler = true;
+  startLoop(DUE_INTERVAL_MS, () => runDueSchedules(), "[pikud] schedule");
+  startLoop(PROGRAM_SYNC_INTERVAL_MS, () => syncProgramsIfStale(), "[pikud] programs");
+  startLoop(SHELLY_SYNC_INTERVAL_MS, () => syncShellyBackups(), "[pikud] shelly backup");
+}
+
+function startLoop(every: number, job: () => Promise<void>, label: string) {
+  const guard = createRoundGuard();
   const tick = () => {
-    void runDueSchedules().catch((error: unknown) => {
-      console.error("[pikud] schedule", error);
+    void guard(async () => {
+      try {
+        await job();
+      } catch (error) {
+        console.error(label, error);
+      }
     });
   };
   tick();
-  const timer = setInterval(tick, 15_000);
+  const timer = setInterval(tick, every);
   if (typeof timer === "object" && "unref" in timer) timer.unref();
 }
 
 export async function runDueSchedules() {
-  try {
-    await syncProgramsIfStale();
-  } catch (error) {
-    console.error("[pikud] programs", error);
-  }
-  try {
-    await syncShellyBackups();
-  } catch (error) {
-    console.error("[pikud] shelly backup", error);
-  }
   const due = await listDueSchedules();
   const bridge = getBridge();
   for (const job of due) {

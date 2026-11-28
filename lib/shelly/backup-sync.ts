@@ -20,15 +20,17 @@ import { channelStatesFromStatus } from "@/lib/shelly/rpc";
 import { HttpError } from "@/lib/http-error";
 import { parseShellyChannelId, type ShellyChannel } from "@/lib/shelly/ids";
 import { getShellyHub } from "@/lib/shelly/hub";
-import type { ShellyBackupRow } from "@/lib/shelly/backup-record";
+import { sameShellyBackup, type ShellyBackupRow } from "@/lib/shelly/backup-record";
+import { createCoalescingGuard } from "@/lib/schedules/guard";
 import {
   addAudit,
   getClock,
   getShellyBackup,
+  getShellyBackupGate,
   listProgramRuns,
   listShellyBackups,
   listTenantDevices,
-  listTenants,
+  listTenantIds,
   saveShellyBackup,
 } from "@/lib/store";
 
@@ -38,6 +40,7 @@ const RETRY_AFTER_ALERT_MS = 5 * 60_000;
 export const SHELLY_WATCH_EVERY_MS = 30 * 24 * 60 * 60 * 1000;
 export const SHELLY_WATCH_RETRY_MS = 24 * 60 * 60 * 1000;
 const touched = new Map<string, number>();
+const shellyTurn = createCoalescingGuard();
 
 type SyncOptions = { force?: boolean; patrol?: boolean; today?: boolean };
 
@@ -71,9 +74,13 @@ export type ShellyBackupUnit = {
 };
 
 export async function syncShellyBackups(now = new Date()) {
-  const tenants = await listTenants();
-  for (const tenant of tenants) {
-    for (const unit of await unitsOf(tenant.id)) {
+  await shellyTurn(() => scanShellyBackups(now));
+}
+
+async function scanShellyBackups(now: Date) {
+  const tenants = await listTenantIds();
+  for (const tenantId of tenants) {
+    for (const unit of await unitsOf(tenantId)) {
       const due = await watchDue(unit.shellyId, now);
       const at = touched.get(unit.shellyId) ?? 0;
       if (!due && Date.now() - at < 60_000) continue;
@@ -84,6 +91,10 @@ export async function syncShellyBackups(now = new Date()) {
 }
 
 export async function syncShellyBackupsForTenant(tenantId: string, now = new Date()) {
+  await shellyTurn(() => syncTenantUnits(tenantId, now));
+}
+
+async function syncTenantUnits(tenantId: string, now: Date) {
   for (const unit of await unitsOf(tenantId)) {
     touched.set(unit.shellyId, Date.now());
     await syncUnitOnline(unit, now);
@@ -149,7 +160,7 @@ export async function setShellyWatch(tenantId: string, shellyId: string, watch: 
 export async function shellyBackupCoversRun(deviceId: string, runAt: string): Promise<boolean> {
   const parsed = parseShellyChannelId(deviceId);
   if (!parsed) return false;
-  const row = await getShellyBackup(parsed.shellyId);
+  const row = await getShellyBackupGate(parsed.shellyId);
   if (!row || row.status !== "verified" || !row.windowStart || !row.windowEnd) return false;
   const at = Date.parse(runAt);
   return at >= Date.parse(row.windowStart) && at <= Date.parse(row.windowEnd);
@@ -178,16 +189,18 @@ export async function syncShellyUnit(unit: ShellyBackupUnit, rpc: ShellyRpc, now
   }
   const block = await blockFor(unit.tenantId, now);
   if (!block || !shouldPushBackup(block, now)) {
-    return saveShellyBackup({
+    const idle = {
       ...(previous ?? emptyRow(unit)),
       tenantId: unit.tenantId,
-      status: "idle",
+      status: "idle" as const,
       windowStart: block?.start ?? null,
       windowEnd: block?.end ?? null,
       windowLabel: block?.label ?? null,
       error: null,
       updatedAt: now.toISOString(),
-    });
+    };
+    if (previous && sameShellyBackup(previous, idle)) return previous;
+    return saveShellyBackup(idle);
   }
   if (!options.force && previous?.status === "failed" && previous.attempts >= ALERT_AFTER && now.getTime() - Date.parse(previous.updatedAt) < RETRY_AFTER_ALERT_MS) {
     return previous;
@@ -350,7 +363,7 @@ async function unitById(tenantId: string, shellyId: string) {
 }
 
 async function watchDue(shellyId: string, now: Date) {
-  const row = await getShellyBackup(shellyId);
+  const row = await getShellyBackupGate(shellyId);
   return Boolean(row?.watch && row.nextCheckAt && Date.parse(row.nextCheckAt) <= now.getTime());
 }
 

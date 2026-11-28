@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SqlValue } from "node:sqlite";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { measuredFetch } from "@/lib/traffic";
 import { HttpError } from "@/lib/http-error";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { compareDevices } from "@/lib/devices/order";
@@ -16,9 +17,9 @@ import type { PlanItem } from "@/lib/devices/upcoming";
 import type { PendingSchedule, ScheduleKind } from "@/lib/schedules/types";
 import { presentDevice, type StatePatch } from "@/lib/store-sqlite";
 import type { AuditSource, AuditView, CallerNumber, DeviceView, Role, SessionUser, TenantView, UserView } from "@/lib/types";
-import type { ShellyBackupRow } from "@/lib/shelly/backup-record";
+import type { ShellyBackupGate, ShellyBackupRow } from "@/lib/shelly/backup-record";
+import { incomingStateIsNewer, noteStateStamp, shouldPersistObservedState, type ObservedState } from "@/lib/devices/state-write";
 import { shellyIdsMatch, shellyMac } from "@/lib/shelly/ids";
-import { isNewerIso } from "@/lib/wlte/parse";
 
 type DbError = { message: string; code?: string };
 type Embed<T> = T | T[] | null;
@@ -68,6 +69,7 @@ function client(): SupabaseClient {
     if (!url || !key) throw new HttpError(500, "חסר SUPABASE_URL או SUPABASE_SERVICE_ROLE_KEY");
     globalRemote.__pikudSupabase = createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: (input, init) => measuredFetch("supabase", input, init) },
     });
   }
   return globalRemote.__pikudSupabase;
@@ -375,7 +377,8 @@ export async function updateDeviceState(
   await ready();
   const current = await getDevice(deviceId);
   if (!current) return null;
-  if (options?.onlyIfNewer && patch.stateUpdatedAt && !isNewerIso(current.stateUpdatedAt, patch.stateUpdatedAt)) {
+  const incomingStamp = patch.stateUpdatedAt === undefined ? null : patch.stateUpdatedAt;
+  if (options?.onlyIfNewer && incomingStamp && !incomingStateIsNewer(deviceId, current.stateUpdatedAt, incomingStamp)) {
     return presentDevice(current);
   }
   const updatedAt = new Date().toISOString();
@@ -388,6 +391,24 @@ export async function updateDeviceState(
     last_error: patch.lastError === undefined ? current.lastError : patch.lastError,
     updated_at: updatedAt,
   };
+  const observedCurrent: ObservedState = {
+    connectivity: current.connectivity,
+    relayOn: current.relayOn,
+    deviceType: current.deviceType,
+    sensorSummary: current.sensorSummary,
+    lastError: current.lastError,
+  };
+  const observedNext: ObservedState = {
+    connectivity: next.connectivity,
+    relayOn: next.relay_on,
+    deviceType: next.device_type,
+    sensorSummary: next.sensor_summary,
+    lastError: next.last_error,
+  };
+  noteStateStamp(deviceId, next.state_updated_at);
+  if (!shouldPersistObservedState(observedCurrent, observedNext, current.stateUpdatedAt, next.state_updated_at)) {
+    return presentDevice(current);
+  }
   const lastOnlineAt =
     next.connectivity === "ONLINE" ? next.state_updated_at || updatedAt : current.lastOnlineAt ?? null;
   let result = await client().from("device_state").upsert(
@@ -574,6 +595,13 @@ export async function listTenants(): Promise<TenantView[]> {
       userCount: countOf(row.users),
     };
   });
+}
+
+export async function listTenantIds(): Promise<string[]> {
+  await ready();
+  const result = await client().from("tenants").select("id").order("name");
+  if (result.error) fail(result.error, "לא ניתן לקרוא לקוחות");
+  return (result.data ?? []).map((row) => String(row.id));
 }
 
 export async function createTenant(input: { name: string; phone: string | null }): Promise<TenantView> {
@@ -1781,6 +1809,33 @@ export async function getShellyBackup(shellyId: string): Promise<ShellyBackupRow
     fail(result.error, "לא ניתן לקרוא גיבוי Shelly");
   }
   return result.data ? mapShellyBackup(result.data) : null;
+}
+
+export async function getShellyBackupGate(shellyId: string): Promise<ShellyBackupGate | null> {
+  await ready();
+  const result = await client()
+    .from("shelly_backups")
+    .select("status, window_start, window_end, watch, next_check_at")
+    .eq("shelly_id", shellyId)
+    .maybeSingle();
+  if (result.error) {
+    if (missingBackup(result.error) || /watch|window_start|next_check_at/i.test(result.error.message)) {
+      const full = await getShellyBackup(shellyId);
+      return full
+        ? { status: full.status, windowStart: full.windowStart, windowEnd: full.windowEnd, watch: full.watch, nextCheckAt: full.nextCheckAt }
+        : null;
+    }
+    fail(result.error, "לא ניתן לקרוא גיבוי Shelly");
+  }
+  if (!result.data) return null;
+  const status = String(result.data.status ?? "");
+  return {
+    status: status === "verified" || status === "failed" || status === "pending" ? status : "idle",
+    windowStart: result.data.window_start ? String(result.data.window_start) : null,
+    windowEnd: result.data.window_end ? String(result.data.window_end) : null,
+    watch: result.data.watch === true,
+    nextCheckAt: result.data.next_check_at ? String(result.data.next_check_at) : null,
+  };
 }
 
 export async function listShellyBackups(tenantId: string): Promise<ShellyBackupRow[]> {

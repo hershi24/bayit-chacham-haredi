@@ -5,6 +5,8 @@ import { HttpError } from "@/lib/http-error";
 import type { DayClock, ProgramRunInput, StoredProgram } from "@/lib/programs/types";
 import type { ScheduleKind } from "@/lib/schedules/types";
 import type { DeviceView, Role, SessionUser } from "@/lib/types";
+import type { ShellyBackupGate, ShellyBackupRow } from "@/lib/shelly/backup-record";
+import { createKeyedCache, createSingleCache } from "@/lib/store-cache";
 import { storageMode } from "@/lib/storage";
 import * as remote from "@/lib/store-supabase";
 import * as sqlite from "@/lib/store-sqlite";
@@ -14,6 +16,45 @@ export { presentDevice } from "@/lib/store-sqlite";
 
 function remoteOn() {
   return storageMode() === "supabase";
+}
+
+const READ_CACHE_MS = 60_000;
+const tenantIdCache = createSingleCache<string[]>(READ_CACHE_MS);
+const tenantDeviceCache = createKeyedCache<DeviceView[]>(READ_CACHE_MS);
+const shellyBackupCache = createKeyedCache<ShellyBackupRow | null>(READ_CACHE_MS);
+const shellyGateCache = createKeyedCache<ShellyBackupGate | null>(READ_CACHE_MS);
+
+function forgetTenants() {
+  tenantIdCache.clear();
+}
+
+function forgetDevices() {
+  tenantDeviceCache.clear();
+}
+
+function forgetBackup(shellyId?: string) {
+  if (!shellyId) {
+    shellyBackupCache.clear();
+    shellyGateCache.clear();
+    return;
+  }
+  shellyBackupCache.delete(shellyId);
+  shellyGateCache.delete(shellyId);
+}
+
+function rememberBackup(row: ShellyBackupRow | null, shellyId: string) {
+  shellyBackupCache.set(shellyId, row);
+  shellyGateCache.set(shellyId, row ? gateOf(row) : null);
+}
+
+function gateOf(row: ShellyBackupRow): ShellyBackupGate {
+  return {
+    status: row.status,
+    windowStart: row.windowStart,
+    windowEnd: row.windowEnd,
+    watch: row.watch,
+    nextCheckAt: row.nextCheckAt,
+  };
 }
 
 const PLAN_HORIZON_MS = 90 * 24 * 60 * 60 * 1000;
@@ -77,6 +118,7 @@ export async function updateDeviceState(
 
 export async function setDeviceIcon(deviceId: string, icon: string) {
   const device = remoteOn() ? await remote.setDeviceIcon(deviceId, icon) : sqlite.setDeviceIcon(deviceId, icon);
+  forgetDevices();
   if (!device) return null;
   const [withNext] = await withPlans([device]);
   return withNext;
@@ -84,6 +126,7 @@ export async function setDeviceIcon(deviceId: string, icon: string) {
 
 export async function setDeviceName(deviceId: string, name: string) {
   const device = remoteOn() ? await remote.setDeviceName(deviceId, name) : sqlite.setDeviceName(deviceId, name);
+  forgetDevices();
   if (!device) return null;
   const [withNext] = await withPlans([device]);
   return withNext;
@@ -91,6 +134,7 @@ export async function setDeviceName(deviceId: string, name: string) {
 
 export async function saveDeviceOrder(tenantId: string, deviceIds: string[]) {
   const devices = remoteOn() ? await remote.saveDeviceOrder(tenantId, deviceIds) : sqlite.saveDeviceOrder(tenantId, deviceIds);
+  forgetDevices();
   return withPlans(devices);
 }
 
@@ -99,9 +143,18 @@ export async function listTenants() {
   return sqlite.listTenants();
 }
 
+export async function listTenantIds() {
+  const cached = tenantIdCache.get();
+  if (cached) return cached;
+  const ids = remoteOn() ? await remote.listTenantIds() : sqlite.listTenantIds();
+  tenantIdCache.set(ids);
+  return ids;
+}
+
 export async function createTenant(input: { name: string; phone: string | null }) {
-  if (remoteOn()) return remote.createTenant(input);
-  return sqlite.createTenant(input);
+  const tenant = remoteOn() ? await remote.createTenant(input) : sqlite.createTenant(input);
+  forgetTenants();
+  return tenant;
 }
 
 export async function renameTenant(id: string, name: string) {
@@ -110,13 +163,17 @@ export async function renameTenant(id: string, name: string) {
 }
 
 export async function createCustomer(input: { name: string; username: string; password: string; phone: string | null }) {
-  if (remoteOn()) return remote.createCustomer(input);
-  return sqlite.createCustomer(input);
+  const customer = remoteOn() ? await remote.createCustomer(input) : sqlite.createCustomer(input);
+  forgetTenants();
+  return customer;
 }
 
 export async function deleteTenant(id: string) {
-  if (remoteOn()) return remote.deleteTenant(id);
-  return sqlite.deleteTenant(id);
+  if (remoteOn()) await remote.deleteTenant(id);
+  else sqlite.deleteTenant(id);
+  forgetTenants();
+  forgetDevices();
+  forgetBackup();
 }
 
 export async function listUsers() {
@@ -221,8 +278,9 @@ export async function removeCallerNumber(tenantId: string, id: string) {
 }
 
 export async function setDeviceFrozen(deviceId: string, frozen: boolean) {
-  if (remoteOn()) return remote.setDeviceFrozen(deviceId, frozen);
-  return sqlite.setDeviceFrozen(deviceId, frozen);
+  const device = remoteOn() ? await remote.setDeviceFrozen(deviceId, frozen) : sqlite.setDeviceFrozen(deviceId, frozen);
+  forgetDevices();
+  return device;
 }
 
 export async function createDevice(input: {
@@ -236,8 +294,9 @@ export async function createDevice(input: {
   icon?: string | null;
   deviceType?: string | null;
 }) {
-  if (remoteOn()) return remote.createDevice(input);
-  return sqlite.createDevice(input);
+  if (remoteOn()) await remote.createDevice(input);
+  else sqlite.createDevice(input);
+  forgetDevices();
 }
 
 export async function createShellyPro3(input: {
@@ -246,8 +305,9 @@ export async function createShellyPro3(input: {
   kind: DeviceView["kind"];
   channels: [string, string, string];
 }) {
-  if (remoteOn()) return remote.createShellyPro3(input);
-  return sqlite.createShellyPro3(input);
+  const created = remoteOn() ? await remote.createShellyPro3(input) : sqlite.createShellyPro3(input);
+  forgetDevices();
+  return created;
 }
 
 export async function listDevicesByExternalId(externalId: string) {
@@ -261,13 +321,16 @@ export async function findShellyDevices(anyId: string) {
 }
 
 export async function updateDevice(input: { deviceId: string; name: string; tenantId: string }) {
-  if (remoteOn()) return remote.updateDevice(input);
-  return sqlite.updateDevice(input);
+  const device = remoteOn() ? await remote.updateDevice(input) : sqlite.updateDevice(input);
+  forgetDevices();
+  return device;
 }
 
 export async function deleteDevice(deviceId: string): Promise<string[]> {
-  if (remoteOn()) return remote.deleteDevice(deviceId);
-  return sqlite.deleteDevice(deviceId);
+  const removed = remoteOn() ? await remote.deleteDevice(deviceId) : sqlite.deleteDevice(deviceId);
+  forgetDevices();
+  forgetBackup();
+  return removed;
 }
 
 export async function findUserForLogin(username: string) {
@@ -331,8 +394,11 @@ export async function failSchedule(id: string, detail: string) {
 }
 
 export async function listTenantDevices(tenantId: string) {
-  if (remoteOn()) return remote.listTenantDevices(tenantId);
-  return sqlite.listTenantDevices(tenantId);
+  const cached = tenantDeviceCache.get(tenantId);
+  if (cached) return cached;
+  const devices = remoteOn() ? await remote.listTenantDevices(tenantId) : sqlite.listTenantDevices(tenantId);
+  tenantDeviceCache.set(tenantId, devices);
+  return devices;
 }
 
 export async function getClock(tenantId: string) {
@@ -376,8 +442,21 @@ export async function listProgramRuns(tenantId: string) {
 }
 
 export async function getShellyBackup(shellyId: string) {
-  if (remoteOn()) return remote.getShellyBackup(shellyId);
-  return sqlite.getShellyBackup(shellyId);
+  const cached = shellyBackupCache.get(shellyId);
+  if (cached !== undefined) return cached;
+  const row = remoteOn() ? await remote.getShellyBackup(shellyId) : sqlite.getShellyBackup(shellyId);
+  rememberBackup(row, shellyId);
+  return row;
+}
+
+export async function getShellyBackupGate(shellyId: string) {
+  const full = shellyBackupCache.get(shellyId);
+  if (full !== undefined) return full ? gateOf(full) : null;
+  const cached = shellyGateCache.get(shellyId);
+  if (cached !== undefined) return cached;
+  const row = remoteOn() ? await remote.getShellyBackupGate(shellyId) : sqlite.getShellyBackupGate(shellyId);
+  shellyGateCache.set(shellyId, row);
+  return row;
 }
 
 export async function listShellyBackups(tenantId: string) {
@@ -386,8 +465,9 @@ export async function listShellyBackups(tenantId: string) {
 }
 
 export async function saveShellyBackup(row: Parameters<typeof sqlite.saveShellyBackup>[0]) {
-  if (remoteOn()) return remote.saveShellyBackup(row);
-  return sqlite.saveShellyBackup(row);
+  const saved = remoteOn() ? await remote.saveShellyBackup(row) : sqlite.saveShellyBackup(row);
+  rememberBackup(saved, saved.shellyId);
+  return saved;
 }
 
 export async function listDueProgramRuns(now = new Date().toISOString()) {

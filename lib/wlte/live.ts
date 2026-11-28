@@ -1,4 +1,5 @@
 import type { RelayAction } from "@/lib/types";
+import { recordTraffic, byteSize } from "@/lib/traffic";
 import type { AppConfig } from "@/lib/config";
 import { WlteError } from "@/lib/wlte/errors";
 import {
@@ -23,8 +24,9 @@ function retryAfterSeconds(headers: Headers): number | undefined {
   return Math.max(0, (when - Date.now()) / 1000);
 }
 
-async function readBody(response: Response): Promise<unknown> {
+async function readBody(response: Response, sent: number): Promise<unknown> {
   const text = await response.text();
+  recordTraffic("wlte", { bytesSent: sent, bytesReceived: byteSize(text) });
   if (!text) return null;
   try {
     return JSON.parse(text) as unknown;
@@ -51,7 +53,7 @@ export function createLiveGateway(config: AppConfig, tokens: TokenManager) {
       headers,
       signal: AbortSignal.timeout(15_000),
     });
-    const body = await readBody(response);
+    const body = await readBody(response, byteSize(response.url) + byteSize(typeof init.body === "string" ? init.body : ""));
     return {
       status: response.status,
       body,
@@ -109,19 +111,20 @@ export function createLiveGateway(config: AppConfig, tokens: TokenManager) {
 }
 
 export async function requestAccessToken(config: AppConfig) {
+  const payload = JSON.stringify({
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+  });
   const response = await fetch(`${config.baseUrl}/wlte/v1/auth/token`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({
-      clientId: config.clientId,
-      clientSecret: config.clientSecret,
-    }),
+    body: payload,
     signal: AbortSignal.timeout(15_000),
   });
-  const body = await readBody(response);
+  const body = await readBody(response, byteSize(`${config.baseUrl}/wlte/v1/auth/token`) + byteSize(payload));
   if (!response.ok) {
     throw new WlteError(codeOf(body) ?? "AUTH_INVALID", response.status, messageOf(body));
   }

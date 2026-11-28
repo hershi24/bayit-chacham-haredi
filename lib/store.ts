@@ -103,9 +103,10 @@ export async function listIvrTargets(callId?: string) {
   return value;
 }
 
-export async function getDevice(deviceId: string) {
+export async function getDevice(deviceId: string, options?: { plans?: boolean }) {
   const device = remoteOn() ? await remote.getDevice(deviceId) : sqlite.getDevice(deviceId);
   if (!device) return null;
+  if (options?.plans === false) return device;
   const [withNext] = await withPlans([device]);
   return withNext;
 }
@@ -123,9 +124,7 @@ export async function updateDeviceState(
   const device = remoteOn()
     ? await remote.updateDeviceState(deviceId, patch, options)
     : sqlite.updateDeviceState(deviceId, patch, options);
-  if (!device) return null;
-  const [withNext] = await withPlans([device]);
-  return withNext;
+  return device;
 }
 
 export async function setDeviceIcon(deviceId: string, icon: string) {

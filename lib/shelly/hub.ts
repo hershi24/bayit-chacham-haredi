@@ -1,6 +1,6 @@
 import type { WebSocket } from "ws";
 import { publishDevice } from "@/lib/sse";
-import { findShellyDevices, getDevice, updateDeviceState } from "@/lib/store";
+import { findShellyDevices, updateDeviceState } from "@/lib/store";
 import { parseShellyChannelId, shellyChannelDeviceId, shellyIdsMatch, shellyMac, type ShellyChannel } from "@/lib/shelly/ids";
 import {
   channelStatesFromStatus,
@@ -11,8 +11,18 @@ import {
   shellyCall,
   switchSetCall,
 } from "@/lib/shelly/rpc";
-import { sameObservedState } from "@/lib/devices/state-write";
+import { STATE_STAMP_REFRESH_MS, sameObservedState } from "@/lib/devices/state-write";
 import { staleRelayReport, type RelayHold } from "@/lib/shelly/relay-hold";
+import {
+  noteShellyDatabaseTouch,
+  noteShellyStatusApplied,
+  rememberShellyWrite,
+  seedShellyUnit,
+  shellySavedChannel,
+  shellyStatusIsQuiet,
+  shellyUnitIsOffline,
+  shellyUnitIsOnline,
+} from "@/lib/shelly/status-filter";
 import type { RelayAction } from "@/lib/types";
 
 type Socket = WebSocket & {
@@ -47,6 +57,8 @@ class ShellyHub {
   private mockOnline = new Set<string>();
   private mockState = new Map<string, boolean>();
   private watchdog: ReturnType<typeof setInterval> | null = null;
+  /** Status, online, and offline for every unit stay in one order, so two frames cannot pass each other. */
+  private statusChain: Promise<void> = Promise.resolve();
 
   /** Test helper: pretend a Shelly is connected without a real socket. */
   mockConnect(shellyId: string, channels: Array<{ channel: ShellyChannel; on?: boolean }> = []) {
@@ -114,6 +126,7 @@ class ShellyHub {
         stateUpdatedAt: new Date().toISOString(),
         lastError: null,
       });
+      if (view) rememberShellyWrite(parsed.shellyId, view);
       if (view) publishDevice(view);
       return { status: "SUCCESS" };
     }
@@ -132,12 +145,17 @@ class ShellyHub {
         stateUpdatedAt: new Date().toISOString(),
         lastError: null,
       });
+      if (view) rememberShellyWrite(parsed.shellyId, view);
       if (view) publishDevice(view);
       return { status: "SUCCESS" };
     } catch (error) {
       this.relayHold.delete(deviceId);
       const message = error instanceof Error ? error.message : "פקודת Shelly נכשלה";
-      await updateDeviceState(deviceId, { lastError: message });
+      const view = await updateDeviceState(deviceId, { lastError: message });
+      if (view) {
+        rememberShellyWrite(parsed.shellyId, view);
+        publishDevice(view);
+      }
       return { status: "FAILED", message };
     }
   }
@@ -181,6 +199,7 @@ class ShellyHub {
           stateUpdatedAt: at,
           lastError: null,
         });
+        if (view) rememberShellyWrite(shellyId, view);
         if (view && !sameObservedState(device, view)) publishDevice(view);
       }
       return true;
@@ -285,6 +304,8 @@ class ShellyHub {
     const frame = parseShellyFrame(text);
     if (!frame) return;
 
+    // A GetStatus we asked for is applied once by the caller. Applying it here as well
+    // used to run the whole status path twice for the same payload.
     if (frame.id != null && this.pending.has(String(frame.id))) {
       const pending = this.pending.get(String(frame.id));
       this.pending.delete(String(frame.id));
@@ -293,6 +314,7 @@ class ShellyHub {
         if (frame.error) pending.reject(new Error(frame.error.message || "שגיאת Shelly"));
         else pending.resolve(frame.result ?? null);
       }
+      return;
     }
 
     const infoId = readDeviceInfoId(frame.result);
@@ -345,54 +367,127 @@ class ShellyHub {
     await this.markOnline(canonical);
   }
 
-  private async markOnline(shellyId: string) {
+  private enqueueStatus<T>(job: () => Promise<T>): Promise<T> {
+    const run = this.statusChain.then(job);
+    this.statusChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private markOnline(shellyId: string) {
+    return this.enqueueStatus(() => this.markOnlineNow(shellyId));
+  }
+
+  private async markOnlineNow(shellyId: string) {
+    const now = Date.now();
+    if (shellyUnitIsOnline(shellyId, now)) return;
+    noteShellyDatabaseTouch();
     const devices = await findShellyDevices(shellyId);
-    const at = new Date().toISOString();
+    if (!devices.length) return;
+    seedShellyUnit(shellyId, devices);
+    const at = new Date(now).toISOString();
     for (const device of devices) {
+      const fresh =
+        device.connectivity === "ONLINE" && (device.lastError ?? null) === null && !stampIsDue(device.stateUpdatedAt, now);
+      if (fresh) continue;
+      noteShellyDatabaseTouch();
       const view = await updateDeviceState(device.deviceId, {
         connectivity: "ONLINE",
         stateUpdatedAt: at,
         lastError: null,
         deviceType: device.deviceType ?? "ShellyPro3",
       });
+      if (!rememberShellyWrite(shellyId, view)) continue;
       if (view && !sameObservedState(device, view)) publishDevice(view);
     }
   }
 
-  private async markOffline(shellyId: string) {
+  private markOffline(shellyId: string) {
+    return this.enqueueStatus(() => this.markOfflineNow(shellyId));
+  }
+
+  private async markOfflineNow(shellyId: string) {
+    if (shellyUnitIsOffline(shellyId)) return;
+    noteShellyDatabaseTouch();
     const devices = await findShellyDevices(shellyId);
+    if (!devices.length) return;
+    seedShellyUnit(shellyId, devices);
+    const at = new Date().toISOString();
     for (const device of devices) {
+      if (device.connectivity === "OFFLINE") continue;
+      noteShellyDatabaseTouch();
       const view = await updateDeviceState(device.deviceId, {
         connectivity: "OFFLINE",
-        stateUpdatedAt: new Date().toISOString(),
+        stateUpdatedAt: at,
       });
-      if (view && !sameObservedState(device, view)) publishDevice(view);
+      if (!view) continue;
+      rememberShellyWrite(shellyId, view);
+      if (!sameObservedState(device, view)) publishDevice(view);
     }
   }
 
-  private async applyStatus(shellyId: string, payload: unknown) {
-    const states = channelStatesFromStatus(payload);
+  private applyStatus(shellyId: string, payload: unknown) {
+    return this.enqueueStatus(() => this.applyStatusNow(shellyId, payload));
+  }
+
+  private async applyStatusNow(shellyId: string, payload: unknown) {
+    noteShellyStatusApplied();
+    const states = channelStatesFromStatus(payload).flatMap((state) =>
+      typeof state.on === "boolean" ? [{ channel: state.channel, on: state.on }] : [],
+    );
     if (!states.length) return;
-    const devices = await findShellyDevices(shellyId);
-    const byChannel = new Map(devices.map((device) => [device.channel, device]));
-    const at = new Date().toISOString();
+    const now = Date.now();
+    const holdFor = (deviceId: string) => this.relayHold.get(deviceId);
+    if (shellyStatusIsQuiet(shellyId, states, now, holdFor)) {
+      this.confirmHolds(shellyId, states);
+      return;
+    }
+
+    const missing = states.some((state) => !shellySavedChannel(shellyId, state.channel));
+    if (missing) {
+      noteShellyDatabaseTouch();
+      const devices = await findShellyDevices(shellyId);
+      if (!devices.length) return;
+      seedShellyUnit(shellyId, devices);
+    }
+    const at = new Date(now).toISOString();
     for (const state of states) {
-      if (typeof state.on !== "boolean") continue;
-      const known = byChannel.get(state.channel);
-      const deviceId = known?.deviceId ?? shellyChannelDeviceId(devices[0]?.externalId ?? shellyId, state.channel);
-      const before = await getDevice(deviceId, { plans: false });
-      if (!before) continue;
-      const hold = this.relayHold.get(deviceId);
-      const ignoreRelay = staleRelayReport(hold, state.on, Date.now());
-      if (hold && state.on === hold.on) this.relayHold.delete(deviceId);
-      const view = await updateDeviceState(deviceId, {
+      const known = shellySavedChannel(shellyId, state.channel);
+      if (!known) continue;
+      const hold = this.relayHold.get(known.deviceId);
+      if (hold && state.on === hold.on) this.relayHold.delete(known.deviceId);
+      if (shellyStatusIsQuiet(shellyId, [state], now, holdFor)) continue;
+      const ignoreRelay = staleRelayReport(hold, state.on, now);
+      const before = { relayOn: known.relayOn, connectivity: known.connectivity, lastError: known.lastError };
+      noteShellyDatabaseTouch();
+      const view = await updateDeviceState(known.deviceId, {
         ...(ignoreRelay ? {} : { relayOn: state.on }),
         connectivity: "ONLINE",
         stateUpdatedAt: at,
         lastError: null,
         deviceType: "ShellyPro3",
       });
-      if (view && !sameObservedState(before, view)) publishDevice(view);
+      if (!rememberShellyWrite(shellyId, view) || !view) continue;
+      if (view.relayOn !== before.relayOn || view.connectivity !== before.connectivity || (view.lastError ?? null) !== (before.lastError ?? null)) {
+        publishDevice(view);
+      }
     }
   }
+
+  private confirmHolds(shellyId: string, states: Array<{ channel: ShellyChannel; on: boolean }>) {
+    for (const state of states) {
+      const saved = shellySavedChannel(shellyId, state.channel);
+      if (!saved) continue;
+      const hold = this.relayHold.get(saved.deviceId);
+      if (hold && state.on === hold.on) this.relayHold.delete(saved.deviceId);
+    }
+  }
+}
+
+function stampIsDue(stamp: string | null, now: number) {
+  if (!stamp) return true;
+  const at = Date.parse(stamp);
+  return Number.isNaN(at) || now - at >= STATE_STAMP_REFRESH_MS;
 }

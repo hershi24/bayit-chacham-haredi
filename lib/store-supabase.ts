@@ -424,8 +424,16 @@ export async function updateDeviceState(
     );
   }
   if (result.error) fail(result.error, "עדכון מצב השקע נכשל");
-  const view = await getDevice(deviceId);
-  return view ? presentDevice(view) : null;
+  return presentDevice({
+    ...current,
+    connectivity: next.connectivity,
+    relayOn: next.relay_on,
+    stateUpdatedAt: next.state_updated_at,
+    lastOnlineAt,
+    deviceType: next.device_type,
+    sensorSummary: next.sensor_summary,
+    lastError: next.last_error,
+  });
 }
 
 function countOf(value: unknown): number {

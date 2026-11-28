@@ -569,8 +569,16 @@ export function updateDeviceState(
       next.lastError,
       now,
     );
-  const view = getDevice(deviceId);
-  return view ? presentDevice(view) : null;
+  return presentDevice({
+    ...current,
+    connectivity: next.connectivity,
+    relayOn: next.relayOn,
+    stateUpdatedAt: next.stateUpdatedAt,
+    lastOnlineAt,
+    deviceType: next.deviceType,
+    sensorSummary: next.sensorSummary,
+    lastError: next.lastError,
+  });
 }
 
 function mapCallerNumber(row: Row): CallerNumber {
